@@ -1,0 +1,64 @@
+# =========================
+# CMake / build
+# =========================
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+
+# =========================
+# Visual Studio
+# =========================
+.vs/vcxproj
+
+*.vcxproj*
+*.sln
+*.user
+*.filters
+
+# =========================
+# VSCode
+# =========================
+.vscode/
+
+# =========================
+# 编译产物
+# =========================
+*.exe
+*.dll
+*.lib
+*.pdb
+*.obj
+
+# =========================
+# 日志 & 临时文件
+# =========================
+*.log
+*.tmp
+*.cache
+
+# =========================
+# 模型文件
+# =========================
+models/*.onnx
+models/*.pt
+models/*.engine
+!models/.gitkeep
+
+# =========================
+# 输出文件
+# =========================
+output/
+!output/.gitkeep
+
+# =========================
+# 系统文件
+# =========================
+.DS_Store
+Thumbs.db
+Paddle_VX/
+images/
+models/

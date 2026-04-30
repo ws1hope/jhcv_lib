@@ -77,4 +77,4 @@ link_directories(
 add_subdirectory(src)
 add_subdirectory(test/yolo)
 add_subdirectory(test/cls)
-# add_subdirectory(test/ocr)
+add_subdirectory(test/ocr)

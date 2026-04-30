@@ -21,6 +21,29 @@
             ],
             "console": "integratedTerminal",
             "preLaunchTask": "build"
+        },
+        {
+            "name": "Debug OCR",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/ocr_inference.exe",
+            "args": [
+                "rec", //rec det all
+                "${workspaceFolder}/images/image.png",
+                //"${workspaceFolder}/models/ocr/det_model.onnx", det模式启用
+                "${workspaceFolder}/models/ocr/rec_model.onnx",
+                "${workspaceFolder}/models/ocr/best.yaml"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
         }
         
     ]

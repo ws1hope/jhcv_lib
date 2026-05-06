@@ -1,0 +1,7 @@
+LIBRARY penma_rec_dll
+EXPORTS
+    penma_init
+    penma_recognize
+    penma_recognize_file
+    penma_save_result
+    penma_destroy

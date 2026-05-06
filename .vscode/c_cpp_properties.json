@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/src",
+                "G:/3thirdparty/opencv/build/include",
+                "G:/3thirdparty/onnxruntime/include",
+                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8/include",
+                "G:/3thirdparty/tensorrt/include"
+            ],
+            "defines": [
+                "USE_CUDA",
+                "USE_ONNXRUNTIME"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}

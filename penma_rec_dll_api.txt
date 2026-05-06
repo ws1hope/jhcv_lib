@@ -1,0 +1,104 @@
+// penma_rec_dll API 声明
+// 调用方将以下内容粘贴到自己的代码中即可，无需头文件
+// 需要：penma_rec_dll.dll + penma_rec_dll.lib
+// 使用方式：#pragma comment(lib, "penma_rec_dll.lib")
+
+extern "C" {
+
+__declspec(dllimport) int penma_init(
+    const char* label_model,
+    const char* zifu_model,
+    const char* ocr_rec_model,
+    const char* ocr_rec_label,
+    const char* cls_model,
+    int use_gpu,
+    int gpu_id
+);
+
+__declspec(dllimport) int penma_recognize(
+    const unsigned char* img_data,
+    int width,
+    int height,
+    int channels,
+    char* result_buf,
+    int buf_size,
+    const char* heat_str
+);
+
+__declspec(dllimport) int penma_recognize_file(
+    const char* image_path,
+    char* result_buf,
+    int buf_size,
+    const char* heat_str
+);
+
+__declspec(dllimport) int penma_save_result(const char* save_path);
+
+__declspec(dllimport) void penma_destroy();
+
+}
+
+// ============== 使用示例 ==============
+//
+// #pragma comment(lib, "penma_rec_dll.lib")
+//
+// int main() {
+//     // 初始化（含模型预热）
+//     // cls_model 传 NULL 表示不使用角度分类模型
+//     int ret = penma_init(
+//         "models/tiebiao_best_label.onnx",
+//         "models/tiebiao_best_zifu.onnx",
+//         "models/ocr/rec_model.onnx",
+//         "models/ocr/best.yaml",
+//         "models/cls_model.onnx",   // 或 NULL
+//         1,   // use_gpu: 1=GPU, 0=CPU
+//         0    // gpu_id
+//     );
+//     if (ret != 0) {
+//         printf("Init failed: %d\n", ret);
+//         return -1;
+//     }
+//
+//     // 方式1：传图像数据 (BGR格式)
+//     cv::Mat src = cv::imread("test.jpg");
+//     char result[256] = {0};
+//     ret = penma_recognize(src.data, src.cols, src.rows, src.channels(), result, 256, "25912522");
+//     if (ret == 0) {
+//         printf("Success: %s\n", result);
+//     }
+//
+//     // 方式2：传文件路径
+//     char result2[256] = {0};
+//     ret = penma_recognize_file("test.jpg", result2, 256, "25912522");
+//     if (ret == 0) {
+//         printf("Success: %s\n", result2);
+//     }
+//
+//     // 保存旋转矫正后的图（可选）
+//     penma_save_result("result.jpg");
+//
+//     // 释放
+//     penma_destroy();
+//     return 0;
+// }
+//
+// ============== 返回值说明 ==============
+//
+// penma_init:
+//   0  = 初始化成功
+//  -1  = 缺少必要模型路径
+//  -2  = 初始化异常（模型加载失败等）
+//
+// penma_recognize / penma_recognize_file:
+//   0  = 识别成功，result_buf 为结果字符串（如 "circle#25912522"）
+//   1  = 识别失败（未检测到标签或字符）
+//  -1  = 未初始化
+//  -2  = 输入参数无效
+//  -3  = 图像加载失败(recognize_file) 或 格式不支持(recognize)
+//  -4  = 推理异常
+//
+// penma_save_result:
+//   0  = 保存成功
+//  -1  = 路径为空
+//  -2  = 没有结果图像可保存
+//  -3  = 保存失败

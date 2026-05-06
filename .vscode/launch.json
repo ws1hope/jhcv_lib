@@ -44,6 +44,32 @@
             ],
             "console": "integratedTerminal",
             "preLaunchTask": "build"
+        },
+        {
+            "name": "Debug PenmaRec",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/penma_rec.exe",
+            "args": [
+                "-i", "${workspaceFolder}/images/yuanbiao.jpg",
+                "-l", "${workspaceFolder}/models/penma_rec/tiebiao_best_label.onnx",
+                "-z", "${workspaceFolder}/models/penma_rec/tiebiao_best_zifu.onnx",
+                "-r", "${workspaceFolder}/models/ocr/rec_model.onnx",
+                "-c", "${workspaceFolder}/models/penma_rec/cls_model.onnx",
+                "-L", "${workspaceFolder}/models/ocr/best.yaml",
+                "-H", "25912522",
+                "-o", "${workspaceFolder}/images/penma_result.jpg"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
         }
         
     ]

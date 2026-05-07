@@ -42,6 +42,7 @@ set(PADDLE_LIBS
 
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/cv_infer
     ${OPENCV_ROOT}/include
     ${ONNXRUNTIME_ROOT}/include
     ${CUDA_ROOT}/include

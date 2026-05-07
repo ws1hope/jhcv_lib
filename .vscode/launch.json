@@ -51,7 +51,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Release/jhdeepcore_cls_test.exe",
             "args": [
-                "${workspaceFolder}/models/resnet18_cls3.onnx",
+                "${workspaceFolder}/models/cls/resnet18_cls3.onnx",
                 "${workspaceFolder}/images/test_cls.jpg",
                 "cpu"
             ],
@@ -137,7 +137,7 @@
             "args": [
                 "${workspaceFolder}/models/ocr/rec_model.onnx",
                 "${workspaceFolder}/models/ocr/best.yaml",
-                "${workspaceFolder}/images/image.png",
+                "${workspaceFolder}/images/test_ocr.png",
                 "cpu"
             ],
             "stopAtEntry": false,

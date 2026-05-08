@@ -76,12 +76,10 @@ link_directories(
 # add_subdirectory(Paddle_VX)
 
 add_subdirectory(src)
-add_subdirectory(test/yolo)
-add_subdirectory(test/cls)
-add_subdirectory(test/ocr)
-add_subdirectory(test/penma_rec)
-add_subdirectory(test/jhdeepcore_classify)
-add_subdirectory(test/jhdeepcore_detect)
-add_subdirectory(test/jhdeepcore_segment)
-add_subdirectory(test/jhdeepcore_instance_segment)
-add_subdirectory(test/jhdeepcore_ocr)
+
+option(BUILD_TEST "Build test programs" ON)
+if(BUILD_TEST)
+    add_subdirectory(test)
+endif()
+
+message(STATUS "${PROJECT_NAME} | C++${CMAKE_CXX_STANDARD} | BUILD_TEST: ${BUILD_TEST}")

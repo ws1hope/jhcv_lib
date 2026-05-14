@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_definitions(-DUSE_CUDA)
 add_definitions(-DUSE_ONNXRUNTIME)
 
 set(3RDPARTY_ROOT     "G:/3thirdparty")
@@ -17,15 +16,31 @@ set(PADDLE_ROOT       "${3RDPARTY_ROOT}/paddle_inference")
 
 set(OpenCV_LIBS ${OPENCV_ROOT}/x64/vc16/lib/opencv_world490.lib)
 
-set(ONNX_LIBS
+option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" ON)
+
+if(ENABLE_CUDA)
+    add_definitions(-DUSE_CUDA)
+    message(STATUS "CUDA support: ON")
+else()
+    message(STATUS "CUDA support: OFF (CPU-only mode)")
+endif()
+
+set(ONNX_CPU_LIBS
     ${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib
-    ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_cuda.lib
-    ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_shared.lib
-    ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_tensorrt.lib
-    ${TENSORRT_ROOT}/lib/nvinfer.lib
-    ${TENSORRT_ROOT}/lib/nvinfer_plugin.lib
-    ${CUDA_ROOT}/lib/x64/cudart.lib
 )
+
+if(ENABLE_CUDA)
+    set(ONNX_GPU_LIBS
+        ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_cuda.lib
+        ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_shared.lib
+        ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_tensorrt.lib
+        ${TENSORRT_ROOT}/lib/nvinfer.lib
+        ${TENSORRT_ROOT}/lib/nvinfer_plugin.lib
+        ${CUDA_ROOT}/lib/x64/cudart.lib
+    )
+else()
+    set(ONNX_GPU_LIBS)
+endif()
 
 set(PADDLE_LIBS
     ${PADDLE_ROOT}/paddle/lib/paddle_inference.lib
@@ -45,8 +60,6 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src/cv_infer
     ${OPENCV_ROOT}/include
     ${ONNXRUNTIME_ROOT}/include
-    ${CUDA_ROOT}/include
-    ${TENSORRT_ROOT}/include
     ${PADDLE_ROOT}/paddle/include
     ${PADDLE_ROOT}/third_party/install/protobuf/include
     ${PADDLE_ROOT}/third_party/install/gflags/include
@@ -57,11 +70,16 @@ include_directories(
     ${PADDLE_ROOT}/third_party/install/onednn/include
 )
 
+if(ENABLE_CUDA)
+    include_directories(
+        ${CUDA_ROOT}/include
+        ${TENSORRT_ROOT}/include
+    )
+endif()
+
 link_directories(
     ${OPENCV_ROOT}/x64/vc16/lib
     ${ONNXRUNTIME_ROOT}/lib
-    ${CUDA_ROOT}/lib/x64
-    ${TENSORRT_ROOT}/lib
     ${PADDLE_ROOT}/paddle/lib
     ${PADDLE_ROOT}/third_party/install/protobuf/lib
     ${PADDLE_ROOT}/third_party/install/gflags/lib
@@ -72,8 +90,12 @@ link_directories(
     ${PADDLE_ROOT}/third_party/install/onednn/lib
 )
 
-# set(PADDLE_OCR_BUILD_LIB ON CACHE BOOL "Build as library" FORCE)
-# add_subdirectory(Paddle_VX)
+if(ENABLE_CUDA)
+    link_directories(
+        ${CUDA_ROOT}/lib/x64
+        ${TENSORRT_ROOT}/lib
+    )
+endif()
 
 add_subdirectory(src)
 
@@ -82,4 +104,4 @@ if(BUILD_TEST)
     add_subdirectory(test)
 endif()
 
-message(STATUS "${PROJECT_NAME} | C++${CMAKE_CXX_STANDARD} | BUILD_TEST: ${BUILD_TEST}")
+message(STATUS "${PROJECT_NAME} | C++${CMAKE_CXX_STANDARD} | BUILD_TEST: ${BUILD_TEST} | ENABLE_CUDA: ${ENABLE_CUDA}")

@@ -202,7 +202,45 @@
             ],
             "console": "integratedTerminal",
             "preLaunchTask": "build"
+        },
+        {
+            "name": "dabang_jiguang - HTTP server",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/dabang_jiguang.exe",
+            "args": [
+                "-c",
+                "test/dabang_jiguang/config.yaml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "dabang_jiguang - local test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/dabang_jiguang.exe",
+            "args": [
+                "--test",
+                "-c", "test/dabang_jiguang/config.yaml",
+                "-i", "images/test_jiguang.jpg",
+                "-H", "12345678",
+                "-s", "1"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal"
         }
-        
     ]
 }

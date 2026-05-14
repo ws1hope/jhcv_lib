@@ -1,3 +1,29 @@
+# ========== 第三方库 ==========
+set(THIRD_PARTY_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/third_party/httplib.cc
+)
+
+add_library(third_party_lib STATIC ${THIRD_PARTY_SOURCES})
+
+target_include_directories(third_party_lib PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/third_party
+)
+
+target_compile_definitions(third_party_lib PUBLIC)
+
+if(MSVC)
+    set_property(TARGET third_party_lib PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+if(WIN32)
+    target_link_libraries(third_party_lib PUBLIC ws2_32)
+endif()
+
+set_target_properties(third_party_lib PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+)
+
 # ========== 源文件列表 ==========
 # cv_infer 模块
 set(CV_INFER_SOURCES
@@ -75,15 +101,19 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_segment
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_instance_segment
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_ocr
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
 target_compile_definitions(jhcv_lib PRIVATE
-    USE_CUDA
     USE_ONNXRUNTIME
     YAMLCPP_FOUND
     ONNXRUNTIME_FOUND
     YAML_CPP_STATIC_DEFINE
 )
+
+if(ENABLE_CUDA)
+    target_compile_definitions(jhcv_lib PRIVATE USE_CUDA)
+endif()
 
 if(MSVC)
     set_property(TARGET jhcv_lib PROPERTY
@@ -103,10 +133,15 @@ endif()
 
 target_link_libraries(jhcv_lib PUBLIC
     ${OpenCV_LIBS}
-    ${ONNX_LIBS}
+    ${ONNX_CPU_LIBS}
+    third_party_lib
     PRIVATE
     ${PADDLE_ROOT}/third_party/install/yaml-cpp/lib/yaml-cpp.lib
 )
+
+if(ENABLE_CUDA)
+    target_link_libraries(jhcv_lib PUBLIC ${ONNX_GPU_LIBS})
+endif()
 
 target_link_directories(jhcv_lib PRIVATE
     ${PADDLE_ROOT}/third_party/install/yaml-cpp/lib
@@ -155,7 +190,11 @@ endif()
 
 target_include_directories(penma_rec_dll PRIVATE ${CMAKE_CURRENT_LIST_DIR}/cv_infer)
 
-target_link_libraries(penma_rec_dll PRIVATE jhcv_lib ${OpenCV_LIBS} ${ONNX_LIBS})
+target_link_libraries(penma_rec_dll PRIVATE jhcv_lib ${OpenCV_LIBS} ${ONNX_CPU_LIBS})
+
+if(ENABLE_CUDA)
+    target_link_libraries(penma_rec_dll PRIVATE ${ONNX_GPU_LIBS})
+endif()
 
 install(TARGETS penma_rec_dll DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_LIST_DIR}/cv_infer/penma_rec_dll.h DESTINATION include)

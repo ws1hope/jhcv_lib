@@ -35,6 +35,23 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
 #ifdef ONNXRUNTIME_FOUND
     session_options_.SetIntraOpNumThreads(1);
     session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+    if (device_ == "cuda") {
+#ifdef USE_CUDA
+        try {
+            OrtCUDAProviderOptions cuda_options;
+            cuda_options.device_id = 0;
+            session_options_.AppendExecutionProvider_CUDA(cuda_options);
+            std::cout << "[INFO] ONNX Runtime: using CUDA provider" << std::endl;
+        } catch (const std::exception &e) {
+            std::cerr << "[WARN] CUDA provider not available, falling back to CPU: " << e.what() << std::endl;
+            device_ = "cpu";
+        }
+#else
+        std::cerr << "[WARN] CUDA not compiled in, falling back to CPU" << std::endl;
+        device_ = "cpu";
+#endif
+    }
 #endif
 }
 

@@ -61,3 +61,6 @@ Thumbs.db
 Paddle_VX/
 images/
 models/
+build/
+build_cpu/
+build_project/

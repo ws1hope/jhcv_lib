@@ -1,0 +1,17 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+models:
+  label_detect_model: "models/dabang_jiguang/jiguang_piliao.onnx"
+  char_detect_model: "models/dabang_jiguang/jiguang_zifu.onnx"
+  ocr_rec_model: "models/ocr/rec_model.onnx"
+  ocr_rec_label: "models/ocr/best.yaml"
+
+inference:
+  device: "cpu"
+
+output:
+  result_dir: "D:\\CharacterDetect\\result"
+  split_dir: "D:\\CharacterDetect\\result_split"
+  log_dir: "视觉历史记录"

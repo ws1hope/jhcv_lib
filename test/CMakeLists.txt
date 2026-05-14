@@ -13,6 +13,9 @@ add_executable(jhdeepcore_seg_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_segmen
 add_executable(jhdeepcore_iseg_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_instance_segment/main.cpp)
 add_executable(jhdeepcore_ocr_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_ocr/main.cpp)
 
+# ========== 大棒激光 HTTP 服务 ==========
+add_executable(dabang_jiguang ${CMAKE_CURRENT_SOURCE_DIR}/dabang_jiguang/main.cpp)
+
 # ========== 统一设置 ==========
 set(TEST_TARGETS
     yolo_inference
@@ -24,6 +27,7 @@ set(TEST_TARGETS
     jhdeepcore_seg_test
     jhdeepcore_iseg_test
     jhdeepcore_ocr_test
+    dabang_jiguang
 )
 
 foreach(TARGET ${TEST_TARGETS})
@@ -37,6 +41,23 @@ endforeach()
 set_target_properties(${TEST_TARGETS} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
+
+# ========== 大棒激光 HTTP 服务（额外链接） ==========
+target_include_directories(dabang_jiguang PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_definitions(dabang_jiguang PRIVATE YAML_CPP_STATIC_DEFINE)
+target_link_directories(dabang_jiguang PRIVATE ${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE})
+target_link_libraries(dabang_jiguang PRIVATE
+    jhcv_lib
+    third_party_lib
+    ${PADDLE_ROOT}/third_party/install/yaml-cpp/lib/yaml-cpp.lib
+    ws2_32
+)
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/dabang_jiguang/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
 
 # ========== penma_rec_dll 测试（链接动态库） ==========
 target_include_directories(penma_rec_dll_test PRIVATE ${CMAKE_SOURCE_DIR}/src/cv_infer)

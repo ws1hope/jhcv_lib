@@ -7,7 +7,8 @@
 
 #include "httplib.h"
 #include "json.hpp"
-#include "nisco_project/dabang_jiguang_service.h"
+#include "JHDeepCore.h"
+#include "file_utils.h"
 
 using json = nlohmann::json;
 
@@ -69,14 +70,14 @@ int main(int argc, char* argv[])
     std::cout << "[INFO] Config: " << config_path << std::endl;
 
     auto start_time = std::chrono::high_resolution_clock::now();
-    std::unique_ptr<OCRService> service_ptr;
+    std::unique_ptr<JHDeepCore::OCRService> service_ptr;
     try {
-        service_ptr = std::make_unique<OCRService>(config_path);
+        service_ptr = std::make_unique<JHDeepCore::OCRService>(config_path);
     } catch (const std::exception& e) {
         std::cerr << "[ERROR] Failed to initialize models: " << e.what() << std::endl;
         return 1;
     }
-    OCRService& service = *service_ptr;
+    JHDeepCore::OCRService& service = *service_ptr;
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "[INFO] Model init time: " << duration.count() << " ms" << std::endl;

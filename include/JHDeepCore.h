@@ -5,6 +5,8 @@
 #include <vector>
 #include <memory>
 
+#include "json.hpp"
+
 namespace JHDeepCore {
 
 enum class TaskType {
@@ -143,6 +145,25 @@ class OCRRecognizer {
 
     OCRResult Recognize(const cv::Mat &text_image);
     OCRResult Recognize(const std::string &image_path);
+
+  private:
+    class Impl;
+    std::unique_ptr<Impl> pImpl_;
+};
+
+class OCRService {
+  public:
+    explicit OCRService(const std::string &config_path);
+    ~OCRService();
+
+    OCRService(const OCRService &) = delete;
+    OCRService &operator=(const OCRService &) = delete;
+
+    const struct ServerConfig &config() const;
+    nlohmann::json handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int station_id);
 
   private:
     class Impl;

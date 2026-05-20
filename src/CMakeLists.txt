@@ -73,6 +73,11 @@ set(AI_PLATFORM_MAIN_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/ai_platform/JHDeepCore.cpp
 )
 
+# nisco_project 模块
+set(NISCO_PROJECT_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/dabang_jiguang_service.cpp
+)
+
 # 所有源文件
 set(ALL_SOURCES
     ${CV_INFER_SOURCES}
@@ -84,6 +89,7 @@ set(ALL_SOURCES
     ${AI_PLATFORM_INSTANCE_SEGMENT_SOURCES}
     ${AI_PLATFORM_OCR_SOURCES}
     ${AI_PLATFORM_MAIN_SOURCES}
+    ${NISCO_PROJECT_SOURCES}
 )
 
 # ========== 构建统一静态库 jhcv_lib ==========
@@ -101,6 +107,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_segment
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_instance_segment
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_ocr
+    ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
@@ -127,6 +134,7 @@ if(MSVC)
         ${AI_PLATFORM_INSTANCE_SEGMENT_SOURCES}
         ${AI_PLATFORM_OCR_SOURCES}
         ${AI_PLATFORM_MAIN_SOURCES}
+        ${NISCO_PROJECT_SOURCES}
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

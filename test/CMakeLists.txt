@@ -42,16 +42,7 @@ set_target_properties(${TEST_TARGETS} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 
-# ========== 大棒激光 HTTP 服务（额外链接） ==========
-target_include_directories(dabang_jiguang PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_compile_definitions(dabang_jiguang PRIVATE YAML_CPP_STATIC_DEFINE)
-target_link_directories(dabang_jiguang PRIVATE ${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE})
-target_link_libraries(dabang_jiguang PRIVATE
-    jhcv_lib
-    third_party_lib
-    ${PADDLE_ROOT}/third_party/install/yaml-cpp/lib/yaml-cpp.lib
-    ws2_32
-)
+# ========== 大棒激光 HTTP 服务 ==========
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/dabang_jiguang/main.cpp

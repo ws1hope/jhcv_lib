@@ -1,4 +1,5 @@
-#include "jhdeepcore_ocr/ocr_recognizer.h"
+#include "JHDeepCore.h"
+
 #include <opencv2/opencv.hpp>
 #include <fstream>
 #include <numeric>
@@ -12,7 +13,6 @@
 #include <onnxruntime_cxx_api.h>
 
 namespace JHDeepCore {
-namespace ocr {
 
 static std::vector<std::string> parseYamlCharDict(const std::string &yaml_path,
                                                    std::vector<float> &out_mean,
@@ -208,8 +208,54 @@ static void initSession(const std::string &model_path, bool use_gpu, int gpu_id,
     }
 }
 
-class OCRRecognizerImpl::Impl {
+class OCRRecognizerPrivate {
   public:
+    OCRRecognizerPrivate(const std::string &model_path, const std::string &label_path,
+                         int device_id, const std::string &config_path, float score_threshold)
+    {
+        useGPU = (device_id >= 0);
+        gpuId = (device_id >= 0) ? device_id : 0;
+        rec_score_thresh = score_threshold;
+
+        if (!label_path.empty()) {
+            loadRecLabels(label_path, rec_labels, rec_mean, rec_std);
+        }
+
+        initSession(model_path, useGPU, gpuId,
+                    rec_env, rec_session,
+                    rec_input_names, rec_output_names,
+                    rec_input_node_names, rec_output_node_names);
+        std::cout << "[INFO] Rec model loaded: " << model_path << std::endl;
+
+        {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            std::vector<float> dummy(3 * 48 * 10, 0.0f);
+            std::array<int64_t, 4> shape = {1, 3, 48, 10};
+            Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+            Ort::Value tensor = Ort::Value::CreateTensor<float>(memInfo, dummy.data(), dummy.size(), shape.data(), shape.size());
+            rec_session->Run(Ort::RunOptions{nullptr},
+                rec_input_names.data(), &tensor, 1,
+                rec_output_names.data(), rec_output_names.size());
+            auto t1 = std::chrono::high_resolution_clock::now();
+            float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+            std::cout << "[INFO] Rec model warmup done (" << ms << " ms)" << std::endl;
+        }
+
+        std::cout << "[INFO] OCR Rec engine initialized." << std::endl;
+    }
+
+    void process(std::vector<cv::Mat> &images, std::vector<OCRResult> &results) {
+        results.clear();
+        for (auto &img : images) {
+            results.push_back(recognizeSingle(img));
+        }
+    }
+
+    size_t get_batch() const { return 1; }
+    size_t get_input_width() const { return 10; }
+    size_t get_input_height() const { return 48; }
+
+  private:
     Ort::Env rec_env{ORT_LOGGING_LEVEL_WARNING, "ocr_rec"};
     std::unique_ptr<Ort::Session> rec_session;
     std::vector<const char *> rec_input_names;
@@ -223,115 +269,86 @@ class OCRRecognizerImpl::Impl {
     float rec_score_thresh = 0.5f;
     bool useGPU = false;
     int gpuId = 0;
+
+    OCRResult recognizeSingle(const cv::Mat &text_image) {
+        OCRResult result;
+
+        float cr_ratio = static_cast<float>(text_image.cols) / text_image.rows;
+        int rec_img_h = 48;
+        int rec_img_w = static_cast<int>(rec_img_h * cr_ratio);
+        rec_img_w = std::max(rec_img_w, 10);
+        rec_img_w = std::min(rec_img_w, rec_img_h * 10);
+
+        std::vector<float> rec_input = preprocessRec(text_image, rec_img_h, rec_img_w, rec_mean, rec_std);
+
+        std::array<int64_t, 4> rec_input_shape = {1, 3, rec_img_h, rec_img_w};
+        Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        Ort::Value rec_input_tensor = Ort::Value::CreateTensor<float>(
+            memInfo, rec_input.data(), rec_input.size(), rec_input_shape.data(), rec_input_shape.size());
+
+        auto rec_outputs = rec_session->Run(
+            Ort::RunOptions{nullptr},
+            rec_input_names.data(), &rec_input_tensor, 1,
+            rec_output_names.data(), rec_output_names.size());
+
+        auto &rec_output = rec_outputs[0];
+        auto rec_output_shape = rec_output.GetTensorTypeAndShapeInfo().GetShape();
+        int rec_out_seq = static_cast<int>(rec_output_shape[1]);
+        int rec_out_chars = static_cast<int>(rec_output_shape[2]);
+        const float *rec_output_data = rec_output.GetTensorData<float>();
+
+        std::string text;
+        float total_score = 0.0f;
+        int count = 0;
+        int last_idx = 0;
+
+        for (int t = 0; t < rec_out_seq; ++t) {
+            int max_idx = 0;
+            float max_val = rec_output_data[t * rec_out_chars];
+            for (int c = 1; c < rec_out_chars; ++c) {
+                if (rec_output_data[t * rec_out_chars + c] > max_val) {
+                    max_val = rec_output_data[t * rec_out_chars + c];
+                    max_idx = c;
+                }
+            }
+            if (max_idx > 0 && max_idx != last_idx) {
+                if (max_idx - 1 < static_cast<int>(rec_labels.size())) {
+                    text += rec_labels[max_idx - 1];
+                } else {
+                    text += "?";
+                }
+                total_score += max_val;
+                count++;
+            }
+            last_idx = max_idx;
+        }
+
+        float avg_score = (count > 0) ? total_score / count : 0.0f;
+
+        if (avg_score >= rec_score_thresh) {
+            OCRBox box;
+            box.text = text;
+            box.confidence = avg_score;
+            result.boxes.push_back(std::move(box));
+        }
+
+        return result;
+    }
 };
 
-OCRRecognizerImpl::OCRRecognizerImpl(const Params &params) : pImpl_(std::make_unique<Impl>()) {
-    pImpl_->rec_score_thresh = params.rec_score_thresh;
-    pImpl_->useGPU = (params.device == "gpu");
-    pImpl_->gpuId = params.gpuId;
+OCRRecognizer::OCRRecognizer(const std::string &model_path, const std::string &label_path,
+                             int device_id, const std::string &config_path,
+                             float score_threshold)
+    : m_pHandle(std::make_shared<OCRRecognizerPrivate>(model_path, label_path, device_id, config_path, score_threshold)) {}
 
-    if (!params.rec_label_path.empty()) {
-        loadRecLabels(params.rec_label_path, pImpl_->rec_labels, pImpl_->rec_mean, pImpl_->rec_std);
-    }
+OCRRecognizer::~OCRRecognizer() = default;
 
-    initSession(params.rec_model_path, pImpl_->useGPU, pImpl_->gpuId,
-                pImpl_->rec_env, pImpl_->rec_session,
-                pImpl_->rec_input_names, pImpl_->rec_output_names,
-                pImpl_->rec_input_node_names, pImpl_->rec_output_node_names);
-    std::cout << "[INFO] Rec model loaded: " << params.rec_model_path << std::endl;
-
-    {
-        auto t0 = std::chrono::high_resolution_clock::now();
-        std::vector<float> dummy(3 * 48 * 10, 0.0f);
-        std::array<int64_t, 4> shape = {1, 3, 48, 10};
-        Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        Ort::Value tensor = Ort::Value::CreateTensor<float>(memInfo, dummy.data(), dummy.size(), shape.data(), shape.size());
-        pImpl_->rec_session->Run(Ort::RunOptions{nullptr},
-            pImpl_->rec_input_names.data(), &tensor, 1,
-            pImpl_->rec_output_names.data(), pImpl_->rec_output_names.size());
-        auto t1 = std::chrono::high_resolution_clock::now();
-        float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
-        std::cout << "[INFO] Rec model warmup done (" << ms << " ms)" << std::endl;
-    }
-
-    std::cout << "[INFO] OCR Rec engine initialized." << std::endl;
+void OCRRecognizer::process(std::vector<cv::Mat> &images, std::vector<OCRResult> &results) {
+    m_pHandle->process(images, results);
 }
 
-OCRRecognizerImpl::~OCRRecognizerImpl() = default;
+size_t OCRRecognizer::GetBatch() const { return m_pHandle->get_batch(); }
+size_t OCRRecognizer::GetInputWidth() const { return m_pHandle->get_input_width(); }
+size_t OCRRecognizer::GetInputHeight() const { return m_pHandle->get_input_height(); }
 
-JHDeepCore::OCRResult OCRRecognizerImpl::Recognize(const cv::Mat &text_image) {
-    JHDeepCore::OCRResult result;
-
-    float cr_ratio = static_cast<float>(text_image.cols) / text_image.rows;
-    int rec_img_h = 48;
-    int rec_img_w = static_cast<int>(rec_img_h * cr_ratio);
-    rec_img_w = std::max(rec_img_w, 10);
-    rec_img_w = std::min(rec_img_w, rec_img_h * 10);
-
-    std::vector<float> rec_input = preprocessRec(text_image, rec_img_h, rec_img_w, pImpl_->rec_mean, pImpl_->rec_std);
-
-    std::array<int64_t, 4> rec_input_shape = {1, 3, rec_img_h, rec_img_w};
-    Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    Ort::Value rec_input_tensor = Ort::Value::CreateTensor<float>(
-        memInfo, rec_input.data(), rec_input.size(), rec_input_shape.data(), rec_input_shape.size());
-
-    auto rec_outputs = pImpl_->rec_session->Run(
-        Ort::RunOptions{nullptr},
-        pImpl_->rec_input_names.data(), &rec_input_tensor, 1,
-        pImpl_->rec_output_names.data(), pImpl_->rec_output_names.size());
-
-    auto &rec_output = rec_outputs[0];
-    auto rec_output_shape = rec_output.GetTensorTypeAndShapeInfo().GetShape();
-    int rec_out_seq = static_cast<int>(rec_output_shape[1]);
-    int rec_out_chars = static_cast<int>(rec_output_shape[2]);
-    const float *rec_output_data = rec_output.GetTensorData<float>();
-
-    std::string text;
-    float total_score = 0.0f;
-    int count = 0;
-    int last_idx = 0;
-
-    for (int t = 0; t < rec_out_seq; ++t) {
-        int max_idx = 0;
-        float max_val = rec_output_data[t * rec_out_chars];
-        for (int c = 1; c < rec_out_chars; ++c) {
-            if (rec_output_data[t * rec_out_chars + c] > max_val) {
-                max_val = rec_output_data[t * rec_out_chars + c];
-                max_idx = c;
-            }
-        }
-        if (max_idx > 0 && max_idx != last_idx) {
-            if (max_idx - 1 < static_cast<int>(pImpl_->rec_labels.size())) {
-                text += pImpl_->rec_labels[max_idx - 1];
-            } else {
-                text += "?";
-            }
-            total_score += max_val;
-            count++;
-        }
-        last_idx = max_idx;
-    }
-
-    float avg_score = (count > 0) ? total_score / count : 0.0f;
-
-    if (avg_score >= pImpl_->rec_score_thresh) {
-        JHDeepCore::OCRBox box;
-        box.text = text;
-        box.confidence = avg_score;
-        result.boxes.push_back(std::move(box));
-    }
-
-    return result;
-}
-
-JHDeepCore::OCRResult OCRRecognizerImpl::Recognize(const std::string &image_path) {
-    cv::Mat img = cv::imread(image_path);
-    if (img.empty()) {
-        std::cerr << "[ERROR] Failed to read image: " << image_path << std::endl;
-        return {};
-    }
-    return Recognize(img);
-}
-
-} // namespace ocr
 } // namespace JHDeepCore

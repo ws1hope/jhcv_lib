@@ -1,6 +1,7 @@
 #include "JHDeepCore.h"
 #include "file_utils.h"
 #include "infer_utils.h"
+#include "json.hpp"
 
 #include <chrono>
 #include <ctime>
@@ -14,30 +15,29 @@ using json = nlohmann::json;
 
 namespace JHDeepCore {
 
-class OCRService::Impl {
+class OCRServicePrivate {
 public:
-    explicit Impl(const std::string& config_path)
+    explicit OCRServicePrivate(const std::string& config_path)
         : config_(FileHelper::loadConfig(config_path))
     {
+        int dev_id = (config_.device == "cuda" || config_.device == "gpu") ? 0 : -1;
+
         det_label_ = std::make_unique<Detector>(
-            config_.label_detect_model, config_.device);
+            config_.label_detect_model, "", dev_id);
         std::cout << "[OK] Label detect model loaded: " << config_.label_detect_model << std::endl;
 
         det_char_ = std::make_unique<Detector>(
-            config_.char_detect_model, config_.device);
+            config_.char_detect_model, "", dev_id);
         std::cout << "[OK] Char detect model loaded: " << config_.char_detect_model << std::endl;
 
-        OCRRecognizer::Params ocr_params;
-        ocr_params.rec_model_path = config_.ocr_rec_model;
-        ocr_params.rec_label_path = config_.ocr_rec_label;
-        ocr_params.device = config_.device;
-        ocr_ = std::make_unique<OCRRecognizer>(ocr_params);
+        ocr_ = std::make_unique<OCRRecognizer>(
+            config_.ocr_rec_model, config_.ocr_rec_label, dev_id);
         std::cout << "[OK] OCR model loaded: " << config_.ocr_rec_model << std::endl;
 
         warmup();
     }
 
-    ~Impl()
+    ~OCRServicePrivate()
     {
         det_label_.reset();
         det_char_.reset();
@@ -89,7 +89,10 @@ public:
     {
         auto infer_start = std::chrono::high_resolution_clock::now();
 
-        DetectionResult label_result = det_label_->DetectSingle(src_img);
+        std::vector<cv::Mat> label_imgs = {src_img};
+        std::vector<DetectionResult> label_results;
+        det_label_->process(label_imgs, label_results);
+        DetectionResult label_result = label_results.empty() ? DetectionResult{} : label_results[0];
 
         if (verbose) {
             std::cout << "[DEBUG] pic " << pic_number + 1
@@ -119,7 +122,10 @@ public:
 
                 cv::Mat roi_img = src_img(label_roi).clone();
 
-                DetectionResult char_result = det_char_->DetectSingle(roi_img);
+                std::vector<cv::Mat> char_imgs = {roi_img};
+                std::vector<DetectionResult> char_results;
+                det_char_->process(char_imgs, char_results);
+                DetectionResult char_result = char_results.empty() ? DetectionResult{} : char_results[0];
 
                 if (verbose) {
                     std::cout << "  chars: " << char_result.num_detections << std::endl;
@@ -147,7 +153,10 @@ public:
                         char_img_bgr = char_img;
                     }
 
-                    OCRResult ocr_result = ocr_->Recognize(char_img_bgr);
+                    std::vector<cv::Mat> ocr_imgs = {char_img_bgr};
+                    std::vector<OCRResult> ocr_results;
+                    ocr_->process(ocr_imgs, ocr_results);
+                    OCRResult ocr_result = ocr_results.empty() ? OCRResult{} : ocr_results[0];
 
                     std::string char_text;
                     if (!ocr_result.boxes.empty()) {
@@ -269,7 +278,7 @@ public:
         return result;
     }
 
-    json handleRequest(const std::string& req_body)
+    std::string handleRequest(const std::string& req_body)
     {
         std::lock_guard<std::mutex> lock(mtx_);
 
@@ -322,7 +331,7 @@ public:
         std::cout << "[RESULT] " << root_all.dump() << std::endl;
         fout.close();
 
-        return root_all;
+        return root_all.dump();
     }
 
     int runLocalTest(const std::string& image_path,
@@ -366,7 +375,6 @@ public:
         return 0;
     }
 
-private:
     ServerConfig config_;
     std::unique_ptr<Detector> det_label_;
     std::unique_ptr<Detector> det_char_;
@@ -376,17 +384,22 @@ private:
     void warmup()
     {
         std::cout << "[INFO] Warming up models..." << std::endl;
-        cv::Mat dummy(640, 640, CV_8UC3, cv::Scalar(0, 0, 0));
+        std::vector<cv::Mat> dummy_imgs = {cv::Mat(640, 640, CV_8UC3, cv::Scalar(0, 0, 0))};
 
-        auto label_result = det_label_->DetectSingle(dummy);
+        std::vector<DetectionResult> label_results;
+        det_label_->process(dummy_imgs, label_results);
+        int label_dets = label_results.empty() ? 0 : label_results[0].num_detections;
         std::cout << "[OK] Label detector warmed up (dummy detections: "
-             << label_result.num_detections << ")" << std::endl;
+             << label_dets << ")" << std::endl;
 
-        auto char_result = det_char_->DetectSingle(dummy);
+        std::vector<DetectionResult> char_results;
+        det_char_->process(dummy_imgs, char_results);
+        int char_dets = char_results.empty() ? 0 : char_results[0].num_detections;
         std::cout << "[OK] Char detector warmed up (dummy detections: "
-             << char_result.num_detections << ")" << std::endl;
+             << char_dets << ")" << std::endl;
 
-        OCRResult ocr_result = ocr_->Recognize(dummy);
+        std::vector<OCRResult> ocr_results;
+        ocr_->process(dummy_imgs, ocr_results);
         std::cout << "[OK] OCR recognizer warmed up" << std::endl;
 
         std::cout << "[OK] Warmup complete." << std::endl;
@@ -394,7 +407,7 @@ private:
 };
 
 OCRService::OCRService(const std::string& config_path)
-    : pImpl_(std::make_unique<Impl>(config_path))
+    : m_pHandle(std::make_shared<OCRServicePrivate>(config_path))
 {
 }
 
@@ -402,19 +415,19 @@ OCRService::~OCRService() = default;
 
 const ServerConfig& OCRService::config() const
 {
-    return pImpl_->config();
+    return m_pHandle->config();
 }
 
-nlohmann::json OCRService::handleRequest(const std::string& req_body)
+std::string OCRService::handleRequest(const std::string& req_body)
 {
-    return pImpl_->handleRequest(req_body);
+    return m_pHandle->handleRequest(req_body);
 }
 
 int OCRService::runLocalTest(const std::string& image_path,
                              const std::string& heat_number,
                              int station_id)
 {
-    return pImpl_->runLocalTest(image_path, heat_number, station_id);
+    return m_pHandle->runLocalTest(image_path, heat_number, station_id);
 }
 
 } // namespace JHDeepCore

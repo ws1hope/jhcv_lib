@@ -98,8 +98,8 @@ int main(int argc, char* argv[])
     });
 
     server.Post("/character_recognition", [&service](const httplib::Request& req, httplib::Response& res) {
-        json result = service.handleRequest(req.body);
-        res.set_content(result.dump(), "application/json");
+        std::string result = service.handleRequest(req.body);
+        res.set_content(result, "application/json");
     });
 
     server.Get("/stop", [&](const httplib::Request&, httplib::Response&) {

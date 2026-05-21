@@ -1,59 +1,65 @@
-#include "jhdeepcore_segment/segmenter.h"
+#include "JHDeepCore.h"
 #include "jhdeepcore_inference/inference_factory.h"
 #include "jhdeepcore_inference/onnx_inference.h"
 #include <stdexcept>
 
 namespace JHDeepCore {
-namespace segment {
 
-class SegmenterImpl::Impl {
-  public:
-    Impl(const std::string &model_path, const std::string &device,
-         const std::vector<std::string> &class_names)
-        : inference_(inference::InferenceFactory::CreateInference(model_path, device, class_names)) {}
+class SegmenterPrivate {
+public:
+    SegmenterPrivate(const std::string &model_path, const std::string &label_path,
+                     int device_id, const std::string &config_path)
+    {
+        std::string device_str = device_id >= 0 ? "cuda" : "cpu";
+        std::vector<std::string> names;
+        if (!label_path.empty()) names.push_back(label_path);
+        inference_ = inference::InferenceFactory::CreateInference(model_path, device_str, names);
+    }
 
+    void process(std::vector<cv::Mat> &images, std::vector<SegmentationResult> &results) {
+        if (!inference_) throw std::runtime_error("Segmenter not initialized");
+        if (images.empty()) {
+            results.clear();
+            return;
+        }
+        auto *onnx = dynamic_cast<inference::OnnxInference *>(inference_.get());
+        if (!onnx) throw std::runtime_error("Unsupported inference type");
+        results = onnx->InferBatchSegmentation(images);
+    }
+
+    size_t get_batch() const {
+        if (!inference_) throw std::runtime_error("Segmenter not initialized");
+        return static_cast<size_t>(inference_->GetConfig().batch_size);
+    }
+
+    size_t get_input_width() const {
+        if (!inference_) throw std::runtime_error("Segmenter not initialized");
+        auto &cfg = inference_->GetConfig();
+        return static_cast<size_t>(cfg.img_scale.width > 0 ? cfg.img_scale.width : cfg.class_scale);
+    }
+
+    size_t get_input_height() const {
+        if (!inference_) throw std::runtime_error("Segmenter not initialized");
+        auto &cfg = inference_->GetConfig();
+        return static_cast<size_t>(cfg.img_scale.height > 0 ? cfg.img_scale.height : cfg.class_scale);
+    }
+
+private:
     std::unique_ptr<inference::BaseInference> inference_;
 };
 
-SegmenterImpl::SegmenterImpl(const std::string &model_path, const std::string &device,
-                             const std::vector<std::string> &class_names)
-    : pImpl_(std::make_unique<Impl>(model_path, device, class_names)) {}
+Segmenter::Segmenter(const std::string &model_path, const std::string &label_path,
+                     int device_id, const std::string &config_path)
+    : m_pHandle(std::make_shared<SegmenterPrivate>(model_path, label_path, device_id, config_path)) {}
 
-SegmenterImpl::~SegmenterImpl() = default;
+Segmenter::~Segmenter() = default;
 
-JHDeepCore::SegmentationResult SegmenterImpl::SegmentSingle(const cv::Mat &image) {
-    if (!pImpl_ || !pImpl_->inference_) {
-        throw std::runtime_error("Segmenter not initialized");
-    }
-
-    if (image.empty()) {
-        throw std::runtime_error("Input image is empty");
-    }
-
-    auto *onnx_inference = dynamic_cast<inference::OnnxInference *>(pImpl_->inference_.get());
-    if (onnx_inference) {
-        return onnx_inference->InferSingleSegmentation(image);
-    }
-
-    throw std::runtime_error("Unsupported inference type");
+void Segmenter::process(std::vector<cv::Mat> &images, std::vector<SegmentationResult> &results) {
+    m_pHandle->process(images, results);
 }
 
-std::vector<JHDeepCore::SegmentationResult> SegmenterImpl::SegmentBatch(const std::vector<cv::Mat> &images) {
-    if (!pImpl_ || !pImpl_->inference_) {
-        throw std::runtime_error("Segmenter not initialized");
-    }
+size_t Segmenter::GetBatch() const { return m_pHandle->get_batch(); }
+size_t Segmenter::GetInputWidth() const { return m_pHandle->get_input_width(); }
+size_t Segmenter::GetInputHeight() const { return m_pHandle->get_input_height(); }
 
-    if (images.empty()) {
-        return {};
-    }
-
-    auto *onnx_inference = dynamic_cast<inference::OnnxInference *>(pImpl_->inference_.get());
-    if (onnx_inference) {
-        return onnx_inference->InferBatchSegmentation(images);
-    }
-
-    throw std::runtime_error("Unsupported inference type");
-}
-
-} // namespace segment
 } // namespace JHDeepCore

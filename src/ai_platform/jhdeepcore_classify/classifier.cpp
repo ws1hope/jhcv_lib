@@ -1,59 +1,63 @@
-#include "jhdeepcore_classify/classifier.h"
+#include "JHDeepCore.h"
 #include "jhdeepcore_inference/inference_factory.h"
 #include "jhdeepcore_inference/onnx_inference.h"
 #include <stdexcept>
 
 namespace JHDeepCore {
-namespace classify {
 
-class ClassifierImpl::Impl {
-  public:
-    Impl(const std::string &model_path, const std::string &device,
-         const std::vector<std::string> &class_names)
-        : inference_(inference::InferenceFactory::CreateInference(model_path, device, class_names)) {}
+class ClassifierPrivate {
+public:
+    ClassifierPrivate(const std::string &model_path, const std::string &label_path,
+                      int device_id, const std::string &config_path)
+    {
+        std::string device_str = device_id >= 0 ? "cuda" : "cpu";
+        std::vector<std::string> names;
+        if (!label_path.empty()) names.push_back(label_path);
+        inference_ = inference::InferenceFactory::CreateInference(model_path, device_str, names);
+    }
 
+    void process(std::vector<cv::Mat> &images, std::vector<ClassificationResult> &results) {
+        if (!inference_) throw std::runtime_error("Classifier not initialized");
+        if (images.empty()) {
+            results.clear();
+            return;
+        }
+        auto *onnx = dynamic_cast<inference::OnnxInference *>(inference_.get());
+        if (!onnx) throw std::runtime_error("Unsupported inference type");
+        results = onnx->InferBatch(images);
+    }
+
+    size_t get_batch() const {
+        if (!inference_) throw std::runtime_error("Classifier not initialized");
+        return static_cast<size_t>(inference_->GetConfig().batch_size);
+    }
+
+    size_t get_input_width() const {
+        if (!inference_) throw std::runtime_error("Classifier not initialized");
+        return static_cast<size_t>(inference_->GetConfig().class_scale);
+    }
+
+    size_t get_input_height() const {
+        if (!inference_) throw std::runtime_error("Classifier not initialized");
+        return static_cast<size_t>(inference_->GetConfig().class_scale);
+    }
+
+private:
     std::unique_ptr<inference::BaseInference> inference_;
 };
 
-ClassifierImpl::ClassifierImpl(const std::string &model_path, const std::string &device,
-                               const std::vector<std::string> &class_names)
-    : pImpl_(std::make_unique<Impl>(model_path, device, class_names)) {}
+Classifier::Classifier(const std::string &model_path, const std::string &label_path,
+                       int device_id, const std::string &config_path)
+    : m_pHandle(std::make_shared<ClassifierPrivate>(model_path, label_path, device_id, config_path)) {}
 
-ClassifierImpl::~ClassifierImpl() = default;
+Classifier::~Classifier() = default;
 
-JHDeepCore::ClassificationResult ClassifierImpl::ClassifySingle(const cv::Mat &image) {
-    if (!pImpl_ || !pImpl_->inference_) {
-        throw std::runtime_error("Classifier not initialized");
-    }
-
-    if (image.empty()) {
-        throw std::runtime_error("Input image is empty");
-    }
-
-    auto *onnx_inference = dynamic_cast<inference::OnnxInference *>(pImpl_->inference_.get());
-    if (onnx_inference) {
-        return onnx_inference->InferSingle(image);
-    }
-
-    throw std::runtime_error("Unsupported inference type");
+void Classifier::process(std::vector<cv::Mat> &images, std::vector<ClassificationResult> &results) {
+    m_pHandle->process(images, results);
 }
 
-std::vector<JHDeepCore::ClassificationResult> ClassifierImpl::ClassifyBatch(const std::vector<cv::Mat> &images) {
-    if (!pImpl_ || !pImpl_->inference_) {
-        throw std::runtime_error("Classifier not initialized");
-    }
+size_t Classifier::GetBatch() const { return m_pHandle->get_batch(); }
+size_t Classifier::GetInputWidth() const { return m_pHandle->get_input_width(); }
+size_t Classifier::GetInputHeight() const { return m_pHandle->get_input_height(); }
 
-    if (images.empty()) {
-        return {};
-    }
-
-    auto *onnx_inference = dynamic_cast<inference::OnnxInference *>(pImpl_->inference_.get());
-    if (onnx_inference) {
-        return onnx_inference->InferBatch(images);
-    }
-
-    throw std::runtime_error("Unsupported inference type");
-}
-
-} // namespace classify
 } // namespace JHDeepCore

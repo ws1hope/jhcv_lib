@@ -5,17 +5,7 @@
 #include <vector>
 #include <memory>
 
-#include "json.hpp"
-
 namespace JHDeepCore {
-
-enum class TaskType {
-    CLASSIFICATION,
-    SEGMENTATION,
-    DETECTION,
-    INSTANCE_SEGMENTATION,
-    OCR
-};
 
 struct ClassificationResult {
     int class_id;
@@ -61,96 +51,103 @@ struct OCRResult {
     std::vector<OCRBox> boxes;
 };
 
+class ClassifierPrivate;
 class Classifier {
   public:
-    Classifier(const std::string &model_path, const std::string &device = "cpu");
+    Classifier(const std::string &model_path, const std::string &label_path = "",
+               int device_id = 0, const std::string &config_path = "");
     ~Classifier();
 
     Classifier(const Classifier &) = delete;
     Classifier &operator=(const Classifier &) = delete;
 
-    ClassificationResult ClassifySingle(const cv::Mat &image);
-    std::vector<ClassificationResult> ClassifyBatch(const std::vector<cv::Mat> &images);
+    void process(std::vector<cv::Mat> &images, std::vector<ClassificationResult> &results);
+    size_t GetBatch() const;
+    size_t GetInputWidth() const;
+    size_t GetInputHeight() const;
 
   private:
-    class Impl;
-    std::unique_ptr<Impl> pImpl_;
+    std::shared_ptr<ClassifierPrivate> m_pHandle;
 };
 
-class Segmenter {
-  public:
-    Segmenter(const std::string &model_path, const std::string &device = "cpu");
-    ~Segmenter();
-
-    Segmenter(const Segmenter &) = delete;
-    Segmenter &operator=(const Segmenter &) = delete;
-
-    SegmentationResult SegmentSingle(const cv::Mat &image);
-    std::vector<SegmentationResult> SegmentBatch(const std::vector<cv::Mat> &images);
-
-  private:
-    class Impl;
-    std::unique_ptr<Impl> pImpl_;
-};
-
+class DetectorPrivate;
 class Detector {
   public:
-    Detector(const std::string &model_path, const std::string &device = "cpu");
+    Detector(const std::string &model_path, const std::string &label_path = "",
+             int device_id = 0, const std::string &config_path = "");
     ~Detector();
 
     Detector(const Detector &) = delete;
     Detector &operator=(const Detector &) = delete;
 
-    DetectionResult DetectSingle(const cv::Mat &image);
-    std::vector<DetectionResult> DetectBatch(const std::vector<cv::Mat> &images);
+    void process(std::vector<cv::Mat> &images, std::vector<DetectionResult> &results);
+    size_t GetBatch() const;
+    size_t GetInputWidth() const;
+    size_t GetInputHeight() const;
 
   private:
-    class Impl;
-    std::unique_ptr<Impl> pImpl_;
+    std::shared_ptr<DetectorPrivate> m_pHandle;
 };
 
+class SegmenterPrivate;
+class Segmenter {
+  public:
+    Segmenter(const std::string &model_path, const std::string &label_path = "",
+              int device_id = 0, const std::string &config_path = "");
+    ~Segmenter();
+
+    Segmenter(const Segmenter &) = delete;
+    Segmenter &operator=(const Segmenter &) = delete;
+
+    void process(std::vector<cv::Mat> &images, std::vector<SegmentationResult> &results);
+    size_t GetBatch() const;
+    size_t GetInputWidth() const;
+    size_t GetInputHeight() const;
+
+  private:
+    std::shared_ptr<SegmenterPrivate> m_pHandle;
+};
+
+class InstanceSegmenterPrivate;
 class InstanceSegmenter {
   public:
-    InstanceSegmenter(const std::string &model_path, const std::string &device = "cpu",
-                      const std::vector<std::string> &class_names = {});
+    InstanceSegmenter(const std::string &model_path, const std::string &label_path = "",
+                      int device_id = 0, const std::string &config_path = "");
     ~InstanceSegmenter();
 
     InstanceSegmenter(const InstanceSegmenter &) = delete;
     InstanceSegmenter &operator=(const InstanceSegmenter &) = delete;
 
-    InstanceSegmentationResult SegmentSingle(const cv::Mat &image);
-    std::vector<InstanceSegmentationResult> SegmentBatch(const std::vector<cv::Mat> &images);
+    void process(std::vector<cv::Mat> &images, std::vector<InstanceSegmentationResult> &results);
+    size_t GetBatch() const;
+    size_t GetInputWidth() const;
+    size_t GetInputHeight() const;
 
   private:
-    class Impl;
-    std::unique_ptr<Impl> pImpl_;
+    std::shared_ptr<InstanceSegmenterPrivate> m_pHandle;
 };
 
+class OCRRecognizerPrivate;
 class OCRRecognizer {
   public:
-    struct Params {
-        std::string rec_model_path;
-        std::string rec_label_path;
-        std::string device = "cpu";
-        float text_rec_score_thresh = 0.5f;
-        bool useGPU = true;
-        int gpuId = 0;
-    };
-
-    explicit OCRRecognizer(const Params &params);
+    OCRRecognizer(const std::string &model_path, const std::string &label_path = "",
+                  int device_id = 0, const std::string &config_path = "",
+                  float score_threshold = 0.5f);
     ~OCRRecognizer();
 
     OCRRecognizer(const OCRRecognizer &) = delete;
     OCRRecognizer &operator=(const OCRRecognizer &) = delete;
 
-    OCRResult Recognize(const cv::Mat &text_image);
-    OCRResult Recognize(const std::string &image_path);
+    void process(std::vector<cv::Mat> &images, std::vector<OCRResult> &results);
+    size_t GetBatch() const;
+    size_t GetInputWidth() const;
+    size_t GetInputHeight() const;
 
   private:
-    class Impl;
-    std::unique_ptr<Impl> pImpl_;
+    std::shared_ptr<OCRRecognizerPrivate> m_pHandle;
 };
 
+class OCRServicePrivate;
 class OCRService {
   public:
     explicit OCRService(const std::string &config_path);
@@ -160,14 +157,13 @@ class OCRService {
     OCRService &operator=(const OCRService &) = delete;
 
     const struct ServerConfig &config() const;
-    nlohmann::json handleRequest(const std::string &req_body);
+    std::string handleRequest(const std::string &req_body);
     int runLocalTest(const std::string &image_path,
                      const std::string &heat_number,
                      int station_id);
 
   private:
-    class Impl;
-    std::unique_ptr<Impl> pImpl_;
+    std::shared_ptr<OCRServicePrivate> m_pHandle;
 };
 
 std::string GetOptimalDevice();

@@ -4,16 +4,17 @@
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [device]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [label_path] [device_id]" << std::endl;
         return 1;
     }
 
     std::string model_path = argv[1];
     std::string image_path = argv[2];
-    std::string device = (argc > 3) ? argv[3] : "cpu";
+    std::string label_path = (argc > 3) ? argv[3] : "";
+    int device_id = (argc > 4) ? std::stoi(argv[4]) : 0;
 
     try {
-        JHDeepCore::Segmenter segmenter(model_path, device);
+        JHDeepCore::Segmenter segmenter(model_path, label_path, device_id);
 
         cv::Mat image = cv::imread(image_path);
         if (image.empty()) {
@@ -21,11 +22,15 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        auto result = segmenter.SegmentSingle(image);
+        std::vector<cv::Mat> images = {image};
+        std::vector<JHDeepCore::SegmentationResult> results;
+        segmenter.process(images, results);
 
-        std::cout << "Segmentation Result:" << std::endl;
-        std::cout << "  Num classes: " << result.num_classes << std::endl;
-        std::cout << "  Mask size: " << result.segmentation_mask.cols << "x" << result.segmentation_mask.rows << std::endl;
+        for (auto& r : results) {
+            std::cout << "Segmentation Result:" << std::endl;
+            std::cout << "  Num classes: " << r.num_classes << std::endl;
+            std::cout << "  Mask size: " << r.segmentation_mask.cols << "x" << r.segmentation_mask.rows << std::endl;
+        }
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

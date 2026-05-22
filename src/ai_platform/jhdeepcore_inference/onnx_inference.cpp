@@ -9,16 +9,21 @@
 namespace JHDeepCore {
 namespace inference {
 
-static std::wstring to_wide(const std::string &s) {
+static auto to_model_path(const std::string &s) {
 #ifdef _WIN32
-    if (s.empty()) return std::wstring();
-    int sz = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    if (sz <= 0) return std::wstring(s.begin(), s.end());
-    std::wstring ws(sz - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &ws[0], sz);
+    std::wstring ws;
+    if (!s.empty()) {
+        int sz = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+        if (sz > 0) {
+            ws.resize(sz - 1);
+            MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &ws[0], sz);
+        } else {
+            ws = std::wstring(s.begin(), s.end());
+        }
+    }
     return ws;
 #else
-    return std::wstring(s.begin(), s.end());
+    return s;
 #endif
 }
 
@@ -64,8 +69,8 @@ OnnxInference::~OnnxInference() {
 bool OnnxInference::LoadModel() {
 #ifdef ONNXRUNTIME_FOUND
     try {
-        std::wstring wpath = to_wide(model_path_);
-        session_ = std::make_unique<Ort::Session>(env_, wpath.c_str(), session_options_);
+        auto model_path = to_model_path(model_path_);
+        session_ = std::make_unique<Ort::Session>(env_, model_path.c_str(), session_options_);
 
         Ort::AllocatorWithDefaultOptions allocator;
 

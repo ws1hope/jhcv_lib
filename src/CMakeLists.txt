@@ -157,16 +157,28 @@ target_link_libraries(jhcv_lib PUBLIC
     ${OpenCV_LIBS}
     ${ONNX_CPU_LIBS}
     third_party_lib
-    PRIVATE
-    ${YAML_CPP_ROOT}/lib/yaml-cpp.lib
 )
+
+if(WIN32)
+    target_link_libraries(jhcv_lib PUBLIC
+        ${YAML_CPP_ROOT}/lib/yaml-cpp.lib
+    )
+elseif(APPLE)
+    target_link_libraries(jhcv_lib PUBLIC
+        ${YAML_CPP_ROOT}/lib/libyaml-cpp.dylib
+    )
+else()
+    target_link_libraries(jhcv_lib PUBLIC
+        yaml-cpp
+    )
+endif()
 
 if(ENABLE_CUDA)
     target_link_libraries(jhcv_lib PUBLIC ${ONNX_GPU_LIBS})
 endif()
 
 target_link_directories(jhcv_lib PRIVATE
-    ${YAML_CPP_ROOT}/lib
+    ${YAML_CPP_LIB_DIR}
 )
 
 set_target_properties(jhcv_lib PROPERTIES

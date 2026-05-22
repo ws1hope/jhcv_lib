@@ -2,54 +2,45 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug YOLO (GPU)",
-            "type": "cppvsdbg",
+            "name": "Debug YOLO (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/yolo_inference.exe",
+            "program": "${workspaceFolder}/build/bin/yolo_inference",
             "args": [
-                "-m", "${workspaceFolder}/models/model.onnx",
-                "-i", "${workspaceFolder}/images/test.jpg",
+                "-m", "${workspaceFolder}/models/det/best.onnx",
+                "-i", "${workspaceFolder}/images/test_det.png",
                 "-o", "${workspaceFolder}/images/result.jpg"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "Debug OCR",
-            "type": "cppvsdbg",
+            "name": "Debug OCR (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/ocr_inference.exe",
+            "program": "${workspaceFolder}/build/bin/ocr_inference",
             "args": [
-                "rec", //rec det all
+                "rec",
                 "${workspaceFolder}/images/image.png",
-                //"${workspaceFolder}/models/ocr/det_model.onnx", det模式启用
                 "${workspaceFolder}/models/ocr/rec_model.onnx",
                 "${workspaceFolder}/models/ocr/best.yaml"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "JHDeepCore Classify",
-            "type": "cppvsdbg",
+            "name": "JHDeepCore Classify (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/jhdeepcore_cls_test.exe",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_cls_test",
             "args": [
                 "${workspaceFolder}/models/cls/resnet18_cls3.onnx",
                 "${workspaceFolder}/images/test_cls.jpg",
@@ -57,41 +48,33 @@
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "JHDeepCore Detect",
-            "type": "cppvsdbg",
+            "name": "JHDeepCore Detect (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/jhdeepcore_det_test.exe",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_det_test",
             "args": [
                 "${workspaceFolder}/models/det/best.onnx",
                 "${workspaceFolder}/images/test_det.png",
-                "gpu"
+                "cpu"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "JHDeepCore Segment",
-            "type": "cppvsdbg",
+            "name": "JHDeepCore Segment (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/jhdeepcore_seg_test.exe",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_seg_test",
             "args": [
                 "${workspaceFolder}/models/seg/best.onnx",
                 "${workspaceFolder}/images/test_seg.png",
@@ -99,41 +82,33 @@
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "JHDeepCore InstanceSeg",
-            "type": "cppvsdbg",
+            "name": "JHDeepCore InstanceSeg (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/jhdeepcore_iseg_test.exe",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_iseg_test",
             "args": [
                 "${workspaceFolder}/models/instance_segment/best.onnx",
                 "${workspaceFolder}/images/test_isg.jpg",
-                "gpu"
+                "cpu"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "JHDeepCore OCR",
-            "type": "cppvsdbg",
+            "name": "JHDeepCore OCR (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/jhdeepcore_ocr_test.exe",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_ocr_test",
             "args": [
                 "${workspaceFolder}/models/ocr/rec_model.onnx",
                 "${workspaceFolder}/models/ocr/best.yaml",
@@ -142,20 +117,16 @@
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "Debug PenmaRec",
-            "type": "cppvsdbg",
+            "name": "Debug PenmaRec (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/penma_rec.exe",
+            "program": "${workspaceFolder}/build/bin/penma_rec",
             "args": [
                 "-i", "${workspaceFolder}/images/yuanbiao.jpg",
                 "-l", "${workspaceFolder}/models/penma_rec/tiebiao_best_label.onnx",
@@ -168,20 +139,16 @@
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "Debug PenmaRec DLL",
-            "type": "cppvsdbg",
+            "name": "Debug PenmaRec DLL (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/penma_rec_dll_test.exe",
+            "program": "${workspaceFolder}/build/bin/penma_rec_dll_test",
             "args": [
                 "-i", "${workspaceFolder}/images/test_seg.png",
                 "-l", "${workspaceFolder}/models/penma_rec/tiebiao_best_label.onnx",
@@ -194,38 +161,31 @@
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
             "preLaunchTask": "build"
         },
         {
-            "name": "dabang_jiguang - HTTP server",
-            "type": "cppvsdbg",
+            "name": "dabang_jiguang - HTTP server (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/dabang_jiguang.exe",
+            "program": "${workspaceFolder}/build/bin/dabang_jiguang",
             "args": [
                 "-c",
                 "test/dabang_jiguang/config.yaml"
             ],
+            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
-            ],
-            "console": "integratedTerminal"
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
         },
         {
-            "name": "dabang_jiguang - local test",
-            "type": "cppvsdbg",
+            "name": "dabang_jiguang - local test (Mac/Linux)",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/bin/Release/dabang_jiguang.exe",
+            "program": "${workspaceFolder}/build/bin/dabang_jiguang",
             "args": [
                 "--test",
                 "-c", "test/dabang_jiguang/config.yaml",
@@ -233,14 +193,25 @@
                 "-H", "12345678",
                 "-s", "1"
             ],
+            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    "name": "PATH",
-                    "value": "${workspaceFolder}\\build\\bin\\Release;G:\\3thirdparty\\onnxruntime\\lib;G:\\3thirdparty\\opencv\\build\\x64\\vc16\\bin;C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.2\\bin;G:\\3thirdparty\\tensorrt\\lib;${env:PATH}"
-                }
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
+        },
+        {
+            "name": "tiebiao (Mac/Linux)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/tiebiao",
+            "args": [
+                "-c", "test/tiebiao/config.yaml"
             ],
-            "console": "integratedTerminal"
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb"
         }
     ]
 }

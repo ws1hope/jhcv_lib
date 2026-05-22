@@ -4,9 +4,15 @@
 #include <iostream>
 #include <sstream>
 
+#ifdef _WIN32
 #include <direct.h>
 #include <io.h>
 #include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/stat.h>
+#include <ctime>
+#endif
 
 #include <opencv2/imgproc.hpp>
 
@@ -87,6 +93,7 @@ std::vector<std::string> FileHelper::splitStringByCsharp(const std::string& str)
 
 bool FileHelper::ensureDirectoryExists(const std::string& path)
 {
+#ifdef _WIN32
     if (_access(path.c_str(), 0) != 0) {
         if (_mkdir(path.c_str()) != 0) {
             std::string parent = path;
@@ -97,11 +104,24 @@ bool FileHelper::ensureDirectoryExists(const std::string& path)
             _mkdir(path.c_str());
         }
     }
+#else
+    if (access(path.c_str(), F_OK) != 0) {
+        if (mkdir(path.c_str(), 0755) != 0) {
+            std::string parent = path;
+            size_t pos = parent.find_last_of("\\/");
+            if (pos != std::string::npos) {
+                ensureDirectoryExists(parent.substr(0, pos));
+            }
+            mkdir(path.c_str(), 0755);
+        }
+    }
+#endif
     return true;
 }
 
 void FileHelper::writeLog(std::ofstream& fout, const std::string& msg)
 {
+#ifdef _WIN32
     SYSTEMTIME sys;
     GetLocalTime(&sys);
     fout << msg << std::endl;
@@ -110,6 +130,13 @@ void FileHelper::writeLog(std::ofstream& fout, const std::string& msg)
          << std::setfill('0') << std::setw(2) << sys.wHour
          << std::setfill('0') << std::setw(2) << sys.wMinute
          << std::setfill('0') << std::setw(2) << sys.wSecond << "]" << std::endl;
+#else
+    time_t now = time(nullptr);
+    char timestamp[20];
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d%H%M%S", localtime(&now));
+    fout << msg << std::endl;
+    fout << "timestamp[" << timestamp << "]" << std::endl;
+#endif
 }
 
 void FileHelper::createSplitDirectories(const std::string& split_dir, int station_id, const tm* t)

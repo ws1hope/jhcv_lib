@@ -9,6 +9,7 @@
 #include <array>
 #include <regex>
 #include <chrono>
+#include <thread>
 
 #include <onnxruntime_cxx_api.h>
 
@@ -181,8 +182,12 @@ static void initSession(const std::string &model_path, bool use_gpu, int gpu_id,
     std::cout << "[INFO] Using CPU (CUDA not enabled)" << std::endl;
 #endif
 
+#ifdef _WIN32
     std::wstring wideModelPath(model_path.begin(), model_path.end());
     session = std::make_unique<Ort::Session>(env, wideModelPath.c_str(), sessionOptions);
+#else
+    session = std::make_unique<Ort::Session>(env, model_path.c_str(), sessionOptions);
+#endif
 
     Ort::AllocatorWithDefaultOptions allocator;
 

@@ -4,13 +4,34 @@
         {
             "label": "configure",
             "type": "shell",
+            "command": "sh",
+            "args": [
+                "-c",
+                "mkdir -p ${workspaceFolder}/build && cmake -B ${workspaceFolder}/build -S ${workspaceFolder} -DENABLE_CUDA=OFF"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "CMake configure for macOS/Linux"
+        },
+        {
+            "label": "configure windows",
+            "type": "shell",
             "command": "cmd",
             "args": [
                 "/c",
-                "if not exist \"${workspaceFolder}\\build\" mkdir \"${workspaceFolder}\\build\" && cmake -B \"${workspaceFolder}/build\" -S \"${workspaceFolder}\" -G \"Visual Studio 17 2022\" -A x64 -T v143"
+                "if not exist \"${workspaceFolder}\\build\" mkdir \"${workspaceFolder}\\build\" && cmake -B \"${workspaceFolder}/build\" -S \"${workspaceFolder}\" -G \"Visual Studio 17 2022\" -A x64 -T v143 -DENABLE_CUDA=ON"
             ],
             "problemMatcher": [],
-            "detail": "CMake configure"
+            "detail": "CMake configure for Windows",
+            "windows": {
+                "command": "cmd",
+                "args": [
+                    "/c",
+                    "if not exist \"${workspaceFolder}\\build\" mkdir \"${workspaceFolder}\\build\" && cmake -B \"${workspaceFolder}/build\" -S \"${workspaceFolder}\" -G \"Visual Studio 17 2022\" -A x64 -T v143 -DENABLE_CUDA=ON"
+                ]
+            }
         },
         {
             "label": "build release",
@@ -18,9 +39,13 @@
             "command": "cmake",
             "args": [
                 "--build", "${workspaceFolder}/build",
-                "--config", "Release"
+                "--config", "Release",
+                "-j", "4"
             ],
-            "problemMatcher": "$msCompile",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$gcc",
             "detail": "CMake build Release"
         },
         {
@@ -29,10 +54,39 @@
             "command": "cmake",
             "args": [
                 "--build", "${workspaceFolder}/build",
-                "--config", "Debug"
+                "--config", "Debug",
+                "-j", "4"
             ],
-            "problemMatcher": "$msCompile",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$gcc",
             "detail": "CMake build Debug"
+        },
+        {
+            "label": "clean",
+            "type": "shell",
+            "command": "sh",
+            "args": [
+                "-c",
+                "rm -rf ${workspaceFolder}/build/*"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Clean build directory"
+        },
+        {
+            "label": "clean windows",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "if exist ${workspaceFolder}\\build rmdir /s /q ${workspaceFolder}\\build"
+            ],
+            "problemMatcher": [],
+            "detail": "Clean build directory (Windows)"
         },
         {
             "label": "build",

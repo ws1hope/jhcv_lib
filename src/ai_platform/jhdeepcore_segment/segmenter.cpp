@@ -34,13 +34,13 @@ public:
 
     size_t get_input_width() const {
         if (!inference_) throw std::runtime_error("Segmenter not initialized");
-        auto &cfg = inference_->GetConfig();
+        auto cfg = inference_->GetConfig();
         return static_cast<size_t>(cfg.img_scale.width > 0 ? cfg.img_scale.width : cfg.class_scale);
     }
 
     size_t get_input_height() const {
         if (!inference_) throw std::runtime_error("Segmenter not initialized");
-        auto &cfg = inference_->GetConfig();
+        auto cfg = inference_->GetConfig();
         return static_cast<size_t>(cfg.img_scale.height > 0 ? cfg.img_scale.height : cfg.class_scale);
     }
 

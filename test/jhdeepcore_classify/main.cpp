@@ -4,17 +4,21 @@
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [label_path] [device_id]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [device]" << std::endl;
         return 1;
     }
 
     std::string model_path = argv[1];
     std::string image_path = argv[2];
-    std::string label_path = (argc > 3) ? argv[3] : "";
-    int device_id = (argc > 4) ? std::stoi(argv[4]) : 0;
+    std::string device = (argc > 3) ? argv[3] : "cpu";
+
+    int device_id = 0;
+    if (device == "gpu" || device == "cuda") {
+        device_id = 0;
+    }
 
     try {
-        JHDeepCore::Classifier classifier(model_path, label_path, device_id);
+        JHDeepCore::Classifier classifier(model_path, "", device_id);
 
         cv::Mat image = cv::imread(image_path);
         if (image.empty()) {

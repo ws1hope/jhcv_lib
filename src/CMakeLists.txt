@@ -75,13 +75,16 @@ set(AI_PLATFORM_MAIN_SOURCES
 
 # nisco_project 模块
 set(NISCO_PROJECT_SOURCES
-    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/dabang_jiguang_service.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/dabang_jiguang/dabang_jiguang_service.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tiebiao/tiebiao_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tiebiao/tiebiao_service.cpp
 )
 
 # utils 模块
 set(UTILS_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/utils/file_utils.cpp
     ${CMAKE_CURRENT_LIST_DIR}/utils/infer_utils.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/utils/image_utils.cpp
 )
 
 # 所有源文件
@@ -115,6 +118,8 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_instance_segment
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_platform/jhdeepcore_ocr
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project
+    ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/dabang_jiguang
+    ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/tiebiao
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )

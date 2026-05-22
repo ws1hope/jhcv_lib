@@ -93,7 +93,7 @@ public:
         std::vector<DetectionResult> label_results;
         det_label_->process(label_imgs, label_results);
         DetectionResult label_result = label_results.empty() ? DetectionResult{} : label_results[0];
-
+        
         if (verbose) {
             std::cout << "[DEBUG] pic " << pic_number + 1
                  << " labels: " << label_result.num_detections << std::endl;

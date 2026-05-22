@@ -19,6 +19,30 @@ struct ServerConfig {
     std::string device = "cuda";
 };
 
+struct TiebiaoServerConfig {
+    std::string service_name = "tiebiao";
+    std::string host = "0.0.0.0";
+    int port = 8081;
+    std::string result_dir = "D:\\TiebiaoResult";
+    std::string split_dir = "D:\\TiebiaoSplit";
+    std::string log_dir = "D:\\TiebiaoLog";
+    std::string label_seg_model;
+    std::string char_seg_model;
+    std::string ocr_model;
+    std::string ocr_label;
+    std::string direction_cls_model;
+    std::string device = "cuda";
+};
+
+struct TiebiaoConfig {
+    std::string label_seg_model;
+    std::string char_seg_model;
+    std::string ocr_model;
+    std::string ocr_label;
+    std::string direction_cls_model;
+    std::string device;
+};
+
 } // namespace JHDeepCore
 
 class FileHelper {
@@ -26,6 +50,8 @@ public:
     FileHelper() = delete;
 
     static JHDeepCore::ServerConfig loadConfig(const std::string& config_path);
+
+    static JHDeepCore::TiebiaoServerConfig loadTiebiaoConfig(const std::string& config_path);
 
     static std::vector<std::string> splitStringByCsharp(const std::string& str);
 

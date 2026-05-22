@@ -42,6 +42,38 @@ JHDeepCore::ServerConfig FileHelper::loadConfig(const std::string& config_path)
     return cfg;
 }
 
+JHDeepCore::TiebiaoServerConfig FileHelper::loadTiebiaoConfig(const std::string& config_path)
+{
+    JHDeepCore::TiebiaoServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+    }
+
+    if (node["output"]) {
+        cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
+        cfg.split_dir = node["output"]["split_dir"].as<std::string>(cfg.split_dir);
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+    }
+
+    if (node["models"]) {
+        cfg.label_seg_model = node["models"]["label_seg_model"].as<std::string>("");
+        cfg.char_seg_model = node["models"]["char_seg_model"].as<std::string>("");
+        cfg.ocr_model = node["models"]["ocr_model"].as<std::string>("");
+        cfg.ocr_label = node["models"]["ocr_label"].as<std::string>("");
+        cfg.direction_cls_model = node["models"]["direction_cls_model"].as<std::string>("");
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    return cfg;
+}
+
 std::vector<std::string> FileHelper::splitStringByCsharp(const std::string& str)
 {
     std::vector<std::string> tokens;

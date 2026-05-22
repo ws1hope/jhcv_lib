@@ -166,6 +166,25 @@ class OCRService {
     std::shared_ptr<OCRServicePrivate> m_pHandle;
 };
 
+class TiebiaoServicePrivate;
+class TiebiaoService {
+  public:
+    explicit TiebiaoService(const std::string &config_path);
+    ~TiebiaoService();
+
+    TiebiaoService(const TiebiaoService &) = delete;
+    TiebiaoService &operator=(const TiebiaoService &) = delete;
+
+    const struct TiebiaoServerConfig &config() const;
+    std::string handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int station_id);
+
+  private:
+    std::shared_ptr<TiebiaoServicePrivate> m_pHandle;
+};
+
 std::string GetOptimalDevice();
 
 } // namespace JHDeepCore

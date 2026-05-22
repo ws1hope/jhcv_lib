@@ -1,0 +1,19 @@
+server:
+  service_name: "CharacterDetect"
+  host: "127.0.0.1"
+  port: 8080
+
+models:
+  label_seg_model: "models/tiebiao_best_label.onnx"
+  char_seg_model: "models/tiebiao_best_zifu.onnx"
+  ocr_model: "models/rec_model.onnx"
+  ocr_label: "models/best.yaml"
+  direction_cls_model: "models/cls_model.onnx"
+
+inference:
+  device: "cpu"
+
+output:
+  result_dir: "D:\\TiebiaoResult"
+  split_dir: "D:\\TiebiaoSplit"
+  log_dir: "D:\\TiebiaoLog"

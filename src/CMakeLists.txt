@@ -158,7 +158,7 @@ target_link_libraries(jhcv_lib PUBLIC
     ${ONNX_CPU_LIBS}
     third_party_lib
     PRIVATE
-    ${PADDLE_ROOT}/third_party/install/yaml-cpp/lib/yaml-cpp.lib
+    ${YAML_CPP_ROOT}/lib/yaml-cpp.lib
 )
 
 if(ENABLE_CUDA)
@@ -166,7 +166,7 @@ if(ENABLE_CUDA)
 endif()
 
 target_link_directories(jhcv_lib PRIVATE
-    ${PADDLE_ROOT}/third_party/install/yaml-cpp/lib
+    ${YAML_CPP_ROOT}/lib
 )
 
 set_target_properties(jhcv_lib PROPERTIES

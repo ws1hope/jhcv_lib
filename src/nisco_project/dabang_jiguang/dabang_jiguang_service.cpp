@@ -3,6 +3,7 @@
 #include "infer_utils.h"
 #include "json.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <iostream>
@@ -93,13 +94,31 @@ public:
         std::vector<DetectionResult> label_results;
         det_label_->process(label_imgs, label_results);
         DetectionResult label_result = label_results.empty() ? DetectionResult{} : label_results[0];
-        
+
+        std::sort(label_result.detections.begin(), label_result.detections.end(),
+            [](const Detection& a, const Detection& b) {
+                return a.bbox.x > b.bbox.x;
+            });
+
         if (verbose) {
             std::cout << "[DEBUG] pic " << pic_number + 1
                  << " labels: " << label_result.num_detections << std::endl;
         }
 
         std::string ocr_combined;
+
+        struct CharDrawInfo {
+            cv::Rect bbox;
+            std::string text;
+        };
+        struct LabelDrawInfo {
+            cv::Rect roi;
+            std::string class_name;
+            float confidence;
+            std::vector<CharDrawInfo> chars;
+            std::string line_result;
+        };
+        std::vector<LabelDrawInfo> draw_infos;
 
         if (label_result.num_detections > 0) {
             for (int li = 0; li < label_result.num_detections; li++) {
@@ -137,8 +156,8 @@ public:
                 for (int ci = 0; ci < char_result.num_detections; ci++) {
                     auto& ch = char_result.detections[ci];
                     cv::Rect ch_roi = InferHelper::safeROI(
-                        ch.bbox.x, ch.bbox.y,
-                        ch.bbox.width, ch.bbox.height,
+                        ch.bbox.x - 5, ch.bbox.y - 4,
+                        ch.bbox.width + 10, ch.bbox.height + 8,
                         roi_img.cols, roi_img.rows);
 
                     if (ch_roi.area() <= 0) continue;
@@ -192,6 +211,22 @@ public:
                     ocr_combined += line_result;
                     std::cout << "[DEBUG] ocr_combined=\"" << ocr_combined << "\"" << std::endl;
                 }
+
+                LabelDrawInfo draw_info;
+                draw_info.roi = label_roi;
+                draw_info.class_name = label_det.class_name;
+                draw_info.confidence = label_det.confidence;
+                draw_info.line_result = line_result;
+                for (int ci = 0; ci < (int)valid_char_dets.size(); ci++) {
+                    CharDrawInfo cdi;
+                    cdi.bbox = InferHelper::safeROI(
+                        valid_char_dets[ci].bbox.x - 5, valid_char_dets[ci].bbox.y - 4,
+                        valid_char_dets[ci].bbox.width + 10, valid_char_dets[ci].bbox.height + 8,
+                        roi_img.cols, roi_img.rows);
+                    cdi.text = char_texts[ci];
+                    draw_info.chars.push_back(cdi);
+                }
+                draw_infos.push_back(draw_info);
             }
         }
 
@@ -199,6 +234,39 @@ public:
         auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
         if (verbose) {
             std::cout << "inference time: " << infer_ms << " ms" << std::endl;
+        }
+
+        cv::Mat annotated_img = src_img.clone();
+        for (int di = 0; di < (int)draw_infos.size(); di++) {
+            auto& info = draw_infos[di];
+            cv::rectangle(annotated_img, info.roi, cv::Scalar(0, 255, 0), 2);
+            std::string label_text = "label" + std::to_string(di + 1) + " " + info.class_name
+                                     + " " + cv::format("%.2f", info.confidence);
+            cv::putText(annotated_img, label_text,
+                        cv::Point(info.roi.x, info.roi.y - 5),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+
+            for (auto& ch : info.chars) {
+                cv::Rect char_on_src(
+                    info.roi.x + ch.bbox.x,
+                    info.roi.y + ch.bbox.y,
+                    ch.bbox.width,
+                    ch.bbox.height);
+                cv::rectangle(annotated_img, char_on_src, cv::Scalar(255, 0, 0), 2);
+            }
+        }
+
+        int text_y = 30;
+        int font_face = cv::FONT_HERSHEY_SIMPLEX;
+        double font_scale = 0.8;
+        int font_thickness = 2;
+        for (int di = 0; di < (int)draw_infos.size(); di++) {
+            auto& info = draw_infos[di];
+            std::string display_text = "label" + std::to_string(di + 1) + ": " + info.line_result;
+            cv::putText(annotated_img, display_text,
+                        cv::Point(10, text_y),
+                        font_face, font_scale, cv::Scalar(255, 255, 255), font_thickness);
+            text_y += 30;
         }
 
         time_t currtime = time(NULL);
@@ -247,12 +315,12 @@ public:
             }
 
             if (isOK) {
-                cv::imwrite(save_picture_name_split_ok, src_img);
+                cv::imwrite(save_picture_name_split_ok, annotated_img);
             } else {
-                cv::imwrite(save_picture_name_split_ng, src_img);
+                cv::imwrite(save_picture_name_split_ng, annotated_img);
             }
 
-            cv::imwrite(save_picture_name, src_img);
+            cv::imwrite(save_picture_name, annotated_img);
 
             result.state_flag = "OK";
             result.ocr_text = ocr_combined;
@@ -263,8 +331,8 @@ public:
                 std::cout << ">>> OK " << dd << std::endl;
             }
         } else {
-            cv::imwrite(save_picture_name, src_img);
-            cv::imwrite(save_picture_name_split_ng, src_img);
+            cv::imwrite(save_picture_name, annotated_img);
+            cv::imwrite(save_picture_name_split_ng, annotated_img);
 
             result.state_flag = "NG";
             result.picture_path = save_picture_name;

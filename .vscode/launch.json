@@ -229,7 +229,7 @@
             "args": [
                 "--test",
                 "-c", "test/dabang_jiguang/config.yaml",
-                "-i", "images/test_jiguang.jpg",
+                "-i", "images/test_db_jg.jpg",
                 "-H", "12345678",
                 "-s", "1"
             ],

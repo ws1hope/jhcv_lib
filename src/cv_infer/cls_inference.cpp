@@ -4,6 +4,7 @@
 #include <iostream>
 #include <numeric>
 #include <cmath>
+#include <thread>
 
 ResNetInference::ResNetInference(const ClsConfig& config)
     : m_config(config), m_env(ORT_LOGGING_LEVEL_WARNING, "resnet")
@@ -55,8 +56,12 @@ void ResNetInference::initSession()
     std::cout << "[INFO] Using CPU (CUDA not enabled)" << std::endl;
 #endif
 
+#ifdef _WIN32
     std::wstring wideModelPath(m_config.modelPath.begin(), m_config.modelPath.end());
     m_session = std::make_unique<Ort::Session>(m_env, wideModelPath.c_str(), sessionOptions);
+#else
+    m_session = std::make_unique<Ort::Session>(m_env, m_config.modelPath.c_str(), sessionOptions);
+#endif
 
     Ort::AllocatorWithDefaultOptions allocator;
 

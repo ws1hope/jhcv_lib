@@ -6,6 +6,7 @@
 #include <cmath>
 #include <codecvt>
 #include <locale>
+#include <thread>
 
 static std::vector<std::string> COCO_CLASSES = {
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
@@ -51,8 +52,12 @@ void YOLOInference::initSession()
     std::cout << "[INFO] Using CPU (CUDA not enabled)" << std::endl;
 #endif
 
+#ifdef _WIN32
     std::wstring wideModelPath(m_config.modelPath.begin(), m_config.modelPath.end());
     m_session = std::make_unique<Ort::Session>(m_env, wideModelPath.c_str(), sessionOptions);
+#else
+    m_session = std::make_unique<Ort::Session>(m_env, m_config.modelPath.c_str(), sessionOptions);
+#endif
 
     Ort::AllocatorWithDefaultOptions allocator;
 

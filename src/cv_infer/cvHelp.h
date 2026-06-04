@@ -2,7 +2,12 @@
 #include<iostream>
 #include <numeric>
 #include<opencv2/opencv.hpp>
+#ifdef _WIN32
 #include<io.h>
+#else
+#include<unistd.h>
+#include<sys/stat.h>
+#endif
 #include<math.h>
 
 #define PI       3.14159265358979323846
@@ -10,66 +15,66 @@ using namespace cv;
 using namespace std;
 
 struct OutputSeg {
-	int id;             //½á¹ûÀà±ðid
-	float confidence;   //½á¹ûÖÃÐÅ¶È
-	cv::Rect box;       //¾ØÐÎ¿ò
-	cv::Mat boxMask;       //¾ØÐÎ¿òÄÚmask£¬½ÚÊ¡ÄÚ´æ¿Õ¼äºÍ¼Ó¿ìËÙ¶È
+	int id;             //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½id
+	float confidence;   //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å¶ï¿½
+	cv::Rect box;       //ï¿½ï¿½ï¿½Î¿ï¿½
+	cv::Mat boxMask;       //ï¿½ï¿½ï¿½Î¿ï¿½ï¿½ï¿½maskï¿½ï¿½ï¿½ï¿½Ê¡ï¿½Ú´ï¿½Õ¼ï¿½Í¼Ó¿ï¿½ï¿½Ù¶ï¿½
 };
 
-//×Ö·ûÐý×ª½Ç¶È²ÎÊý
+//ï¿½Ö·ï¿½ï¿½ï¿½×ªï¿½Ç¶È²ï¿½ï¿½ï¿½
 struct OcrAngleParams
 {
-	int ocrCenterX;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃx
-	int ocrCenterY;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃy
-	float angle;//¼ÆËãµÄ×Ö·ûÇãÐ±½Ç¶È
-	int class_id;//Àà±ðÐòºÅ
-	Point2f p0;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê//Ð¡Í¼×ø±ê
-	Point2f p1;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê
-	Point2f p2;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê
-	Point2f p3;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê
+	int ocrCenterX;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½x
+	int ocrCenterY;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½y
+	float angle;//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½Ð±ï¿½Ç¶ï¿½
+	int class_id;//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	Point2f p0;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½//Ð¡Í¼ï¿½ï¿½ï¿½ï¿½
+	Point2f p1;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	Point2f p2;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	Point2f p3;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	/*Point2f P_top[4];*/
-	Point2i left_top;//×óÉÏ×ø±êµã
-	float height;//³¤±ßµÄ³¤¶È
+	Point2i left_top;//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	float height;//ï¿½ï¿½ï¿½ßµÄ³ï¿½ï¿½ï¿½
 
 };
 
 struct RotatedRect_my
 {
-	int CenterX;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃx
-	int CenterY;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃy
-	float angle;//ÇãÐ±½Ç¶È
-	Point2f p0;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê//Ð¡Í¼×ø±ê
-	Point2f p1;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê
-	Point2f p2;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê
-	Point2f p3;//×îÐ¡Íâ½Ó¾ØÐÎµÄËÄ¸ö¶¥µã×ø±ê
-	float height;//³¤±ßµÄ³¤¶È
+	int CenterX;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½x
+	int CenterY;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½y
+	float angle;//ï¿½ï¿½Ð±ï¿½Ç¶ï¿½
+	Point2f p0;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½//Ð¡Í¼ï¿½ï¿½ï¿½ï¿½
+	Point2f p1;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	Point2f p2;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	Point2f p3;//ï¿½ï¿½Ð¡ï¿½ï¿½Ó¾ï¿½ï¿½Îµï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	float height;//ï¿½ï¿½ï¿½ßµÄ³ï¿½ï¿½ï¿½
 };
 struct pointd {
 	double x;
 	double y;
 };
 
-//½ØÈ¡ÓÐÐ§ÇøÓòµÄ×Ö·û½á¹û
+//ï¿½ï¿½È¡ï¿½ï¿½Ð§ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½
 struct OcrRoiResult
 {
-	int CenterX;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃx//ÔÚÔ­Í¼µÄ×ø±ê
-	int CenterY;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃy
-	cv::Mat ocrPicture;//×Ö·ûÆ¬¶ÎµÄÍ¼Ïñ
+	int CenterX;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½x//ï¿½ï¿½Ô­Í¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	int CenterY;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½y
+	cv::Mat ocrPicture;//ï¿½Ö·ï¿½Æ¬ï¿½Îµï¿½Í¼ï¿½ï¿½
 };
 
 struct OcrRecognitionResult
 {
-	int CenterX;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃx//ÔÚÔ­Í¼µÄ×ø±ê
-	int CenterY;//×Ö·ûÖÐÐÄ×ø±êÎ»ÖÃy
-	string zifu;//×Ö·û½á¹û
-	int cls_label;//½Ç¶È·ÖÀà±êÇ©
+	int CenterX;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½x//ï¿½ï¿½Ô­Í¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	int CenterY;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½y
+	string zifu;//ï¿½Ö·ï¿½ï¿½ï¿½ï¿½
+	int cls_label;//ï¿½Ç¶È·ï¿½ï¿½ï¿½ï¿½Ç©
 };
 
 struct recDataRead
 {
-	int stationNumber;//¹¤Î»ºÅ
-	string imagePath;//Í¼ÏñÂ·¾¶
-	//string delimiter;//·Ö¸î·ûºÅ//Õ¼Î»Ê¹ÓÃ
+	int stationNumber;//ï¿½ï¿½Î»ï¿½ï¿½
+	string imagePath;//Í¼ï¿½ï¿½Â·ï¿½ï¿½
+	//string delimiter;//ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½//Õ¼Î»Ê¹ï¿½ï¿½
 };
 
 struct zifu_center_info {
@@ -82,15 +87,15 @@ bool cmp0(const RotatedRect_my& a, const RotatedRect_my& b);
 
 Mat Rotate(Mat img, int ocrCenterX, int ocrCenterY, float angle, int& xOffset, int& yOffset);
 Mat RotateOnly(Mat img, float angle);
-//Í¼ÏñÆ½ÒÆ
+//Í¼ï¿½ï¿½Æ½ï¿½ï¿½
 Mat imgTranslate(Mat& matSrc, int xOffset, int yOffset, bool bScale);
 
 OcrAngleParams Minrect(Mat img_th);
 
-//°´ÕÕ³¤¶È´óÐ¡£¬½øÐÐÃ°ÅÝ·¨µÄÅÅÐò
+//ï¿½ï¿½ï¿½Õ³ï¿½ï¿½È´ï¿½Ð¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã°ï¿½Ý·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 void bubbleSort_height(vector<OcrAngleParams>& nums);
 
-// ¼ÆËãµãpÎ§ÈÆµãcenterÄæÊ±ÕëÐý×ªangle¶ÈºóµÄÐÂ×ø±ê
+// ï¿½ï¿½ï¿½ï¿½ï¿½pÎ§ï¿½Æµï¿½centerï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½×ªangleï¿½Èºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 Point2f rotatePoint(const Point2f& p, const Point2f& center, float angle);
 
 void rotatePoint2(double angle, pointd& rotate_pt, pointd origin_pt, pointd center_pt);

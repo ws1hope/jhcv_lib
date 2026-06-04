@@ -49,6 +49,41 @@
                 "isDefault": true
             },
             "problemMatcher": []
+        },
+        {
+            "label": "mac configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "${workspaceFolder}/build",
+                "-S", "${workspaceFolder}",
+                "-DENABLE_CUDA=OFF"
+            ],
+            "problemMatcher": [],
+            "detail": "CMake configure (macOS)"
+        },
+        {
+            "label": "mac build",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "${workspaceFolder}/build",
+                "-j", "8"
+            ],
+            "problemMatcher": [],
+            "detail": "CMake build (macOS)"
+        },
+        {
+            "label": "mac build all",
+            "type": "shell",
+            "command": "echo",
+            "args": ["mac build complete"],
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "mac configure",
+                "mac build"
+            ],
+            "problemMatcher": []
         }
     ]
 }

@@ -68,6 +68,10 @@ set(AI_PLATFORM_OCR_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/ai_platform/jhdeepcore_ocr/ocr_recognizer.cpp
 )
 
+set(AI_PLATFORM_TRACKER_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/tracker.cpp
+)
+
 # 对外接口
 set(AI_PLATFORM_MAIN_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/ai_platform/JHDeepCore.cpp
@@ -88,6 +92,24 @@ set(UTILS_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/utils/image_utils.cpp
 )
 
+# mtracker 模块
+set(MTRACKER_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/mtracking/object_types.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/BaseTracker.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/track.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/Kalman.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/TrackerSettings.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/ShortPathCalculator.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/HungarianAlg/HungarianAlg.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/LAPJV_algorithm/lap.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/byte_track/BYTETracker.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/byte_track/KalmanFilter.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/byte_track/lapjv.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/Tracker/byte_track/STrack.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/thirdparty_ini/ini.c
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/thirdparty_ini/INIReader.cpp
+)
+
 # 所有源文件
 set(ALL_SOURCES
     ${CV_INFER_SOURCES}
@@ -98,9 +120,11 @@ set(ALL_SOURCES
     ${AI_PLATFORM_SEGMENT_SOURCES}
     ${AI_PLATFORM_INSTANCE_SEGMENT_SOURCES}
     ${AI_PLATFORM_OCR_SOURCES}
+    ${AI_PLATFORM_TRACKER_SOURCES}
     ${AI_PLATFORM_MAIN_SOURCES}
     ${NISCO_PROJECT_SOURCES}
     ${UTILS_SOURCES}
+    ${MTRACKER_SOURCES}
 )
 
 # ========== 构建统一静态库 jhcv_lib ==========
@@ -124,6 +148,11 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/dispatch
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/Tracker
+    ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/mtracking
+    ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/Circular_Code
+    ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/thirdparty_ini
+    ${CMAKE_CURRENT_SOURCE_DIR}/mtracker
 )
 
 target_compile_definitions(jhcv_lib PRIVATE

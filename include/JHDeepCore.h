@@ -51,6 +51,48 @@ struct OCRResult {
     std::vector<OCRBox> boxes;
 };
 
+// ======================== 跟踪模块 ========================
+
+/// 跟踪距离度量类型
+enum class TrackDistanceType {
+    Centers,       // 中心点欧氏距离
+    Rects,         // 矩形欧氏距离
+    IoU,           // 交并比
+};
+
+/// 跟踪器类型
+enum class TrackerType {
+    Universal,     // 通用跟踪器（卡尔曼+匈牙利/LAPJV）
+    ByteTrack,     // ByteTrack
+};
+
+/// 跟踪器配置
+struct TrackerConfig {
+    TrackerType tracker_type = TrackerType::ByteTrack;
+    TrackDistanceType distance_type = TrackDistanceType::IoU;
+    float distance_threshold = 0.7f;      // 匹配距离阈值
+    float kalman_dt = 0.3f;               // 卡尔曼滤波时间步长
+    float accel_noise = 0.2f;             // 加速度噪声
+    double max_lost_time = 1.0;           // 最大丢失时间（秒）
+    double max_trace_length = 2.0;        // 最大轨迹长度（秒）
+
+    // ByteTrack 专用参数
+    int bytetrack_track_buffer = 30;      // ByteTrack 轨迹缓冲帧数
+    float bytetrack_track_thresh = 0.5f;  // ByteTrack 高分阈值
+    float bytetrack_high_thresh = 0.5f;   // ByteTrack 第二次匹配阈值
+    float bytetrack_match_thresh = 0.8f;  // ByteTrack 匹配阈值
+};
+
+/// 跟踪目标结果
+struct TrackedObject {
+    size_t track_id;                      // 目标唯一 ID
+    cv::Rect bbox;                        // 目标位置
+    int class_id = -1;                    // 目标类别
+    float confidence = -1.f;              // 置信度
+    std::vector<cv::Point> trajectory;    // 历史轨迹点
+    bool is_stable = false;               // 轨迹是否稳定
+};
+
 class ClassifierPrivate;
 class Classifier {
   public:
@@ -202,6 +244,27 @@ class DispatchService {
 
   private:
     std::shared_ptr<DispatchServicePrivate> m_pHandle;
+};
+
+class TrackerPrivate;
+class Tracker {
+  public:
+    explicit Tracker(const TrackerConfig &config, float fps = 30.0f);
+    ~Tracker();
+
+    Tracker(const Tracker &) = delete;
+    Tracker &operator=(const Tracker &) = delete;
+
+    /// 输入检测框列表和当前帧，更新跟踪状态，返回跟踪结果
+    void update(const std::vector<Detection> &detections,
+                const cv::Mat &frame,
+                std::vector<TrackedObject> &tracked_objects);
+
+    /// 获取被移除的跟踪目标 ID
+    void get_removed_ids(std::vector<size_t> &removed_ids);
+
+  private:
+    std::shared_ptr<TrackerPrivate> m_pHandle;
 };
 
 std::string GetOptimalDevice();

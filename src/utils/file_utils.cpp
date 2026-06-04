@@ -74,6 +74,41 @@ JHDeepCore::TiebiaoServerConfig FileHelper::loadTiebiaoConfig(const std::string&
     return cfg;
 }
 
+JHDeepCore::DispatchServerConfig FileHelper::loadDispatchConfig(const std::string& config_path)
+{
+    JHDeepCore::DispatchServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+    }
+
+    if (node["output"]) {
+        cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+    }
+
+    if (node["models"]) {
+        cfg.dispatch_classifier_model = node["models"]["dispatch_classifier_model"].as<std::string>("");
+        cfg.dispatch_classifier_label = node["models"]["dispatch_classifier_label"].as<std::string>("");
+    }
+
+    if (node["dispatch"]) {
+        cfg.confidence_threshold = node["dispatch"]["confidence_threshold"].as<float>(0.8f);
+        cfg.default_branch = node["dispatch"]["default_branch"].as<std::string>("dabang");
+        cfg.dabang_config = node["dispatch"]["dabang_config"].as<std::string>("");
+        cfg.tiebiao_config = node["dispatch"]["tiebiao_config"].as<std::string>("");
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    return cfg;
+}
+
 std::vector<std::string> FileHelper::splitStringByCsharp(const std::string& str)
 {
     std::vector<std::string> tokens;

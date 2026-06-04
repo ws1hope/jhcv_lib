@@ -19,6 +19,9 @@ add_executable(dabang_jiguang ${CMAKE_CURRENT_SOURCE_DIR}/dabang_jiguang/main.cp
 # ========== 贴标 OCR HTTP 服务 ==========
 add_executable(tiebiao ${CMAKE_CURRENT_SOURCE_DIR}/tiebiao/main.cpp)
 
+# ========== 调度服务 ==========
+add_executable(dispatch ${CMAKE_CURRENT_SOURCE_DIR}/dispatch/main.cpp)
+
 # ========== 统一设置 ==========
 set(TEST_TARGETS
     yolo_inference
@@ -32,6 +35,7 @@ set(TEST_TARGETS
     jhdeepcore_ocr_test
     dabang_jiguang
     tiebiao
+    dispatch
 )
 
 foreach(TARGET ${TEST_TARGETS})
@@ -58,6 +62,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/tiebiao/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== 调度服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/dispatch/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

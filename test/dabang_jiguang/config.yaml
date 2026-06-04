@@ -5,8 +5,8 @@ server:
 models:
   label_detect_model: "models/dabang_jiguang/jiguang_piliao.onnx"
   char_detect_model: "models/dabang_jiguang/jiguang_zifu.onnx"
-  ocr_rec_model: "models/ocr/rec_model.onnx"
-  ocr_rec_label: "models/ocr/best.yaml"
+  ocr_rec_model: "models/jiguang_zifu_rec/jiguang_rec.onnx"
+  ocr_rec_label: "models/jiguang_zifu_rec/best.yaml"
 
 inference:
   device: "cpu"

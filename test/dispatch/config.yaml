@@ -1,0 +1,21 @@
+server:
+  service_name: "dispatch"
+  host: "127.0.0.1"
+  port: 8082
+
+models:
+  dispatch_classifier_model: "models/yb_pm_cls/fullmodel_best.onnx"
+  dispatch_classifier_label: "models/yb_pm_cls/fullmodel_best.yaml"
+
+dispatch:
+  confidence_threshold: 0.8
+  default_branch: "tiebiao"
+  dabang_config: "test/dabang_jiguang/config.yaml"
+  tiebiao_config: "test/tiebiao/config.yaml"
+
+inference:
+  device: "cpu"
+
+output:
+  result_dir: "D:\\DispatchResult"
+  log_dir: "dispatch_logs"

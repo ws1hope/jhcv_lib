@@ -185,6 +185,25 @@ class TiebiaoService {
     std::shared_ptr<TiebiaoServicePrivate> m_pHandle;
 };
 
+class DispatchServicePrivate;
+class DispatchService {
+  public:
+    explicit DispatchService(const std::string &config_path);
+    ~DispatchService();
+
+    DispatchService(const DispatchService &) = delete;
+    DispatchService &operator=(const DispatchService &) = delete;
+
+    const struct DispatchServerConfig &config() const;
+    std::string handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int station_id);
+
+  private:
+    std::shared_ptr<DispatchServicePrivate> m_pHandle;
+};
+
 std::string GetOptimalDevice();
 
 } // namespace JHDeepCore

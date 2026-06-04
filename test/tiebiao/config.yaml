@@ -4,11 +4,11 @@ server:
   port: 8080
 
 models:
-  label_seg_model: "models/tiebiao_best_label.onnx"
-  char_seg_model: "models/tiebiao_best_zifu.onnx"
-  ocr_model: "models/rec_model.onnx"
-  ocr_label: "models/best.yaml"
-  direction_cls_model: "models/cls_model.onnx"
+  label_seg_model: "models/tiebiao/tiebiao_best_label.onnx"
+  char_seg_model: "models/tiebiao/tiebiao_best_zifu.onnx"
+  ocr_model: "models/tiebiao/rec.onnx"
+  ocr_label: "models/tiebiao/rec.yaml"
+  direction_cls_model: "models/bq_fx_cls/fullmodel_best.onnx"
 
 inference:
   device: "cpu"

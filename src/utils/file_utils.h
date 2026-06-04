@@ -43,6 +43,21 @@ struct TiebiaoConfig {
     std::string device;
 };
 
+struct DispatchServerConfig {
+    std::string service_name = "dispatch";
+    std::string host = "0.0.0.0";
+    int port = 8082;
+    std::string result_dir = "D:\\DispatchResult";
+    std::string log_dir = "dispatch_logs";
+    std::string dispatch_classifier_model;
+    std::string dispatch_classifier_label;
+    float confidence_threshold = 0.8f;
+    std::string default_branch = "dabang";
+    std::string dabang_config;
+    std::string tiebiao_config;
+    std::string device = "cuda";
+};
+
 } // namespace JHDeepCore
 
 class FileHelper {
@@ -52,6 +67,8 @@ public:
     static JHDeepCore::ServerConfig loadConfig(const std::string& config_path);
 
     static JHDeepCore::TiebiaoServerConfig loadTiebiaoConfig(const std::string& config_path);
+
+    static JHDeepCore::DispatchServerConfig loadDispatchConfig(const std::string& config_path);
 
     static std::vector<std::string> splitStringByCsharp(const std::string& str);
 

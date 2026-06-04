@@ -8,7 +8,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_definitions(-DUSE_ONNXRUNTIME)
 
-# ========== 跨平台库路径配置 ==========
+# ========== 跨平台配置（路径 + 库 + 头文件 + 库目录） ==========
 if(WIN32)
     set(3RDPARTY_ROOT     "G:/3thirdparty")
     set(OPENCV_ROOT       "${3RDPARTY_ROOT}/opencv/build")
@@ -19,8 +19,17 @@ if(WIN32)
     set(OpenCV_LIBS       ${OPENCV_ROOT}/x64/vc16/lib/opencv_world490.lib)
     set(ONNX_CPU_LIBS     ${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib)
 
-    set(OPENCV_LIB_DIR    ${OPENCV_ROOT}/x64/vc16/lib)
-    set(YAML_CPP_LIB_DIR  ${YAML_CPP_ROOT}/lib)
+    set(INCLUDE_DIRS
+        ${OPENCV_ROOT}/include
+        ${ONNXRUNTIME_ROOT}/include
+        ${YAML_CPP_ROOT}/include
+    )
+    set(LIB_DIRS
+        ${OPENCV_ROOT}/x64/vc16/lib
+        ${ONNXRUNTIME_ROOT}/lib
+        ${YAML_CPP_ROOT}/lib
+    )
+    option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" ON)
 
 elseif(APPLE)
     set(3RDPARTY_ROOT     "/usr/local")
@@ -31,8 +40,18 @@ elseif(APPLE)
     file(GLOB OpenCV_LIBS "${OPENCV_ROOT}/lib/libopencv_*.dylib")
     set(ONNX_CPU_LIBS     ${ONNXRUNTIME_ROOT}/lib/libonnxruntime.dylib)
 
-    set(OPENCV_LIB_DIR    ${OPENCV_ROOT}/lib)
-    set(YAML_CPP_LIB_DIR  ${YAML_CPP_ROOT}/lib)
+    set(INCLUDE_DIRS
+        ${OPENCV_ROOT}/include
+        ${OPENCV_ROOT}/include/opencv4
+        ${ONNXRUNTIME_ROOT}/include
+        ${ONNXRUNTIME_ROOT}/include/onnxruntime
+        ${YAML_CPP_ROOT}/include
+    )
+    set(LIB_DIRS
+        ${OPENCV_ROOT}/lib
+        ${YAML_CPP_ROOT}/lib
+    )
+    option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" OFF)
 
 else()
     set(3RDPARTY_ROOT     "/usr/local")
@@ -43,62 +62,43 @@ else()
     file(GLOB OpenCV_LIBS "${OPENCV_ROOT}/lib/libopencv_*.so")
     set(ONNX_CPU_LIBS     ${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so)
 
-    set(OPENCV_LIB_DIR    ${OPENCV_ROOT}/lib)
-    set(YAML_CPP_LIB_DIR  ${YAML_CPP_ROOT}/lib)
-endif()
-
-# ========== CUDA 配置 ==========
-if(WIN32)
-    option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" ON)
-else()
+    set(INCLUDE_DIRS
+        ${OPENCV_ROOT}/include
+        ${ONNXRUNTIME_ROOT}/include
+        ${YAML_CPP_ROOT}/include
+    )
+    set(LIB_DIRS
+        ${OPENCV_ROOT}/lib
+        ${YAML_CPP_ROOT}/lib
+    )
     option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" OFF)
 endif()
 
+# ========== CUDA ==========
 if(ENABLE_CUDA)
     add_definitions(-DUSE_CUDA)
     message(STATUS "CUDA support: ON")
+    if(WIN32)
+        set(ONNX_GPU_LIBS
+            ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_cuda.lib
+            ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_shared.lib
+            ${CUDA_ROOT}/lib/x64/cudart.lib
+        )
+        list(APPEND INCLUDE_DIRS ${CUDA_ROOT}/include)
+        list(APPEND LIB_DIRS ${CUDA_ROOT}/lib/x64)
+    endif()
 else()
     message(STATUS "CUDA support: OFF (CPU-only mode)")
-endif()
-
-if(ENABLE_CUDA AND WIN32)
-    set(ONNX_GPU_LIBS
-        ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_cuda.lib
-        ${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_shared.lib
-        ${CUDA_ROOT}/lib/x64/cudart.lib
-    )
-else()
     set(ONNX_GPU_LIBS)
 endif()
 
-# ========== 头文件目录 ==========
+# ========== 应用头文件和库目录 ==========
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/cv_infer
-    ${OPENCV_ROOT}/include
-    ${ONNXRUNTIME_ROOT}/include
-    ${YAML_CPP_ROOT}/include
+    ${INCLUDE_DIRS}
 )
-
-if(APPLE)
-    include_directories(${OPENCV_ROOT}/include/opencv4)
-    include_directories(${ONNXRUNTIME_ROOT}/include/onnxruntime)
-endif()
-
-if(ENABLE_CUDA)
-    include_directories(${CUDA_ROOT}/include)
-endif()
-
-# ========== 库文件目录 ==========
-link_directories(
-    ${OPENCV_LIB_DIR}
-    ${ONNXRUNTIME_LIB_DIR}
-    ${YAML_CPP_LIB_DIR}
-)
-
-if(ENABLE_CUDA)
-    link_directories(${CUDA_ROOT}/lib/x64)
-endif()
+link_directories(${LIB_DIRS})
 
 # ========== 构建目标 ==========
 add_subdirectory(src)

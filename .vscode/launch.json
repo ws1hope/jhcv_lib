@@ -302,6 +302,29 @@
             "externalConsole": false,
             "MIMode": "lldb",
             "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "mac jhdeepcore_detect",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_det_test",
+            "args": [
+                "${workspaceFolder}/models/det/best.onnx",
+                "${workspaceFolder}/images/test_det.png",
+                "",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
         }
     ]
 }

@@ -1,8 +1,30 @@
 {
     "configurations": [
         {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/src/cv_infer",
+                "/usr/local/include/opencv4",
+                "/usr/local/include",
+                "/usr/local/include/onnxruntime"
+            ],
+            "defines": [
+                "USE_ONNXRUNTIME"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "macos-clang-arm64",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "macFrameworkPath": [
+                "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks"
+            ]
+        },
+        {
             "name": "Win32",
             "includePath": [
+                "${workspaceFolder}/include",
                 "${workspaceFolder}/src",
                 "G:/3thirdparty/opencv/build/include",
                 "G:/3thirdparty/onnxruntime/include",

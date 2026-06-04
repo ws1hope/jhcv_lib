@@ -64,3 +64,4 @@ models/
 build/
 build_cpu/
 build_projects/
+.clangd

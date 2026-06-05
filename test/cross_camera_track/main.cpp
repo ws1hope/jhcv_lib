@@ -135,16 +135,16 @@ static void drawChannelResult(cv::Mat& frame,
         oss << obj.track_id << "_" << std::fixed << std::setprecision(2) << obj.confidence;
         std::string label = oss.str();
 
-        double labelScale = (frame.cols < 1000) ? 0.6 : 0.8;
-        cv::Size textSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, labelScale, 2, &baseLine);
+        double labelScale = (frame.cols < 1000) ? 1.2 : 1.6;
+        cv::Size textSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, labelScale, 4, &baseLine);
         int top = std::max(obj.bbox.y, textSize.height + 5);
         cv::rectangle(frame,
-                      cv::Point(obj.bbox.x, top - textSize.height - 3),
-                      cv::Point(obj.bbox.x + textSize.width + 4, top + 2),
+                      cv::Point(obj.bbox.x, top - textSize.height - 5),
+                      cv::Point(obj.bbox.x + textSize.width + 8, top + 4),
                       color, -1);
-        cv::putText(frame, label, cv::Point(obj.bbox.x + 2, top - 1),
+        cv::putText(frame, label, cv::Point(obj.bbox.x + 4, top - 2),
                     cv::FONT_HERSHEY_SIMPLEX, labelScale,
-                    cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
+                    cv::Scalar(255, 255, 255), 4, cv::LINE_AA);
     }
 }
 

@@ -68,14 +68,14 @@ static bool saveJsonFile(const json& j, const std::string& json_path)
     try {
         std::ofstream file(json_path);
         if (!file.is_open()) {
-            std::cerr << "无法创建JSON文件: " << json_path << std::endl;
+            std::cerr << "Cannot create JSON file: " << json_path << std::endl;
             return false;
         }
         file << j.dump(2);  // 缩进2个空格
         file.close();
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "保存JSON失败: " << e.what() << std::endl;
+        std::cerr << "Failed to save JSON: " << e.what() << std::endl;
         return false;
     }
 }
@@ -118,43 +118,43 @@ int main(int argc, char* argv[])
     if (model_path.empty()) {
         std::cerr << "Usage: " << argv[0] << " <model_path> [video_path] [label_path] [output_dir] [skip_frames] [label_name] [device_id]" << std::endl;
         std::cerr << "Example: " << argv[0] << " models/best.onnx video.mp4 labels.txt result/dataset 5 panjuan 0" << std::endl;
-        std::cerr << "  model_path: 检测模型路径" << std::endl;
-        std::cerr << "  video_path: 输入视频路径" << std::endl;
-        std::cerr << "  label_path: 标签配置文件路径" << std::endl;
-        std::cerr << "  output_dir: 输出数据集目录" << std::endl;
-        std::cerr << "  skip_frames: 每N帧提取一帧（默认5）" << std::endl;
-        std::cerr << "  label_name: 标签名称（默认panjuan）" << std::endl;
-        std::cerr << "  device_id: 设备ID（默认0）" << std::endl;
+        std::cerr << "  model_path: Detection model path" << std::endl;
+        std::cerr << "  video_path: Input video path" << std::endl;
+        std::cerr << "  label_path: Label config file path" << std::endl;
+        std::cerr << "  output_dir: Output dataset directory" << std::endl;
+        std::cerr << "  skip_frames: Extract 1 frame every N frames (default 5)" << std::endl;
+        std::cerr << "  label_name: Label name (default panjuan)" << std::endl;
+        std::cerr << "  device_id: Device ID (default 0)" << std::endl;
         return 1;
     }
 
     try {
-        std::cout << "=== 视频转数据集程序 ===" << std::endl;
-        std::cout << "模型路径: " << model_path << std::endl;
-        std::cout << "视频路径: " << video_path << std::endl;
-        std::cout << "标签路径: " << (label_path.empty() ? "未指定" : label_path) << std::endl;
-        std::cout << "输出目录: " << output_dir << std::endl;
-        std::cout << "跳帧设置: 每 " << skip_frames << " 帧提取一帧" << std::endl;
-        std::cout << "标签名称: " << label_name << std::endl;
-        std::cout << "设备ID: " << device_id << std::endl;
+        std::cout << "=== Video to Dataset Program ===" << std::endl;
+        std::cout << "Model path: " << model_path << std::endl;
+        std::cout << "Video path: " << video_path << std::endl;
+        std::cout << "Label path: " << (label_path.empty() ? "Not specified" : label_path) << std::endl;
+        std::cout << "Output directory: " << output_dir << std::endl;
+        std::cout << "Skip frames: Extract every " << skip_frames << " frames" << std::endl;
+        std::cout << "Label name: " << label_name << std::endl;
+        std::cout << "Device ID: " << device_id << std::endl;
         std::cout << "================================" << std::endl;
 
         // 创建输出目录
         if (!ensureDirectoryExists(output_dir)) {
-            std::cerr << "警告: 无法创建输出目录: " << output_dir << std::endl;
+            std::cerr << "Warning: Cannot create output directory: " << output_dir << std::endl;
         }
 
         // 初始化检测器
-        std::cout << "正在初始化检测器..." << std::endl;
+        std::cout << "Initializing detector..." << std::endl;
         JHDeepCore::Detector detector(model_path, label_path, device_id);
-        std::cout << "检测器初始化完成" << std::endl;
-        std::cout << "批处理大小: " << detector.GetBatch() << std::endl;
-        std::cout << "输入尺寸: " << detector.GetInputWidth() << "x" << detector.GetInputHeight() << std::endl;
+        std::cout << "Detector initialized" << std::endl;
+        std::cout << "Batch size: " << detector.GetBatch() << std::endl;
+        std::cout << "Input size: " << detector.GetInputWidth() << "x" << detector.GetInputHeight() << std::endl;
 
         // 打开视频文件
         cv::VideoCapture cap(video_path);
         if (!cap.isOpened()) {
-            std::cerr << "错误: 无法打开视频文件: " << video_path << std::endl;
+            std::cerr << "Error: Cannot open video file: " << video_path << std::endl;
             return 1;
         }
 
@@ -164,9 +164,9 @@ int main(int argc, char* argv[])
         int height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
         int total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
 
-        std::cout << "视频信息: " << width << "x" << height << " @ " << fps << " FPS" << std::endl;
-        std::cout << "总帧数: " << total_frames << std::endl;
-        std::cout << "预计提取帧数: " << (total_frames / skip_frames) << std::endl;
+        std::cout << "Video info: " << width << "x" << height << " @ " << fps << " FPS" << std::endl;
+        std::cout << "Total frames: " << total_frames << std::endl;
+        std::cout << "Expected extracted frames: " << (total_frames / skip_frames) << std::endl;
 
         // 处理视频帧
         cv::Mat frame;
@@ -176,8 +176,8 @@ int main(int argc, char* argv[])
 
         auto start_time = std::chrono::high_resolution_clock::now();
 
-        std::cout << "开始处理视频..." << std::endl;
-        std::cout << "正在提取帧并生成labelme格式的JSON标注..." << std::endl;
+        std::cout << "Starting video processing..." << std::endl;
+        std::cout << "Extracting frames and generating labelme format JSON annotations..." << std::endl;
 
         while (true) {
             // 读取一帧
@@ -243,12 +243,12 @@ int main(int argc, char* argv[])
             auto current_time = std::chrono::high_resolution_clock::now();
             auto total_elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time);
 
-            std::cout << "正在处理第 " << total_frame_count << "/" << total_frames << " 帧 "
+            std::cout << "Processing frame " << total_frame_count << "/" << total_frames << " "
                       << "(" << std::fixed << std::setprecision(1) << progress << "%)"
-                      << " | 已保存: " << saved_frame_count << " 对"
-                      << " | 检测目标: " << detections.size()
-                      << " | 本帧耗时: " << frame_duration.count() << "ms"
-                      << " | 总耗时: " << total_elapsed.count() << "s" << std::endl;
+                      << " | Saved: " << saved_frame_count << " pairs"
+                      << " | Detections: " << detections.size()
+                      << " | Frame time: " << frame_duration.count() << "ms"
+                      << " | Total time: " << total_elapsed.count() << "s" << std::endl;
         }
 
         // 释放资源
@@ -258,15 +258,15 @@ int main(int argc, char* argv[])
         auto total_duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - start_time);
 
         std::cout << "================================" << std::endl;
-        std::cout << "数据集生成完成！" << std::endl;
-        std::cout << "原始视频总帧数: " << total_frame_count << std::endl;
-        std::cout << "实际保存帧数: " << saved_frame_count << std::endl;
-        std::cout << "跳过的帧数: " << (total_frame_count - saved_frame_count) << std::endl;
-        std::cout << "总检测目标数: " << total_detections << std::endl;
-        std::cout << "总处理时间: " << total_duration.count() << " 秒" << std::endl;
-        std::cout << "平均每帧耗时: " << (total_duration.count() > 0 ? total_duration.count() / saved_frame_count : 0) << " 秒" << std::endl;
-        std::cout << "输出目录: " << output_dir << std::endl;
-        std::cout << "数据格式: labelme JSON + JPG图像" << std::endl;
+        std::cout << "Dataset generation completed!" << std::endl;
+        std::cout << "Total source frames: " << total_frame_count << std::endl;
+        std::cout << "Actually saved frames: " << saved_frame_count << std::endl;
+        std::cout << "Skipped frames: " << (total_frame_count - saved_frame_count) << std::endl;
+        std::cout << "Total detected objects: " << total_detections << std::endl;
+        std::cout << "Total processing time: " << total_duration.count() << " seconds" << std::endl;
+        std::cout << "Average time per frame: " << (total_duration.count() > 0 ? total_duration.count() / saved_frame_count : 0) << " seconds" << std::endl;
+        std::cout << "Output directory: " << output_dir << std::endl;
+        std::cout << "Data format: labelme JSON + JPG images" << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "错误: " << e.what() << std::endl;

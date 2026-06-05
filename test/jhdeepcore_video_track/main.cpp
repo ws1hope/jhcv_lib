@@ -42,8 +42,29 @@ static cv::Scalar getColorForClass(int class_id)
 }
 
 /// 在帧上绘制跟踪结果
-static void drawTrackedObjects(cv::Mat& frame, const std::vector<JHDeepCore::TrackedObject>& tracked_objects)
+static void drawTrackedObjects(cv::Mat& frame, const std::vector<JHDeepCore::TrackedObject>& tracked_objects, int frame_num = 0)
 {
+    // 在左上角绘制帧号
+    if (frame_num > 0) {
+        std::string frame_text = "Frame: " + std::to_string(frame_num);
+        double fontScale = (frame.cols < 1000) ? 1.2 : 1.5;
+        int margin = 20;
+        int y_pos = 120;
+        int baseLine = 0;
+
+        // 绘制半透明黑色背景
+        cv::Size textSize = cv::getTextSize(frame_text, cv::FONT_HERSHEY_SIMPLEX, fontScale, 3, &baseLine);
+        cv::Rect bg_rect(margin, y_pos - textSize.height - 8, textSize.width + 20, textSize.height + 16);
+
+        // 创建半透明背景
+        cv::Mat overlay = frame.clone();
+        cv::rectangle(overlay, bg_rect, cv::Scalar(0, 0, 0), -1);
+        cv::addWeighted(overlay, 0.7, frame, 0.3, 0, frame);
+
+        // 绘制红色帧号文字（粗体）
+        cv::putText(frame, frame_text, cv::Point(margin + 10, y_pos),
+                   cv::FONT_HERSHEY_SIMPLEX, fontScale, cv::Scalar(0, 0, 255), 3, cv::LINE_AA);
+    }
     for (const auto& obj : tracked_objects) {
         cv::Scalar color = getColorForTrackId(obj.track_id);
 
@@ -137,19 +158,19 @@ int main(int argc, char* argv[])
     if (model_path.empty()) {
         std::cerr << "Usage: " << argv[0] << " <model_path> [video_path] [label_path] [output_path] [device_id] [skip_frames]" << std::endl;
         std::cerr << "Example: " << argv[0] << " models/yolo.onnx video.mp4 labels.txt result/output.avi 0 3" << std::endl;
-        std::cerr << "  skip_frames: 跳帧间隔（默认3，表示每3帧处理1帧，跳过2帧）" << std::endl;
-        std::cerr << "                输出视频将只有原始视频的 1/skip_frames 帧数" << std::endl;
+        std::cerr << "  skip_frames: Skip interval (default 3, process 1 frame every 3 frames)" << std::endl;
+        std::cerr << "                Output video will have 1/skip_frames frames of original" << std::endl;
         return 1;
     }
 
     try {
-        std::cout << "=== 视频检测与跟踪测试程序 ===" << std::endl;
-        std::cout << "模型路径: " << model_path << std::endl;
-        std::cout << "视频路径: " << video_path << std::endl;
-        std::cout << "标签路径: " << (label_path.empty() ? "未指定" : label_path) << std::endl;
-        std::cout << "输出路径: " << output_path << std::endl;
-        std::cout << "设备ID: " << device_id << std::endl;
-        std::cout << "跳帧设置: 每 " << skip_frames << " 帧检测一次（跳过 " << (skip_frames - 1) << " 帧）" << std::endl;
+        std::cout << "=== Video Detection and Tracking Test ===" << std::endl;
+        std::cout << "Model path: " << model_path << std::endl;
+        std::cout << "Video path: " << video_path << std::endl;
+        std::cout << "Label path: " << (label_path.empty() ? "Not specified" : label_path) << std::endl;
+        std::cout << "Output path: " << output_path << std::endl;
+        std::cout << "Device ID: " << device_id << std::endl;
+        std::cout << "Skip setting: Detect every " << skip_frames << " frames (skip " << (skip_frames - 1) << " frames)" << std::endl;
         std::cout << "================================" << std::endl;
 
         // 创建结果目录
@@ -159,14 +180,14 @@ int main(int argc, char* argv[])
         }
 
         // 初始化检测器
-        std::cout << "正在初始化检测器..." << std::endl;
+        std::cout << "Initializing detector..." << std::endl;
         JHDeepCore::Detector detector(model_path, label_path, device_id);
-        std::cout << "检测器初始化完成" << std::endl;
-        std::cout << "批处理大小: " << detector.GetBatch() << std::endl;
-        std::cout << "输入尺寸: " << detector.GetInputWidth() << "x" << detector.GetInputHeight() << std::endl;
+        std::cout << "Detector initialized" << std::endl;
+        std::cout << "Batch size: " << detector.GetBatch() << std::endl;
+        std::cout << "Input size: " << detector.GetInputWidth() << "x" << detector.GetInputHeight() << std::endl;
 
         // 初始化跟踪器
-        std::cout << "正在初始化跟踪器..." << std::endl;
+        std::cout << "Initializing tracker..." << std::endl;
         JHDeepCore::TrackerConfig tracker_config;
         tracker_config.tracker_type = JHDeepCore::TrackerType::ByteTrack;
         tracker_config.distance_type = JHDeepCore::TrackDistanceType::IoU;
@@ -178,7 +199,7 @@ int main(int argc, char* argv[])
         // 打开视频文件
         cv::VideoCapture cap(video_path);
         if (!cap.isOpened()) {
-            std::cerr << "错误: 无法打开视频文件: " << video_path << std::endl;
+            std::cerr << "Error: Cannot open video file: " << video_path << std::endl;
             return 1;
         }
 
@@ -188,7 +209,7 @@ int main(int argc, char* argv[])
         int height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
         int total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
 
-        std::cout << "视频信息: " << width << "x" << height << " @ " << fps << " FPS" << std::endl;
+        std::cout << "Video info: " << width << "x" << height << " @ " << fps << " FPS" << std::endl;
         std::cout << "总帧数: " << total_frames << std::endl;
 
         // 使用视频实际FPS初始化跟踪器
@@ -219,7 +240,7 @@ int main(int argc, char* argv[])
         cv::VideoWriter writer;
         writer.open(output_path, fourcc, fps, cv::Size(width, height));
         if (!writer.isOpened()) {
-            std::cerr << "错误: 无法创建输出视频文件: " << output_path << std::endl;
+            std::cerr << "Error: Cannot create output video file: " << output_path << std::endl;
             return 1;
         }
 
@@ -234,7 +255,7 @@ int main(int argc, char* argv[])
 
         auto start_time = std::chrono::high_resolution_clock::now();
 
-        std::cout << "开始处理视频..." << std::endl;
+        std::cout << "Starting video processing..." << std::endl;
         std::cout << "正在使用OpenCV读取视频帧，每" << skip_frames << "帧处理一次..." << std::endl;
 
         while (true) {
@@ -268,7 +289,7 @@ int main(int argc, char* argv[])
 
             // 绘制跟踪结果
             cv::Mat output_frame = frame.clone();
-            drawTrackedObjects(output_frame, tracked_objects);
+            drawTrackedObjects(output_frame, tracked_objects, total_frame_count);
 
             // 写入输出视频
             writer.write(output_frame);
@@ -285,13 +306,13 @@ int main(int argc, char* argv[])
             auto current_time = std::chrono::high_resolution_clock::now();
             auto total_elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time);
 
-            std::cout << "正在处理第 " << total_frame_count << "/" << total_frames << " 帧 "
+            std::cout << "Processing frame " << total_frame_count << "/" << total_frames << " "
                       << "(" << std::fixed << std::setprecision(1) << progress << "%)"
-                      << " | 已处理: " << processed_frame_count << " 帧"
-                      << " | 检测目标: " << detections.size()
-                      << " | 跟踪目标: " << tracked_objects.size()
-                      << " | 本帧耗时: " << frame_duration.count() << "ms"
-                      << " | 总耗时: " << total_elapsed.count() << "s" << std::endl;
+                      << " | Processed: " << processed_frame_count << " frames"
+                      << " | Detections: " << detections.size()
+                      << " | Tracked: " << tracked_objects.size()
+                      << " | Frame time: " << frame_duration.count() << "ms"
+                      << " | Total time: " << total_elapsed.count() << "s" << std::endl;
         }
 
         // 释放资源
@@ -303,18 +324,18 @@ int main(int argc, char* argv[])
         double avg_fps = static_cast<double>(processed_frame_count) / total_duration.count();
 
         std::cout << "================================" << std::endl;
-        std::cout << "视频处理完成！" << std::endl;
-        std::cout << "原始视频总帧数: " << total_frame_count << std::endl;
-        std::cout << "实际处理帧数: " << processed_frame_count << std::endl;
-        std::cout << "跳过的帧数: " << (total_frame_count - processed_frame_count) << std::endl;
-        std::cout << "输出视频帧数: " << processed_frame_count << " (原始视频的 1/" << skip_frames << ")" << std::endl;
-        std::cout << "同时出现的最大目标数: " << total_tracked << std::endl;
-        std::cout << "总处理时间: " << total_duration.count() << " 秒" << std::endl;
-        std::cout << "平均处理速度: " << std::fixed << std::setprecision(2) << avg_fps << " FPS" << std::endl;
-        std::cout << "输出视频路径: " << output_path << std::endl;
+        std::cout << "Video processing completed!" << std::endl;
+        std::cout << "Total source frames: " << total_frame_count << std::endl;
+        std::cout << "Actually processed frames: " << processed_frame_count << std::endl;
+        std::cout << "Skipped frames: " << (total_frame_count - processed_frame_count) << std::endl;
+        std::cout << "Output video frames: " << processed_frame_count << " (1/" << skip_frames << " of original)" << std::endl;
+        std::cout << "Max simultaneous objects: " << total_tracked << std::endl;
+        std::cout << "Total processing time: " << total_duration.count() << " seconds" << std::endl;
+        std::cout << "Average processing speed: " << std::fixed << std::setprecision(2) << avg_fps << " FPS" << std::endl;
+        std::cout << "Output video path: " << output_path << std::endl;
 
     } catch (const std::exception& e) {
-        std::cerr << "错误: " << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 

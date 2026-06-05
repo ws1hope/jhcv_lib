@@ -219,7 +219,8 @@
                     "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
         },
         {
             "name": "dabang_jiguang - local test",
@@ -240,7 +241,8 @@
                     "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
         },
         {
             "name": "dispatch - HTTP server",
@@ -258,7 +260,8 @@
                     "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
         },
         {
             "name": "dispatch - local test",
@@ -279,7 +282,8 @@
                     "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
         },
         {
             "name": "mac jhdeepcore_classify",

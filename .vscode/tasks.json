@@ -4,10 +4,13 @@
         {
             "label": "configure",
             "type": "shell",
-            "command": "cmd",
+            "command": "cmake",
             "args": [
-                "/c",
-                "if not exist \"${workspaceFolder}\\build\" mkdir \"${workspaceFolder}\\build\" && cmake -B \"${workspaceFolder}/build\" -S \"${workspaceFolder}\" -G \"Visual Studio 17 2022\" -A x64 -T v143"
+                "-B", "${workspaceFolder}/build",
+                "-S", "${workspaceFolder}",
+                "-G", "Visual Studio 17 2022",
+                "-A", "x64",
+                "-T", "v143"
             ],
             "problemMatcher": [],
             "detail": "CMake configure"
@@ -21,6 +24,7 @@
                 "--config", "Release"
             ],
             "problemMatcher": "$msCompile",
+            "dependsOn": ["configure"],
             "detail": "CMake build Release"
         },
         {
@@ -32,6 +36,7 @@
                 "--config", "Debug"
             ],
             "problemMatcher": "$msCompile",
+            "dependsOn": ["configure"],
             "detail": "CMake build Debug"
         },
         {

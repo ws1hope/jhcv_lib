@@ -8,7 +8,9 @@
 
 #pragma once
 
-//#define _USE_MATH_DEFINES // M_PI
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <cmath>
 #include <random>
 #include <limits>

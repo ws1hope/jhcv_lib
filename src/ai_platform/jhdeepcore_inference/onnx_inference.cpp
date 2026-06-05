@@ -38,8 +38,15 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
       ,
       model_loaded_(false), warmup_enabled_(warmup) {
 #ifdef ONNXRUNTIME_FOUND
-    session_options_.SetIntraOpNumThreads(1);
+    // 对于Mac M系列芯片，使用更多线程和优化选项
+    session_options_.SetIntraOpNumThreads(8);  // M系列芯片有8个性能核心
+    session_options_.SetInterOpNumThreads(8);
     session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+    session_options_.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+
+    // 启用内存优化
+    session_options_.AddConfigEntry("session.enable_mem_pattern", "0");
+    session_options_.AddConfigEntry("session.enable_mem_reuse", "1");
 
     if (device_ == "cuda") {
 #ifdef USE_CUDA
@@ -53,9 +60,11 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
             device_ = "cpu";
         }
 #else
-        std::cerr << "[WARN] CUDA not compiled in, falling back to CPU" << std::endl;
+        std::cerr << "[WARN] CUDA not compiled in, using optimized CPU for Mac M-series" << std::endl;
         device_ = "cpu";
 #endif
+    } else if (device_ == "cpu") {
+        std::cout << "[INFO] ONNX Runtime: using optimized CPU for Mac M-series chips" << std::endl;
     }
 #endif
 }

@@ -92,6 +92,11 @@ set(UTILS_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/utils/image_utils.cpp
 )
 
+# cv_homography 模块
+set(CV_HOMOGRAPHY_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/cv_homography/homography.cpp
+)
+
 # mtracker 模块
 set(MTRACKER_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/mtracker/mtracking/object_types.cpp
@@ -124,6 +129,7 @@ set(ALL_SOURCES
     ${AI_PLATFORM_MAIN_SOURCES}
     ${NISCO_PROJECT_SOURCES}
     ${UTILS_SOURCES}
+    ${CV_HOMOGRAPHY_SOURCES}
     ${MTRACKER_SOURCES}
 )
 
@@ -148,6 +154,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/dispatch
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/cv_homography
     ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/Tracker
     ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/mtracking
     ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/Circular_Code
@@ -180,6 +187,7 @@ if(MSVC)
         ${AI_PLATFORM_MAIN_SOURCES}
         ${NISCO_PROJECT_SOURCES}
         ${UTILS_SOURCES}
+        ${CV_HOMOGRAPHY_SOURCES}
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

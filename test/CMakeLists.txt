@@ -26,6 +26,9 @@ add_executable(tiebiao ${CMAKE_CURRENT_SOURCE_DIR}/tiebiao/main.cpp)
 # ========== 调度服务 ==========
 add_executable(dispatch ${CMAKE_CURRENT_SOURCE_DIR}/dispatch/main.cpp)
 
+# ========== 单应矩阵测试 ==========
+add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
+
 # ========== 统一设置 ==========
 set(TEST_TARGETS
     yolo_inference
@@ -44,6 +47,7 @@ set(TEST_TARGETS
     dabang_jiguang
     tiebiao
     dispatch
+    homography_test
 )
 
 foreach(TARGET ${TEST_TARGETS})

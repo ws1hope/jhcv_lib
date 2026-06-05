@@ -267,6 +267,44 @@ class Tracker {
     std::shared_ptr<TrackerPrivate> m_pHandle;
 };
 
+// ======================== 单应矩阵模块 ========================
+
+/// 点对类型：first = 源平面点（如雷达坐标），second = 目标平面点（如图像坐标）
+using PointPair = std::pair<cv::Point2f, cv::Point2f>;
+
+class HomographyPrivate;
+class Homography {
+  public:
+    Homography();
+    ~Homography();
+
+    Homography(const Homography &) = delete;
+    Homography &operator=(const Homography &) = delete;
+
+    /// 根据配对点计算单应矩阵（至少 4 对点），返回 3x3 cv::Mat
+    cv::Mat compute(const std::vector<PointPair> &pairs);
+
+    /// 同上，返回展平的 9 个 double（行优先）
+    std::vector<double> compute_flat(const std::vector<PointPair> &pairs);
+
+    /// 直接设置单应矩阵（9 个 double，行优先）
+    void set_matrix(const std::vector<double> &values);
+    /// 直接设置单应矩阵（3x3 cv::Mat）
+    void set_matrix(const cv::Mat &mat);
+
+    /// 批量投影：将源平面点通过单应矩阵映射到目标平面
+    std::vector<cv::Point2f> project_points(const std::vector<cv::Point2f> &src);
+
+    /// 单点投影
+    cv::Point2f project_point(const cv::Point2f &pt);
+
+    /// 获取当前单应矩阵
+    cv::Mat get_matrix() const;
+
+  private:
+    std::shared_ptr<HomographyPrivate> m_pHandle;
+};
+
 std::string GetOptimalDevice();
 
 } // namespace JHDeepCore

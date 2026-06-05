@@ -380,12 +380,39 @@
             "program": "${workspaceFolder}/build/bin/video_to_dataset_test",
             "args": [
                 "${workspaceFolder}/models/panjuan_det/best.onnx",
-                "${workspaceFolder}/images/test.mp4",
+                "${workspaceFolder}/images/td_video/td1.mp4",
                 "${workspaceFolder}/models/panjuan_det/best.yaml",
                 "${workspaceFolder}/result/dataset",
-                "5",
+                "30",
                 "panjuan",
                 "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "mac cross_camera_track",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/cross_camera_track_test",
+            "args": [
+                "${workspaceFolder}/models/panjuan_det/best.onnx",
+                "${workspaceFolder}/images/td_video/td1.mp4",
+                "${workspaceFolder}/images/td_video/td2.mp4",
+                "${workspaceFolder}/images/td_video/td3.mp4",
+                "${workspaceFolder}/models/panjuan_det/best.yaml",
+                "${workspaceFolder}/result/cross_camera_result.avi",
+                "0",
+                "3"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

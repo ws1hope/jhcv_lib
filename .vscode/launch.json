@@ -372,6 +372,32 @@
             "externalConsole": false,
             "MIMode": "lldb",
             "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "mac video_to_dataset",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/video_to_dataset_test",
+            "args": [
+                "${workspaceFolder}/models/panjuan_det/best.onnx",
+                "${workspaceFolder}/images/test.mp4",
+                "${workspaceFolder}/models/panjuan_det/best.yaml",
+                "${workspaceFolder}/result/dataset",
+                "5",
+                "panjuan",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
         }
     ]
 }

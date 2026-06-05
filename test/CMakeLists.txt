@@ -14,6 +14,7 @@ add_executable(jhdeepcore_iseg_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_insta
 add_executable(jhdeepcore_ocr_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_ocr/main.cpp)
 add_executable(jhdeepcore_tracker_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_tracker/main.cpp)
 add_executable(jhdeepcore_video_track_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_video_track/main.cpp)
+add_executable(video_to_dataset_test ${CMAKE_CURRENT_SOURCE_DIR}/video_to_dataset/main.cpp)
 
 # ========== 大棒激光 HTTP 服务 ==========
 add_executable(dabang_jiguang ${CMAKE_CURRENT_SOURCE_DIR}/dabang_jiguang/main.cpp)
@@ -37,6 +38,7 @@ set(TEST_TARGETS
     jhdeepcore_ocr_test
     jhdeepcore_tracker_test
     jhdeepcore_video_track_test
+    video_to_dataset_test
     dabang_jiguang
     tiebiao
     dispatch

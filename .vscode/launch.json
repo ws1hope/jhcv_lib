@@ -434,6 +434,8 @@
             "args": [
                 "${workspaceFolder}/models/panjuan_det/best.onnx",
                 "${workspaceFolder}/images/td_video/td1.mp4",
+                "${workspaceFolder}/images/td_video/td2.mp4",
+                "${workspaceFolder}/images/td_video/td3.mp4",
                 "${workspaceFolder}/models/panjuan_det/best.yaml",
                 "${workspaceFolder}/result/homography_result.avi",
                 "0",

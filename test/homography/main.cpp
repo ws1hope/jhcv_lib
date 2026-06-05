@@ -22,81 +22,168 @@ static bool ensureDirectoryExists(const std::string& path)
 #endif
 }
 
+/// 在指定区域绘制检测框、中心点和标签
+static void drawDetections(cv::Mat& canvas, int x_offset,
+                           const std::vector<JHDeepCore::Detection>& detections,
+                           Homography& homo, int top_height,
+                           const cv::Scalar& map_point_color)
+{
+    for (const auto& det : detections) {
+        cv::Rect bbox_shifted = det.bbox;
+        bbox_shifted.x += x_offset;
+        cv::rectangle(canvas, bbox_shifted, cv::Scalar(0, 255, 0), 2);
+
+        cv::Point2f center(det.bbox.x + det.bbox.width / 2.0f,
+                           det.bbox.y + det.bbox.height / 2.0f);
+
+        cv::circle(canvas, cv::Point(static_cast<int>(center.x) + x_offset,
+                                     static_cast<int>(center.y)),
+                   6, cv::Scalar(0, 0, 255), -1, cv::LINE_AA);
+
+        cv::Point2f mapped = homo.project_point(center);
+        cv::Point canvas_mapped(static_cast<int>(mapped.x),
+                                static_cast<int>(mapped.y) + top_height);
+        cv::circle(canvas, canvas_mapped, 8, map_point_color, -1, cv::LINE_AA);
+
+        std::ostringstream oss;
+        oss << det.class_id << "_" << std::fixed << std::setprecision(2) << det.confidence;
+        int baseLine = 0;
+        double labelScale = 0.6;
+        cv::Size textSize = cv::getTextSize(oss.str(), cv::FONT_HERSHEY_SIMPLEX, labelScale, 2, &baseLine);
+        int top = std::max(static_cast<int>(det.bbox.y), textSize.height + 5);
+        cv::rectangle(canvas,
+                      cv::Point(bbox_shifted.x, top - textSize.height - 3),
+                      cv::Point(bbox_shifted.x + textSize.width + 4, top + 2),
+                      cv::Scalar(0, 255, 0), -1);
+        cv::putText(canvas, oss.str(), cv::Point(bbox_shifted.x + 2, top - 1),
+                    cv::FONT_HERSHEY_SIMPLEX, labelScale, cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
+    }
+}
+
+/// 单个视频通道
+struct VideoChannel {
+    std::string path;
+    cv::VideoCapture cap;
+    Homography homo;
+    cv::Scalar map_color;
+    int width = 0;
+    int height = 0;
+    int x_offset = 0;
+};
+
 int main(int argc, char* argv[])
 {
     std::string model_path = "";
-    std::string video_path = "/Users/zhanghaining/2026code/jhcv_lib/images/td_video/td1.mp4";
+    std::string video1_path = "/Users/zhanghaining/2026code/jhcv_lib/images/td_video/td1.mp4";
+    std::string video2_path = "/Users/zhanghaining/2026code/jhcv_lib/images/td_video/td2.mp4";
+    std::string video3_path = "/Users/zhanghaining/2026code/jhcv_lib/images/td_video/td3.mp4";
     std::string label_path = "";
     std::string output_path = "result/homography_result.avi";
     int device_id = 0;
     int skip_frames = 3;
 
     if (argc >= 2) model_path = argv[1];
-    if (argc >= 3) video_path = argv[2];
-    if (argc >= 4) label_path = argv[3];
-    if (argc >= 5) output_path = argv[4];
-    if (argc >= 6) device_id = std::stoi(argv[5]);
-    if (argc >= 7) skip_frames = std::stoi(argv[6]);
+    if (argc >= 3) video1_path = argv[2];
+    if (argc >= 4) video2_path = argv[3];
+    if (argc >= 5) video3_path = argv[4];
+    if (argc >= 6) label_path = argv[5];
+    if (argc >= 7) output_path = argv[6];
+    if (argc >= 8) device_id = std::stoi(argv[7]);
+    if (argc >= 9) skip_frames = std::stoi(argv[8]);
 
     if (model_path.empty()) {
         std::cerr << "Usage: " << argv[0]
-                  << " <model_path> [video_path] [label_path] [output_path] [device_id] [skip_frames]"
+                  << " <model_path> [video1] [video2] [video3] [label_path] [output_path] [device_id] [skip_frames]"
                   << std::endl;
         return 1;
     }
 
     try {
-        std::cout << "=== Homography Projection Test ===" << std::endl;
+        std::cout << "=== Multi-Video Homography Projection Test ===" << std::endl;
         std::cout << "Model: " << model_path << std::endl;
-        std::cout << "Video: " << video_path << std::endl;
+        std::cout << "Video 1: " << video1_path << std::endl;
+        std::cout << "Video 2: " << video2_path << std::endl;
+        std::cout << "Video 3: " << video3_path << std::endl;
         std::cout << "Output: " << output_path << std::endl;
 
-        // 创建结果目录
         std::string result_dir = output_path.substr(0, output_path.find_last_of("/\\"));
         if (!result_dir.empty()) ensureDirectoryExists(result_dir);
 
-        // 初始化检测器
         JHDeepCore::Detector detector(model_path, label_path, device_id);
         std::cout << "Detector ready: " << detector.GetInputWidth() << "x" << detector.GetInputHeight() << std::endl;
 
-        // 构造单应矩阵：将原图坐标映射到白图坐标
-        // 原图四点 -> 白图四点
-        std::vector<PointPair> pairs = {
+        // 各视频单应矩阵点对
+        std::vector<PointPair> pairs1 = {
             {{1692, 153},  {200, 836}},
-            {{1892, 231},  {200, 706}},
-            {{818,  1439}, {668, 706}},
+            {{1892, 231},  {200, 702}},
+            {{818,  1439}, {668, 702}},
             {{292,  1175}, {668, 836}},
         };
 
-        Homography homo;
-        cv::Mat H = homo.compute(pairs);
-        if (H.empty()) {
-            std::cerr << "Error: Failed to compute homography matrix" << std::endl;
-            return 1;
+        std::vector<PointPair> pairs2 = {
+            {{2430, 1091}, {668, 836}},
+            {{2008, 1439}, {668, 702}},
+            {{882,  0},    {1184, 702}},
+            {{1192, 0},    {1184, 836}},
+        };
+
+        std::vector<PointPair> pairs3 = {
+            {{87,  258},   {1238, 836}},
+            {{199, 218},   {1238, 702}},
+            {{1795, 380},  {1889, 232}},
+            {{547, 1076},  {1889, 839}},
+        };
+
+        // 初始化三个通道
+        std::vector<std::unique_ptr<VideoChannel>> channels(3);
+        std::vector<std::string> video_paths = {video1_path, video2_path, video3_path};
+        std::vector<cv::Scalar> map_colors = {
+            cv::Scalar(0, 0, 255),     // 红色
+            cv::Scalar(255, 0, 0),     // 蓝色
+            cv::Scalar(0, 255, 0),     // 绿色
+        };
+        std::vector<std::vector<PointPair>> all_pairs = {pairs1, pairs2, pairs3};
+
+        for (size_t i = 0; i < channels.size(); ++i) {
+            auto ch = std::make_unique<VideoChannel>();
+            ch->path = video_paths[i];
+            ch->map_color = map_colors[i];
+            ch->cap.open(ch->path);
+            if (!ch->cap.isOpened()) {
+                std::cerr << "Error: Cannot open video " << (i + 1) << ": " << ch->path << std::endl;
+                return 1;
+            }
+            ch->width = static_cast<int>(ch->cap.get(cv::CAP_PROP_FRAME_WIDTH));
+            ch->height = static_cast<int>(ch->cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+
+            cv::Mat H = ch->homo.compute(all_pairs[i]);
+            if (H.empty()) {
+                std::cerr << "Error: Failed to compute homography for video " << (i + 1) << std::endl;
+                return 1;
+            }
+            std::cout << "Video " << (i + 1) << ": " << ch->width << "x" << ch->height
+                      << " | Homography computed" << std::endl;
+            channels[i] = std::move(ch);
         }
-        std::cout << "Homography matrix:" << std::endl << H << std::endl;
 
-        // 打开视频
-        cv::VideoCapture cap(video_path);
-        if (!cap.isOpened()) {
-            std::cerr << "Error: Cannot open video: " << video_path << std::endl;
-            return 1;
+        // 计算布局
+        int top_height = 0;
+        int top_width = 0;
+        int total_frames = INT_MAX;
+        for (size_t i = 0; i < channels.size(); ++i) {
+            top_height = std::max(top_height, channels[i]->height);
+            channels[i]->x_offset = top_width;
+            top_width += channels[i]->width;
+            total_frames = std::min(total_frames,
+                static_cast<int>(channels[i]->cap.get(cv::CAP_PROP_FRAME_COUNT)));
         }
 
-        double fps = cap.get(cv::CAP_PROP_FPS);
-        int src_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-        int src_height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-        int total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
+        double fps = channels[0]->cap.get(cv::CAP_PROP_FPS);
 
-        std::cout << "Video: " << src_width << "x" << src_height << " @ " << fps << " FPS, "
-                  << total_frames << " frames" << std::endl;
-
-        // 输出画布：上原图(2560x1440)，左下白底(1000x500)，右下黑色
-        // 总尺寸 2560x1940
         int map_width = 2000;
         int map_height = 1000;
-        int canvas_width = src_width;
-        int canvas_height = src_height + map_height;
+        int canvas_width = top_width;
+        int canvas_height = top_height + map_height;
 
         cv::VideoWriter writer(output_path, cv::VideoWriter::fourcc('X', 'V', 'I', 'D'),
                                fps, cv::Size(canvas_width, canvas_height));
@@ -104,96 +191,72 @@ int main(int argc, char* argv[])
             std::cerr << "Error: Cannot create output video" << std::endl;
             return 1;
         }
-
-        std::cout << "Canvas output: " << canvas_width << "x" << canvas_height << std::endl;
-        std::cout << "Map region: " << map_width << "x" << map_height << " at (0, " << src_height << ")" << std::endl;
+        std::cout << "Canvas: " << canvas_width << "x" << canvas_height << std::endl;
+        std::cout << "Total frames: " << total_frames << " @ " << fps << " FPS" << std::endl;
 
         // 主循环
-        cv::Mat frame;
+        std::vector<cv::Mat> frames(channels.size());
         int total_count = 0;
         int processed_count = 0;
         auto start_time = std::chrono::high_resolution_clock::now();
 
         while (true) {
-            if (!cap.read(frame) || frame.empty()) break;
+            bool any_valid = false;
+            for (size_t i = 0; i < channels.size(); ++i) {
+                if (channels[i]->cap.read(frames[i]) && !frames[i].empty()) {
+                    any_valid = true;
+                } else {
+                    frames[i] = cv::Mat::zeros(channels[i]->height, channels[i]->width, CV_8UC3);
+                }
+            }
+            if (!any_valid) break;
             total_count++;
 
             if (total_count % skip_frames != 0) continue;
 
-            // 检测
-            std::vector<cv::Mat> batch = {frame};
-            std::vector<JHDeepCore::DetectionResult> det_results;
-            detector.process(batch, det_results);
-
-            // 创建画布：全黑
+            // 创建画布
             cv::Mat canvas(canvas_height, canvas_width, CV_8UC3, cv::Scalar(0, 0, 0));
 
-            // 原图放到上方
-            frame.copyTo(canvas(cv::Rect(0, 0, src_width, src_height)));
+            // 放置三路视频
+            for (size_t i = 0; i < channels.size(); ++i) {
+                frames[i].copyTo(canvas(cv::Rect(channels[i]->x_offset, 0,
+                                                  channels[i]->width, channels[i]->height)));
+            }
 
-            // 左下角白底区域
-            cv::Mat white_roi = canvas(cv::Rect(0, src_height, map_width, map_height));
+            // 左下白底
+            cv::Mat white_roi = canvas(cv::Rect(0, top_height, map_width, map_height));
             white_roi.setTo(cv::Scalar(255, 255, 255));
 
-            // 检测
-            if (!det_results.empty()) {
-                for (const auto& det : det_results[0].detections) {
-                    // 原图区域绘制检测框（canvas左上角）
-                    cv::Rect bbox_shifted = det.bbox;
-                    cv::rectangle(canvas, bbox_shifted, cv::Scalar(0, 255, 0), 2);
+            // 逐路检测+绘制
+            for (size_t i = 0; i < channels.size(); ++i) {
+                std::vector<cv::Mat> batch = {frames[i]};
+                std::vector<JHDeepCore::DetectionResult> det_results;
+                detector.process(batch, det_results);
 
-                    // 计算中心点
-                    cv::Point2f center(det.bbox.x + det.bbox.width / 2.0f,
-                                       det.bbox.y + det.bbox.height / 2.0f);
-
-                    // 原图上标记中心点
-                    cv::circle(canvas, center, 6, cv::Scalar(0, 0, 255), -1, cv::LINE_AA);
-
-                    // 通过单应矩阵映射到白底区域（坐标基于1000x500）
-                    cv::Point2f mapped = homo.project_point(center);
-                    // 映射到canvas上的实际位置（左下角白底区域偏移）
-                    cv::Point canvas_mapped(static_cast<int>(mapped.x),
-                                            static_cast<int>(mapped.y) + src_height);
-                    cv::circle(canvas, canvas_mapped, 8, cv::Scalar(0, 0, 255), -1, cv::LINE_AA);
-
-                    // 标签
-                    std::ostringstream oss;
-                    oss << det.class_id << "_" << std::fixed << std::setprecision(2) << det.confidence;
-                    int baseLine = 0;
-                    double labelScale = 0.6;
-                    cv::Size textSize = cv::getTextSize(oss.str(), cv::FONT_HERSHEY_SIMPLEX, labelScale, 2, &baseLine);
-                    int top = std::max(static_cast<int>(det.bbox.y), textSize.height + 5);
-                    cv::rectangle(canvas,
-                                  cv::Point(det.bbox.x, top - textSize.height - 3),
-                                  cv::Point(det.bbox.x + textSize.width + 4, top + 2),
-                                  cv::Scalar(0, 255, 0), -1);
-                    cv::putText(canvas, oss.str(), cv::Point(det.bbox.x + 2, top - 1),
-                                cv::FONT_HERSHEY_SIMPLEX, labelScale, cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
-                }
+                std::vector<JHDeepCore::Detection> dets;
+                if (!det_results.empty()) dets = det_results[0].detections;
+                drawDetections(canvas, channels[i]->x_offset, dets,
+                               channels[i]->homo, top_height, channels[i]->map_color);
             }
 
             writer.write(canvas);
             processed_count++;
 
-            // 进度
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::high_resolution_clock::now() - start_time).count();
             float progress = static_cast<float>(total_count) / total_frames * 100.0f;
-            int det_count = det_results.empty() ? 0 : static_cast<int>(det_results[0].detections.size());
 
             std::cout << "Frame " << total_count << "/" << total_frames
                       << " (" << std::fixed << std::setprecision(1) << progress << "%)"
-                      << " | Detections: " << det_count
                       << " | Processed: " << processed_count
                       << " | Elapsed: " << elapsed << "s" << std::endl;
         }
 
-        cap.release();
+        for (auto& ch : channels) ch->cap.release();
         writer.release();
 
         auto total_sec = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::high_resolution_clock::now() - start_time).count();
-
         std::cout << "================================" << std::endl;
         std::cout << "Completed! Processed " << processed_count << " frames in " << total_sec << "s" << std::endl;
         std::cout << "Output: " << output_path << std::endl;

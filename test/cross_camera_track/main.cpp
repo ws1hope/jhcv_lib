@@ -3,7 +3,6 @@
 #include "JHDeepCore.h"
 #include <chrono>
 #include <iomanip>
-#include <map>
 #include <sstream>
 #include <vector>
 #include <memory>
@@ -90,14 +89,6 @@ static std::vector<JHDeepCore::Detection> convertDetections(
     return detections;
 }
 
-struct GlobalTargetVisualState {
-    cv::Point2f point;
-    CameraId camera_id = 0;
-    bool initialized = false;
-    bool transitioning = false;
-    size_t missing_updates = 0;
-};
-
 /// Draw local tracking diagnostics in the camera view.
 static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
                                const std::vector<JHDeepCore::CrossCameraTrackedObject>& tracked_objects)
@@ -146,77 +137,21 @@ static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
     }
 }
 
-/// Draw one EMA-smoothed map position for each global target.
+/// Draw the unique global targets returned by CrossCameraTracker.
 static void drawGlobalTargets(
     cv::Mat& canvas,
-    const std::vector<JHDeepCore::CrossCameraTrackedObject>& tracked_objects,
-    int top_height,
-    std::map<TargetId, GlobalTargetVisualState>& visual_states)
+    const std::vector<JHDeepCore::CrossCameraGlobalTarget>& global_targets,
+    int top_height)
 {
-    constexpr float ema_alpha = 0.2f;
-    constexpr float transition_stop_distance = 2.0f;
-    constexpr size_t state_retention_updates = 30;
-
-    // Camera IDs describe the physical order, so the later camera wins while
-    // both local tracks are visible in an overlap area.
-    std::map<TargetId, const CrossCameraTrackedObject*> selected_objects;
-    for (const auto& object : tracked_objects) {
-        auto selected = selected_objects.find(object.target_id);
-        if (selected == selected_objects.end() ||
-            object.camera_id > selected->second->camera_id) {
-            selected_objects[object.target_id] = &object;
-        }
-    }
-
-    for (auto& [target_id, state] : visual_states) {
-        (void)target_id;
-        ++state.missing_updates;
-    }
-
-    for (const auto& [target_id, object] : selected_objects) {
-        auto& state = visual_states[target_id];
-        const cv::Point2f desired_point = object->mapped_point;
-        state.missing_updates = 0;
-
-        if (!state.initialized) {
-            state.point = desired_point;
-            state.camera_id = object->camera_id;
-            state.initialized = true;
-        } else {
-            if (state.camera_id != object->camera_id) {
-                state.camera_id = object->camera_id;
-                state.transitioning = true;
-            }
-
-            if (state.transitioning) {
-                state.point =
-                    state.point * (1.0f - ema_alpha) +
-                    desired_point * ema_alpha;
-                if (cv::norm(state.point - desired_point) <=
-                    transition_stop_distance) {
-                    state.point = desired_point;
-                    state.transitioning = false;
-                }
-            } else {
-                state.point = desired_point;
-            }
-        }
-
+    for (const auto& target : global_targets) {
         const cv::Point canvas_point(
-            cvRound(state.point.x), cvRound(state.point.y) + top_height);
-        const cv::Scalar color = getColorForTrackId(target_id);
+            cvRound(target.smoothed_mapped_point.x),
+            cvRound(target.smoothed_mapped_point.y) + top_height);
+        const cv::Scalar color = getColorForTrackId(target.target_id);
         cv::circle(canvas, canvas_point, 8, color, -1, cv::LINE_AA);
-        cv::putText(canvas, std::to_string(target_id),
+        cv::putText(canvas, std::to_string(target.target_id),
                     cv::Point(canvas_point.x - 15, canvas_point.y - 16),
                     cv::FONT_HERSHEY_SIMPLEX, 1.5, color, 4, cv::LINE_AA);
-    }
-
-    for (auto state = visual_states.begin(); state != visual_states.end();) {
-        if (state->second.missing_updates > state_retention_updates) {
-            state = visual_states.erase(state);
-        } else {
-            ++state;
-        }
     }
 }
 
@@ -355,7 +290,6 @@ int main(int argc, char* argv[])
 
         // 主循环
         std::vector<cv::Mat> frames(channels.size());
-        std::map<TargetId, GlobalTargetVisualState> global_visual_states;
         int total_count = 0;
         int processed_count = 0;
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -409,12 +343,13 @@ int main(int argc, char* argv[])
             }
 
             std::vector<CrossCameraTrackedObject> tracked_objects;
-            cross_tracker.update(cross_inputs, tracked_objects);
+            std::vector<CrossCameraGlobalTarget> global_targets;
+            cross_tracker.update(
+                cross_inputs, tracked_objects, global_targets);
             for (auto& channel : channels) {
                 drawTrackedObjects(canvas, *channel, tracked_objects);
             }
-            drawGlobalTargets(
-                canvas, tracked_objects, top_height, global_visual_states);
+            drawGlobalTargets(canvas, global_targets, top_height);
 
             writer.write(canvas);
             processed_count++;

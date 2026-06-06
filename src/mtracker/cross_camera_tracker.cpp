@@ -228,7 +228,8 @@ class CrossCameraTrackerPrivate {
     }
 
     void update(const std::vector<CrossCameraFrameInput> &batch,
-                std::vector<CrossCameraTrackedObject> &trackedObjects)
+                std::vector<CrossCameraTrackedObject> &trackedObjects,
+                std::vector<CrossCameraGlobalTarget> *globalTargets)
     {
         validateBatch(batch);
         logger_.info("UPDATE_BEGIN", "cameras=" + std::to_string(batch.size()));
@@ -301,6 +302,9 @@ class CrossCameraTrackerPrivate {
         }
 
         assignTargetIds(observations, groups);
+        if (globalTargets != nullptr) {
+            updateGlobalTargets(observations, *globalTargets);
+        }
 
         trackedObjects.clear();
         trackedObjects.reserve(observations.size());
@@ -340,13 +344,26 @@ class CrossCameraTrackerPrivate {
         float normalized_distance = 0.0f;
     };
 
+    struct GlobalTargetState {
+        cv::Point2f mapped_point;
+        CameraId camera_id = 0;
+        bool initialized = false;
+        bool transitioning = false;
+        size_t missing_updates = 0;
+    };
+
     CrossCameraTrackerConfig config_;
     FileLogger logger_;
     std::map<CameraId, ChannelState> channels_;
     std::map<LocalTrackKey, TargetId> local_to_target_;
     std::map<TargetId, std::set<LocalTrackKey>> target_members_;
     std::map<LocalTrackKey, std::vector<cv::Point>> center_trajectories_;
+    std::map<TargetId, GlobalTargetState> global_target_states_;
     TargetId next_target_id_ = 1;
+
+    static constexpr float kGlobalEmaAlpha = 0.2f;
+    static constexpr float kTransitionStopDistance = 2.0f;
+    static constexpr size_t kGlobalStateRetentionUpdates = 30;
 
     [[noreturn]] void inputError(const std::string &message)
     {
@@ -662,6 +679,85 @@ class CrossCameraTrackerPrivate {
             }
         }
     }
+
+    void updateGlobalTargets(
+        const std::vector<ObservationState> &observations,
+        std::vector<CrossCameraGlobalTarget> &globalTargets)
+    {
+        std::map<TargetId, const ObservationState *> selected;
+        for (const auto &observation : observations) {
+            const TargetId targetId = observation.object.target_id;
+            const auto current = selected.find(targetId);
+            if (current == selected.end() ||
+                observation.object.camera_id >
+                    current->second->object.camera_id) {
+                selected[targetId] = &observation;
+            }
+        }
+
+        for (auto &[targetId, state] : global_target_states_) {
+            (void)targetId;
+            ++state.missing_updates;
+        }
+
+        globalTargets.clear();
+        globalTargets.reserve(selected.size());
+        for (const auto &[targetId, observation] : selected) {
+            auto &state = global_target_states_[targetId];
+            const auto &object = observation->object;
+            const cv::Point2f desiredPoint = object.mapped_point;
+            state.missing_updates = 0;
+
+            if (!state.initialized) {
+                state.mapped_point = desiredPoint;
+                state.camera_id = object.camera_id;
+                state.initialized = true;
+            } else {
+                if (state.camera_id != object.camera_id) {
+                    logger_.info(
+                        "GLOBAL_TARGET_CAMERA_SWITCH",
+                        "target_id=" + std::to_string(targetId) +
+                            " from_camera=" +
+                            std::to_string(state.camera_id) +
+                            " to_camera=" +
+                            std::to_string(object.camera_id));
+                    state.camera_id = object.camera_id;
+                    state.transitioning = true;
+                }
+
+                if (state.transitioning) {
+                    state.mapped_point =
+                        state.mapped_point * (1.0f - kGlobalEmaAlpha) +
+                        desiredPoint * kGlobalEmaAlpha;
+                    if (cv::norm(state.mapped_point - desiredPoint) <=
+                        kTransitionStopDistance) {
+                        state.mapped_point = desiredPoint;
+                        state.transitioning = false;
+                    }
+                } else {
+                    state.mapped_point = desiredPoint;
+                }
+            }
+
+            CrossCameraGlobalTarget target;
+            target.target_id = targetId;
+            target.camera_id = object.camera_id;
+            target.local_track_id = object.local_track.track_id;
+            target.raw_mapped_point = desiredPoint;
+            target.smoothed_mapped_point = state.mapped_point;
+            globalTargets.push_back(target);
+        }
+
+        for (auto state = global_target_states_.begin();
+             state != global_target_states_.end();) {
+            if (state->second.missing_updates >
+                kGlobalStateRetentionUpdates) {
+                state = global_target_states_.erase(state);
+            } else {
+                ++state;
+            }
+        }
+    }
 };
 
 CrossCameraTracker::CrossCameraTracker(
@@ -676,7 +772,15 @@ void CrossCameraTracker::update(
     const std::vector<CrossCameraFrameInput> &batch,
     std::vector<CrossCameraTrackedObject> &tracked_objects)
 {
-    m_pHandle->update(batch, tracked_objects);
+    m_pHandle->update(batch, tracked_objects, nullptr);
+}
+
+void CrossCameraTracker::update(
+    const std::vector<CrossCameraFrameInput> &batch,
+    std::vector<CrossCameraTrackedObject> &tracked_objects,
+    std::vector<CrossCameraGlobalTarget> &global_targets)
+{
+    m_pHandle->update(batch, tracked_objects, &global_targets);
 }
 
 } // namespace JHDeepCore

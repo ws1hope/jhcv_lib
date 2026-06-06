@@ -317,6 +317,17 @@ struct CrossCameraTrackedObject {
     cv::Point2f mapped_point;
 };
 
+/// One unique, EMA-smoothed map position for a global target.
+struct CrossCameraGlobalTarget {
+    TargetId target_id = 0;
+    CameraId camera_id = 0;
+    size_t local_track_id = 0;
+    /// Raw mapped point from the selected local track.
+    cv::Point2f raw_mapped_point;
+    /// EMA-smoothed point intended for direct visualization.
+    cv::Point2f smoothed_mapped_point;
+};
+
 class CrossCameraTrackerPrivate;
 class CrossCameraTracker {
   public:
@@ -329,6 +340,11 @@ class CrossCameraTracker {
     /// Update all configured cameras and associate tracks across adjacent cameras.
     void update(const std::vector<CrossCameraFrameInput> &batch,
                 std::vector<CrossCameraTrackedObject> &tracked_objects);
+
+    /// Also return one directly visualizable map position per global target.
+    void update(const std::vector<CrossCameraFrameInput> &batch,
+                std::vector<CrossCameraTrackedObject> &tracked_objects,
+                std::vector<CrossCameraGlobalTarget> &global_targets);
 
   private:
     std::shared_ptr<CrossCameraTrackerPrivate> m_pHandle;

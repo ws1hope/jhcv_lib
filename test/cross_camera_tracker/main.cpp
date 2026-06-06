@@ -90,14 +90,16 @@ void testAdjacentTargetsShareTargetId()
 {
     CrossCameraTracker tracker(makeConfig());
     std::vector<CrossCameraTrackedObject> objects;
+    std::vector<CrossCameraGlobalTarget> globalTargets;
 
     tracker.update({
         makeInput(1, {makeDetection(100, 100)}),
         makeInput(2, {makeDetection(120, 110)}),
         makeInput(3, {}),
-    }, objects);
+    }, objects, globalTargets);
 
     assert(objects.size() == 2);
+    assert(globalTargets.size() == 1);
     const auto& cam1 = findCamera(objects, 1);
     const auto& cam2 = findCamera(objects, 2);
     assert(cam1.target_id == cam2.target_id);
@@ -111,6 +113,51 @@ void testAdjacentTargetsShareTargetId()
     assert(cv::norm(
                cv::Point2f(cam1.local_track.trajectory.back()) -
                expectedCenter) < 1.0f);
+    assert(globalTargets[0].target_id == cam1.target_id);
+    assert(globalTargets[0].camera_id == 2);
+    assert(cv::norm(globalTargets[0].raw_mapped_point -
+                    cam2.mapped_point) < 0.01f);
+    assert(cv::norm(globalTargets[0].smoothed_mapped_point -
+                    globalTargets[0].raw_mapped_point) < 0.01f);
+}
+
+void testGlobalTargetReturnsRawAndSmoothedPoints()
+{
+    CrossCameraTracker tracker(makeConfig());
+    std::vector<CrossCameraTrackedObject> objects;
+    std::vector<CrossCameraGlobalTarget> globalTargets;
+
+    tracker.update({
+        makeInput(1, {makeDetection(100, 100)}),
+        makeInput(2, {}),
+        makeInput(3, {}),
+    }, objects, globalTargets);
+    assert(globalTargets.size() == 1);
+    const cv::Point2f previousPoint =
+        globalTargets[0].smoothed_mapped_point;
+
+    tracker.update({
+        makeInput(1, {makeDetection(102, 100)}),
+        makeInput(2, {makeDetection(120, 100)}),
+        makeInput(3, {}),
+    }, objects, globalTargets);
+
+    // ByteTrack confirms a track that first appears after frame one on the
+    // next matching update.
+    tracker.update({
+        makeInput(1, {makeDetection(104, 100)}),
+        makeInput(2, {makeDetection(122, 100)}),
+        makeInput(3, {}),
+    }, objects, globalTargets);
+
+    assert(globalTargets.size() == 1);
+    assert(globalTargets[0].camera_id == 2);
+    const cv::Point2f rawPoint = globalTargets[0].raw_mapped_point;
+    const cv::Point2f smoothedPoint =
+        globalTargets[0].smoothed_mapped_point;
+    assert(cv::norm(smoothedPoint - rawPoint) > 0.01f);
+    assert(cv::norm(smoothedPoint - rawPoint) <
+           cv::norm(previousPoint - rawPoint));
 }
 
 void testNonAdjacentTargetsStaySeparate()
@@ -269,6 +316,7 @@ void testLoggingCreatesAFileWhenEnabled()
 int main()
 {
     testAdjacentTargetsShareTargetId();
+    testGlobalTargetReturnsRawAndSmoothedPoints();
     testNonAdjacentTargetsStaySeparate();
     testClassAndDistanceAreHardConstraints();
     testAdjacentChainSharesOneTargetId();

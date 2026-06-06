@@ -103,11 +103,14 @@ void testAdjacentTargetsShareTargetId()
     assert(cam1.target_id == cam2.target_id);
     assert(cam1.local_track.track_id == 1);
     assert(cam2.local_track.track_id == 1);
-    const cv::Point2f expectedFoot(
+    const cv::Point2f expectedCenter(
         cam1.local_track.bbox.x + cam1.local_track.bbox.width / 2.0f,
-        cam1.local_track.bbox.y +
-            static_cast<float>(cam1.local_track.bbox.height));
-    assert(cv::norm(cam1.mapped_point - expectedFoot) < 0.01f);
+        cam1.local_track.bbox.y + cam1.local_track.bbox.height / 2.0f);
+    assert(cv::norm(cam1.mapped_point - expectedCenter) < 0.01f);
+    assert(!cam1.local_track.trajectory.empty());
+    assert(cv::norm(
+               cv::Point2f(cam1.local_track.trajectory.back()) -
+               expectedCenter) < 1.0f);
 }
 
 void testNonAdjacentTargetsStaySeparate()

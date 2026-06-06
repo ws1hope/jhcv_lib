@@ -249,17 +249,29 @@ class CrossCameraTrackerPrivate {
             removeStaleBindings(cameraId, *channel.tracker);
 
             for (auto &localTrack : localTracks) {
-                const cv::Point2f footPoint(
+                const cv::Point2f centerPoint(
                     localTrack.bbox.x + localTrack.bbox.width / 2.0f,
-                    localTrack.bbox.y + static_cast<float>(localTrack.bbox.height));
+                    localTrack.bbox.y + localTrack.bbox.height / 2.0f);
+                const LocalTrackKey key{cameraId, localTrack.track_id};
+                auto &centerTrajectory = center_trajectories_[key];
+                centerTrajectory.emplace_back(
+                    cvRound(centerPoint.x), cvRound(centerPoint.y));
+                const size_t trajectoryLimit =
+                    std::max<size_t>(1, localTrack.trajectory.size());
+                if (centerTrajectory.size() > trajectoryLimit) {
+                    centerTrajectory.erase(
+                        centerTrajectory.begin(),
+                        centerTrajectory.begin() +
+                            (centerTrajectory.size() - trajectoryLimit));
+                }
+                localTrack.trajectory = centerTrajectory;
 
                 ObservationState observation;
                 observation.object.camera_id = cameraId;
                 observation.object.local_track = std::move(localTrack);
                 observation.object.mapped_point =
-                    channel.homography->project_point(footPoint);
-                observation.key = {
-                    cameraId, observation.object.local_track.track_id};
+                    channel.homography->project_point(centerPoint);
+                observation.key = key;
 
                 const auto binding = local_to_target_.find(observation.key);
                 if (binding != local_to_target_.end()) {
@@ -333,6 +345,7 @@ class CrossCameraTrackerPrivate {
     std::map<CameraId, ChannelState> channels_;
     std::map<LocalTrackKey, TargetId> local_to_target_;
     std::map<TargetId, std::set<LocalTrackKey>> target_members_;
+    std::map<LocalTrackKey, std::vector<cv::Point>> center_trajectories_;
     TargetId next_target_id_ = 1;
 
     [[noreturn]] void inputError(const std::string &message)
@@ -440,6 +453,7 @@ class CrossCameraTrackerPrivate {
         tracker.get_removed_ids(removedIds);
         for (const size_t localId : removedIds) {
             const LocalTrackKey key{cameraId, localId};
+            center_trajectories_.erase(key);
             const auto binding = local_to_target_.find(key);
             if (binding == local_to_target_.end()) {
                 continue;

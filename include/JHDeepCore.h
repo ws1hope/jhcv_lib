@@ -1,6 +1,7 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <memory>
@@ -265,6 +266,72 @@ class Tracker {
 
   private:
     std::shared_ptr<TrackerPrivate> m_pHandle;
+};
+
+// ======================== Cross-camera tracking ========================
+
+using CameraId = size_t;
+using TargetId = uint64_t;
+
+/// A calibration pair mapping one camera pixel to the shared map plane.
+struct CalibrationPointPair {
+    cv::Point2f image_point;
+    cv::Point2f map_point;
+};
+
+/// Configuration for one camera channel.
+struct CrossCameraChannelConfig {
+    CameraId camera_id = 0;
+    float tracker_fps = 30.0f;
+    std::vector<CalibrationPointPair> calibration_points;
+};
+
+/// An undirected adjacency relation between two camera channels.
+struct CrossCameraLinkConfig {
+    CameraId camera_a_id = 0;
+    CameraId camera_b_id = 0;
+    float max_distance = 200.0f;
+};
+
+/// Minimal configuration for the first cross-camera tracking demo.
+struct CrossCameraTrackerConfig {
+    TrackerConfig tracker_config;
+    std::vector<CrossCameraChannelConfig> channels;
+    std::vector<CrossCameraLinkConfig> links;
+    bool enable_log = true;
+    std::string log_directory = "logs";
+};
+
+/// Input for one camera in a synchronous update batch.
+struct CrossCameraFrameInput {
+    CameraId camera_id = 0;
+    cv::Mat frame;
+    std::vector<Detection> detections;
+};
+
+/// One local track augmented with a cross-camera target ID.
+struct CrossCameraTrackedObject {
+    CameraId camera_id = 0;
+    TargetId target_id = 0;
+    TrackedObject local_track;
+    cv::Point2f mapped_point;
+};
+
+class CrossCameraTrackerPrivate;
+class CrossCameraTracker {
+  public:
+    explicit CrossCameraTracker(const CrossCameraTrackerConfig &config);
+    ~CrossCameraTracker();
+
+    CrossCameraTracker(const CrossCameraTracker &) = delete;
+    CrossCameraTracker &operator=(const CrossCameraTracker &) = delete;
+
+    /// Update all configured cameras and associate tracks across adjacent cameras.
+    void update(const std::vector<CrossCameraFrameInput> &batch,
+                std::vector<CrossCameraTrackedObject> &tracked_objects);
+
+  private:
+    std::shared_ptr<CrossCameraTrackerPrivate> m_pHandle;
 };
 
 // ======================== 单应矩阵模块 ========================

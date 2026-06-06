@@ -16,6 +16,7 @@ add_executable(jhdeepcore_tracker_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_tr
 add_executable(jhdeepcore_video_track_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_video_track/main.cpp)
 add_executable(video_to_dataset_test ${CMAKE_CURRENT_SOURCE_DIR}/video_to_dataset/main.cpp)
 add_executable(cross_camera_track_test ${CMAKE_CURRENT_SOURCE_DIR}/cross_camera_track/main.cpp)
+add_executable(cross_camera_tracker_test ${CMAKE_CURRENT_SOURCE_DIR}/cross_camera_tracker/main.cpp)
 
 # ========== 大棒激光 HTTP 服务 ==========
 add_executable(dabang_jiguang ${CMAKE_CURRENT_SOURCE_DIR}/dabang_jiguang/main.cpp)
@@ -44,6 +45,7 @@ set(TEST_TARGETS
     jhdeepcore_video_track_test
     video_to_dataset_test
     cross_camera_track_test
+    cross_camera_tracker_test
     dabang_jiguang
     tiebiao
     dispatch

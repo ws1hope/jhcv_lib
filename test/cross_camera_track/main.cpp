@@ -38,8 +38,7 @@ static cv::Scalar getColorForTrackId(size_t track_id)
 struct CameraChannel {
     std::string name;
     cv::VideoCapture cap;
-    JHDeepCore::Tracker tracker;
-    Homography homo;
+    CameraId camera_id = 0;
     cv::Scalar map_color;
     int width = 0;
     int height = 0;
@@ -49,8 +48,8 @@ struct CameraChannel {
 
     CameraChannel(const std::string& video_path,
                   const std::string& channel_name,
-                  float tracker_fps)
-        : name(channel_name), tracker(createTrackerConfig(), tracker_fps)
+                  CameraId id)
+        : name(channel_name), camera_id(id)
     {
         cap.open(video_path);
         if (!cap.isOpened()) {
@@ -61,21 +60,22 @@ struct CameraChannel {
         height = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
         total_frames = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_COUNT));
     }
-
-private:
-    static JHDeepCore::TrackerConfig createTrackerConfig() {
-        JHDeepCore::TrackerConfig cfg;
-        cfg.tracker_type = JHDeepCore::TrackerType::ByteTrack;
-        cfg.distance_type = JHDeepCore::TrackDistanceType::IoU;
-        cfg.distance_threshold = 0.6f;
-        cfg.bytetrack_track_thresh = 0.5f;
-        cfg.bytetrack_high_thresh = 0.5f;
-        cfg.bytetrack_match_thresh = 0.8f;
-        return cfg;
-    }
 };
 
-static std::vector<JHDeepCore::Detection> convertDetections(const JHDeepCore::DetectionResult& det_result)
+static JHDeepCore::TrackerConfig createTrackerConfig()
+{
+    JHDeepCore::TrackerConfig cfg;
+    cfg.tracker_type = JHDeepCore::TrackerType::ByteTrack;
+    cfg.distance_type = JHDeepCore::TrackDistanceType::IoU;
+    cfg.distance_threshold = 0.6f;
+    cfg.bytetrack_track_thresh = 0.5f;
+    cfg.bytetrack_high_thresh = 0.5f;
+    cfg.bytetrack_match_thresh = 0.8f;
+    return cfg;
+}
+
+static std::vector<JHDeepCore::Detection> convertDetections(
+    const JHDeepCore::DetectionResult& det_result)
 {
     std::vector<JHDeepCore::Detection> detections;
     for (const auto& det : det_result.detections) {
@@ -91,11 +91,16 @@ static std::vector<JHDeepCore::Detection> convertDetections(const JHDeepCore::De
 
 /// 在上方视频区域绘制跟踪结果，在下方白底区域绘制映射点
 static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
-                               const std::vector<JHDeepCore::TrackedObject>& tracked_objects,
+                               const std::vector<JHDeepCore::CrossCameraTrackedObject>& tracked_objects,
                                int top_height)
 {
-    for (const auto& obj : tracked_objects) {
-        cv::Scalar color = getColorForTrackId(obj.track_id);
+    for (const auto& cross_obj : tracked_objects) {
+        if (cross_obj.camera_id != ch.camera_id) {
+            continue;
+        }
+
+        const auto& obj = cross_obj.local_track;
+        cv::Scalar color = getColorForTrackId(cross_obj.target_id);
 
         // 上方视频区域：跟踪框（带偏移）
         cv::Rect bbox_shifted = obj.bbox;
@@ -113,8 +118,8 @@ static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
             cv::circle(canvas, last, 4, color, -1, cv::LINE_AA);
         }
 
-        // 标签: 只显示 ID
-        std::string label = std::to_string(obj.track_id);
+        // Large target ID shared by adjacent cameras.
+        std::string label = std::to_string(cross_obj.target_id);
         int baseLine = 0;
         double labelScale = 2.4;
         cv::Size textSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, labelScale, 8, &baseLine);
@@ -126,16 +131,17 @@ static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
         cv::putText(canvas, label, cv::Point(bbox_shifted.x + 4, top - 2),
                     cv::FONT_HERSHEY_SIMPLEX, labelScale, cv::Scalar(255, 255, 255), 8, cv::LINE_AA);
 
-        // 中心点映射到白底区域
-        cv::Point2f center(obj.bbox.x + obj.bbox.width / 2.0f,
-                           obj.bbox.y + obj.bbox.height / 2.0f);
-        cv::Point2f mapped = ch.homo.project_point(center);
-        cv::Point canvas_mapped(static_cast<int>(mapped.x),
-                                static_cast<int>(mapped.y) + top_height);
+        // Small local ID remains visible for tracker diagnostics.
+        cv::putText(canvas, "L:" + std::to_string(obj.track_id),
+                    cv::Point(bbox_shifted.x, top + 40),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv::LINE_AA);
+
+        cv::Point canvas_mapped(static_cast<int>(cross_obj.mapped_point.x),
+                                static_cast<int>(cross_obj.mapped_point.y) + top_height);
         cv::circle(canvas, canvas_mapped, 8, ch.map_color, -1, cv::LINE_AA);
 
-        // 白底区域：映射点上方绘制 ID
-        cv::putText(canvas, std::to_string(obj.track_id),
+        // Shared map displays the target ID.
+        cv::putText(canvas, std::to_string(cross_obj.target_id),
                     cv::Point(canvas_mapped.x - 15, canvas_mapped.y - 16),
                     cv::FONT_HERSHEY_SIMPLEX, 1.5, ch.map_color, 4, cv::LINE_AA);
     }
@@ -143,10 +149,12 @@ static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
 
 int main(int argc, char* argv[])
 {
-    std::string model_path = "";
-    std::string label_path = "";
+    std::string model_path =
+        "/Users/zhanghaining/2026code/jhcv_lib/models/panjuan_det/best.onnx";
+    std::string label_path =
+        "/Users/zhanghaining/2026code/jhcv_lib/models/panjuan_det/best.yaml";
     std::string output_path = "result/cross_camera_result.avi";
-    int device_id = 0;
+    int device_id = -1;
     int skip_frames = 3;
 
     std::vector<std::string> video_paths = {
@@ -163,13 +171,6 @@ int main(int argc, char* argv[])
     if (argc >= 7) output_path = argv[6];
     if (argc >= 8) device_id = std::stoi(argv[7]);
     if (argc >= 9) skip_frames = std::stoi(argv[8]);
-
-    if (model_path.empty()) {
-        std::cerr << "Usage: " << argv[0]
-                  << " <model_path> [video1] [video2] [video3] [label_path] [output_path] [device_id] [skip_frames]"
-                  << std::endl;
-        return 1;
-    }
 
     try {
         std::cout << "=== Cross-Camera Tracking with Homography ===" << std::endl;
@@ -196,8 +197,8 @@ int main(int argc, char* argv[])
         std::vector<PointPair> pairs2 = {
             {{2430, 1091}, {2505, 836}},
             {{2008, 1439}, {2505, 702}},
-            {{882,  0},    {4800, 702}},
-            {{1192, 0},    {4800, 836}},
+            {{951,  88},   {4800, 702}},
+            {{1190, 0},    {4800, 836}},
         };
         std::vector<PointPair> pairs3 = {
             {{115, 337},   {4575, 836}},
@@ -217,20 +218,37 @@ int main(int argc, char* argv[])
         float ref_fps = 0;
         for (size_t i = 0; i < video_paths.size(); ++i) {
             auto ch = std::make_unique<CameraChannel>(
-                video_paths[i], "Cam" + std::to_string(i + 1), 25.0f);
+                video_paths[i], "Cam" + std::to_string(i + 1), i + 1);
             ch->map_color = map_colors[i];
 
-            cv::Mat H = ch->homo.compute(all_pairs[i]);
-            if (H.empty()) {
-                std::cerr << "Error: Failed to compute homography for Cam" << (i + 1) << std::endl;
-                return 1;
-            }
             std::cout << "Cam" << (i + 1) << ": " << ch->width << "x" << ch->height
                       << " @ " << ch->fps << " FPS, " << ch->total_frames << " frames"
-                      << " | Homography OK" << std::endl;
+                      << std::endl;
             if (i == 0) ref_fps = static_cast<float>(ch->fps);
             channels.push_back(std::move(ch));
         }
+
+        CrossCameraTrackerConfig cross_config;
+        cross_config.tracker_config = createTrackerConfig();
+        cross_config.enable_log = true;
+        cross_config.log_directory = "logs";
+        for (size_t i = 0; i < channels.size(); ++i) {
+            CrossCameraChannelConfig channel_config;
+            channel_config.camera_id = channels[i]->camera_id;
+            channel_config.tracker_fps =
+                static_cast<float>(channels[i]->fps) /
+                static_cast<float>(std::max(skip_frames, 1));
+            for (const auto& pair : all_pairs[i]) {
+                channel_config.calibration_points.push_back(
+                    {pair.first, pair.second});
+            }
+            cross_config.channels.push_back(std::move(channel_config));
+        }
+        cross_config.links = {
+            {channels[0]->camera_id, channels[1]->camera_id, 200.0f},
+            {channels[1]->camera_id, channels[2]->camera_id, 200.0f},
+        };
+        CrossCameraTracker cross_tracker(cross_config);
 
         // 计算布局：上方三视频并排，下方白底7500x1000
         int top_height = 0;
@@ -296,24 +314,30 @@ int main(int argc, char* argv[])
             cv::Mat white_roi = canvas(cv::Rect(0, top_height, map_width, map_height));
             white_roi.setTo(cv::Scalar(255, 255, 255));
 
-            // 逐路检测+跟踪+绘制
+            // Run one image at a time because the model may only support batch size 1.
+            std::vector<CrossCameraFrameInput> cross_inputs;
+            cross_inputs.reserve(channels.size());
             for (size_t i = 0; i < channels.size(); ++i) {
-                // 检测
-                std::vector<cv::Mat> batch = {frames[i]};
+                std::vector<cv::Mat> detector_input = {frames[i]};
                 std::vector<JHDeepCore::DetectionResult> det_results;
-                detector.process(batch, det_results);
-
-                std::vector<JHDeepCore::Detection> detections;
-                if (!det_results.empty()) {
-                    detections = convertDetections(det_results[0]);
+                detector.process(detector_input, det_results);
+                if (det_results.size() != 1) {
+                    throw std::runtime_error(
+                        "Detector did not return one result for camera " +
+                        std::to_string(channels[i]->camera_id));
                 }
 
-                // 跟踪
-                std::vector<JHDeepCore::TrackedObject> tracked;
-                channels[i]->tracker.update(detections, frames[i], tracked);
+                CrossCameraFrameInput input;
+                input.camera_id = channels[i]->camera_id;
+                input.frame = frames[i];
+                input.detections = convertDetections(det_results[0]);
+                cross_inputs.push_back(std::move(input));
+            }
 
-                // 绘制跟踪结果 + 映射点
-                drawTrackedObjects(canvas, *channels[i], tracked, top_height);
+            std::vector<CrossCameraTrackedObject> tracked_objects;
+            cross_tracker.update(cross_inputs, tracked_objects);
+            for (auto& channel : channels) {
+                drawTrackedObjects(canvas, *channel, tracked_objects, top_height);
             }
 
             writer.write(canvas);

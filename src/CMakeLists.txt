@@ -70,6 +70,7 @@ set(AI_PLATFORM_OCR_SOURCES
 
 set(AI_PLATFORM_TRACKER_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/mtracker/tracker.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mtracker/cross_camera_tracker.cpp
 )
 
 # 对外接口

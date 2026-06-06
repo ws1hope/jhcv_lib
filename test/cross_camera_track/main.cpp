@@ -3,6 +3,7 @@
 #include "JHDeepCore.h"
 #include <chrono>
 #include <iomanip>
+#include <map>
 #include <sstream>
 #include <vector>
 #include <memory>
@@ -89,10 +90,17 @@ static std::vector<JHDeepCore::Detection> convertDetections(
     return detections;
 }
 
-/// 在上方视频区域绘制跟踪结果，在下方白底区域绘制映射点
+struct GlobalTargetVisualState {
+    cv::Point2f point;
+    CameraId camera_id = 0;
+    bool initialized = false;
+    bool transitioning = false;
+    size_t missing_updates = 0;
+};
+
+/// Draw local tracking diagnostics in the camera view.
 static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
-                               const std::vector<JHDeepCore::CrossCameraTrackedObject>& tracked_objects,
-                               int top_height)
+                               const std::vector<JHDeepCore::CrossCameraTrackedObject>& tracked_objects)
 {
     for (const auto& cross_obj : tracked_objects) {
         if (cross_obj.camera_id != ch.camera_id) {
@@ -135,15 +143,80 @@ static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
         cv::putText(canvas, "L:" + std::to_string(obj.track_id),
                     cv::Point(bbox_shifted.x, top + 40),
                     cv::FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv::LINE_AA);
+    }
+}
 
-        cv::Point canvas_mapped(static_cast<int>(cross_obj.mapped_point.x),
-                                static_cast<int>(cross_obj.mapped_point.y) + top_height);
-        cv::circle(canvas, canvas_mapped, 8, ch.map_color, -1, cv::LINE_AA);
+/// Draw one EMA-smoothed map position for each global target.
+static void drawGlobalTargets(
+    cv::Mat& canvas,
+    const std::vector<JHDeepCore::CrossCameraTrackedObject>& tracked_objects,
+    int top_height,
+    std::map<TargetId, GlobalTargetVisualState>& visual_states)
+{
+    constexpr float ema_alpha = 0.2f;
+    constexpr float transition_stop_distance = 2.0f;
+    constexpr size_t state_retention_updates = 30;
 
-        // Shared map displays the target ID.
-        cv::putText(canvas, std::to_string(cross_obj.target_id),
-                    cv::Point(canvas_mapped.x - 15, canvas_mapped.y - 16),
-                    cv::FONT_HERSHEY_SIMPLEX, 1.5, ch.map_color, 4, cv::LINE_AA);
+    // Camera IDs describe the physical order, so the later camera wins while
+    // both local tracks are visible in an overlap area.
+    std::map<TargetId, const CrossCameraTrackedObject*> selected_objects;
+    for (const auto& object : tracked_objects) {
+        auto selected = selected_objects.find(object.target_id);
+        if (selected == selected_objects.end() ||
+            object.camera_id > selected->second->camera_id) {
+            selected_objects[object.target_id] = &object;
+        }
+    }
+
+    for (auto& [target_id, state] : visual_states) {
+        (void)target_id;
+        ++state.missing_updates;
+    }
+
+    for (const auto& [target_id, object] : selected_objects) {
+        auto& state = visual_states[target_id];
+        const cv::Point2f desired_point = object->mapped_point;
+        state.missing_updates = 0;
+
+        if (!state.initialized) {
+            state.point = desired_point;
+            state.camera_id = object->camera_id;
+            state.initialized = true;
+        } else {
+            if (state.camera_id != object->camera_id) {
+                state.camera_id = object->camera_id;
+                state.transitioning = true;
+            }
+
+            if (state.transitioning) {
+                state.point =
+                    state.point * (1.0f - ema_alpha) +
+                    desired_point * ema_alpha;
+                if (cv::norm(state.point - desired_point) <=
+                    transition_stop_distance) {
+                    state.point = desired_point;
+                    state.transitioning = false;
+                }
+            } else {
+                state.point = desired_point;
+            }
+        }
+
+        const cv::Point canvas_point(
+            cvRound(state.point.x), cvRound(state.point.y) + top_height);
+        const cv::Scalar color = getColorForTrackId(target_id);
+        cv::circle(canvas, canvas_point, 8, color, -1, cv::LINE_AA);
+        cv::putText(canvas, std::to_string(target_id),
+                    cv::Point(canvas_point.x - 15, canvas_point.y - 16),
+                    cv::FONT_HERSHEY_SIMPLEX, 1.5, color, 4, cv::LINE_AA);
+    }
+
+    for (auto state = visual_states.begin(); state != visual_states.end();) {
+        if (state->second.missing_updates > state_retention_updates) {
+            state = visual_states.erase(state);
+        } else {
+            ++state;
+        }
     }
 }
 
@@ -282,6 +355,7 @@ int main(int argc, char* argv[])
 
         // 主循环
         std::vector<cv::Mat> frames(channels.size());
+        std::map<TargetId, GlobalTargetVisualState> global_visual_states;
         int total_count = 0;
         int processed_count = 0;
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -337,8 +411,10 @@ int main(int argc, char* argv[])
             std::vector<CrossCameraTrackedObject> tracked_objects;
             cross_tracker.update(cross_inputs, tracked_objects);
             for (auto& channel : channels) {
-                drawTrackedObjects(canvas, *channel, tracked_objects, top_height);
+                drawTrackedObjects(canvas, *channel, tracked_objects);
             }
+            drawGlobalTargets(
+                canvas, tracked_objects, top_height, global_visual_states);
 
             writer.write(canvas);
             processed_count++;

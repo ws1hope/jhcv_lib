@@ -112,26 +112,26 @@ int main(int argc, char* argv[])
         JHDeepCore::Detector detector(model_path, label_path, device_id);
         std::cout << "Detector ready: " << detector.GetInputWidth() << "x" << detector.GetInputHeight() << std::endl;
 
-        // 各视频单应矩阵点对
+        // 各视频单应矩阵点对（映射坐标已翻倍，对应4000x2000白底）
         std::vector<PointPair> pairs1 = {
-            {{1692, 153},  {200, 836}},
-            {{1892, 231},  {200, 702}},
-            {{818,  1439}, {668, 702}},
-            {{292,  1175}, {668, 836}},
+            {{1692, 153},  {750, 836}},
+            {{1892, 231},  {750, 702}},
+            {{818,  1439}, {2505, 702}},
+            {{292,  1175}, {2505, 836}},
         };
 
         std::vector<PointPair> pairs2 = {
-            {{2430, 1091}, {668, 836}},
-            {{2008, 1439}, {668, 702}},
-            {{882,  0},    {1184, 702}},
-            {{1192, 0},    {1184, 836}},
+            {{2430, 1091}, {2505, 836}},
+            {{2008, 1439}, {2505, 702}},
+            {{882,  0},    {4800, 702}},
+            {{1192, 0},    {4800, 836}},
         };
 
         std::vector<PointPair> pairs3 = {
-            {{115, 337},   {1238, 836}},
-            {{263, 307},   {1238, 702}},
-            {{2399, 380},  {1889, 234}},
-            {{577, 1439},  {1889, 839}},
+            {{115, 337},   {4575, 836}},
+            {{263, 307},   {4575, 702}},
+            {{2399, 380},  {7084, 234}},
+            {{577, 1439},  {7084, 839}},
         };
 
         // 初始化三个通道
@@ -180,7 +180,7 @@ int main(int argc, char* argv[])
 
         double fps = channels[0]->cap.get(cv::CAP_PROP_FPS);
 
-        int map_width = 2000;
+        int map_width = 7500;
         int map_height = 1000;
         int canvas_width = top_width;
         int canvas_height = top_height + map_height;

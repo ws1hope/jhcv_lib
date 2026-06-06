@@ -133,6 +133,11 @@ static void drawTrackedObjects(cv::Mat& canvas, CameraChannel& ch,
         cv::Point canvas_mapped(static_cast<int>(mapped.x),
                                 static_cast<int>(mapped.y) + top_height);
         cv::circle(canvas, canvas_mapped, 8, ch.map_color, -1, cv::LINE_AA);
+
+        // 白底区域：映射点上方绘制 ID
+        cv::putText(canvas, std::to_string(obj.track_id),
+                    cv::Point(canvas_mapped.x - 15, canvas_mapped.y - 16),
+                    cv::FONT_HERSHEY_SIMPLEX, 1.5, ch.map_color, 4, cv::LINE_AA);
     }
 }
 

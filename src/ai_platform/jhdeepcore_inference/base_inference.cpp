@@ -41,7 +41,7 @@ cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
     original_image_size_ = rgb_image.size();
 
     cv::Size resize_size;
-    if (config_.task_type == "segmentation" && config_.img_scale.width > 0) {
+    if (config_.img_scale.width > 0 && config_.img_scale.height > 0) {
         resize_size = config_.img_scale;
     } else {
         resize_size = cv::Size(config_.class_scale, config_.class_scale);

@@ -16,7 +16,7 @@ byte_track::STrack::STrack(const cv::Rect2f& rect, const float& score, objtype_t
     start_frame_id_(0),
     tracklet_len_(0)
 {
-    Point_t pt(rect.x + rect.width / 2.f, rect.y + rect.height);
+    Point_t pt(rect.x + rect.width / 2.f, rect.y + rect.height / 2.f);
     trace_.push_back(pt, pt, currTime);
 }
 
@@ -99,7 +99,7 @@ void byte_track::STrack::activate(const size_t& frame_id, const size_t& track_id
     start_frame_id_ = frame_id;
     tracklet_len_ = 0;
 
-    Point_t pt_pr(rect_.x + rect_.width / 2.f, rect_.y + rect_.height);
+    Point_t pt_pr(rect_.x + rect_.width / 2.f, rect_.y + rect_.height / 2.f);
     trace_.push_back(pt_pr, currTime);
 }
 
@@ -118,8 +118,8 @@ void byte_track::STrack::reActivate(const STrack &new_track, const size_t &frame
     frame_id_ = frame_id;
     tracklet_len_ = 0;
 
-    Point_t pt_pr(rect_.x + rect_.width / 2.f, rect_.y + rect_.height);
-    Point_t pt_raw(new_track.getRect().x + new_track.getRect().width / 2.f, new_track.getRect().y + new_track.getRect().height);
+    Point_t pt_pr(rect_.x + rect_.width / 2.f, rect_.y + rect_.height / 2.f);
+    Point_t pt_raw(new_track.getRect().x + new_track.getRect().width / 2.f, new_track.getRect().y + new_track.getRect().height / 2.f);
     trace_.push_back(pt_pr, pt_raw, currTime);
 }
 
@@ -143,8 +143,8 @@ void byte_track::STrack::update(const STrack &new_track, const size_t &frame_id,
     frame_id_ = frame_id;
     tracklet_len_++;
 
-    Point_t pt_pr(rect_.x + rect_.width / 2.f, rect_.y + rect_.height);
-    Point_t pt_raw(new_track.getRect().x + new_track.getRect().width / 2.f, new_track.getRect().y + new_track.getRect().height);
+    Point_t pt_pr(rect_.x + rect_.width / 2.f, rect_.y + rect_.height / 2.f);
+    Point_t pt_raw(new_track.getRect().x + new_track.getRect().width / 2.f, new_track.getRect().y + new_track.getRect().height / 2.f);
     trace_.push_back(pt_pr, pt_raw, currTime);
 }
 

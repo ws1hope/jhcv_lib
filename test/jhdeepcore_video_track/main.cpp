@@ -80,19 +80,12 @@ static void drawTrackedObjects(cv::Mat& frame, const std::vector<JHDeepCore::Tra
             cv::circle(frame, obj.trajectory.back(), 4, color, -1, cv::LINE_AA);
         }
 
-        // 绘制ID和类别标签
-        std::string label = "ID:" + std::to_string(obj.track_id);
-        if (obj.class_id >= 0) {
-            label += " cls:" + std::to_string(obj.class_id);
-        }
-        if (obj.confidence > 0) {
-            label += " " + std::to_string(static_cast<int>(obj.confidence * 100)) + "%";
-        }
+        std::string label = std::to_string(obj.track_id);
 
         // 计算文本大小
         int baseLine = 0;
-        double fontScale = (frame.cols < 1000) ? 0.45 : 0.6;
-        cv::Size textSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, fontScale, 1, &baseLine);
+        double fontScale = (frame.cols < 1000) ? 1.8 : 2.4;
+        cv::Size textSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, fontScale, 4, &baseLine);
         int top = std::max(obj.bbox.y, textSize.height + 5);
 
         // 绘制标签背景
@@ -105,7 +98,7 @@ static void drawTrackedObjects(cv::Mat& frame, const std::vector<JHDeepCore::Tra
         cv::putText(frame, label,
                    cv::Point(obj.bbox.x + 2, top - 1),
                    cv::FONT_HERSHEY_SIMPLEX, fontScale,
-                   cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
+                   cv::Scalar(255, 255, 255), 4, cv::LINE_AA);
     }
 }
 

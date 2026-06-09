@@ -4,7 +4,7 @@
 #include <chrono>
 #include <iomanip>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 #include <filesystem>
 
 #ifdef _WIN32

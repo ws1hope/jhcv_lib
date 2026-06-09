@@ -88,6 +88,23 @@ if(MSVC)
     )
 endif()
 
+# ========== jhdeepcore_video_track 测试 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_video_track/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== video_to_dataset 测试 ==========
+target_include_directories(video_to_dataset_test PRIVATE ${CMAKE_SOURCE_DIR}/src/third_party)
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/video_to_dataset/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
 # ========== penma_rec_dll 测试（链接动态库） ==========
 target_include_directories(penma_rec_dll_test PRIVATE ${CMAKE_SOURCE_DIR}/src/cv_infer)
 target_link_libraries(penma_rec_dll_test PRIVATE penma_rec_dll)

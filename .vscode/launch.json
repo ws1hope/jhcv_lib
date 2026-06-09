@@ -373,6 +373,31 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "video_to_dataset",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/video_to_dataset_test.exe",
+            "args": [
+                "${workspaceFolder}/models/panjuan_det/best.onnx",
+                "${workspaceFolder}/images/test.mp4",
+                "${workspaceFolder}/models/panjuan_det/best.yaml",
+                "${workspaceFolder}/result/dataset",
+                "100",
+                "panjuan",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
             "name": "mac video_to_dataset",
             "type": "cppdbg",
             "request": "launch",

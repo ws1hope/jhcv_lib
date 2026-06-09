@@ -1,7 +1,7 @@
 #include <iostream>
+#include <chrono>
 #include <opencv2/opencv.hpp>
 #include "JHDeepCore.h"
-#include <chrono>
 #include <iomanip>
 #include <filesystem>
 #include <algorithm>
@@ -50,59 +50,49 @@ static void drawDetections(cv::Mat& image, const JHDeepCore::DetectionResult& re
 }
 
 int main(int argc, char* argv[]) {
-    std::string model_path = (argc > 1) ? argv[1] : "/Users/zhanghaining/2026code/jhcv_lib/models/panjuan_det/tt/best.onnx";
-    std::string image_dir = (argc > 2) ? argv[2] : "/Users/zhanghaining/2026code/jhcv_lib/images/multibatch";
-    std::string output_dir = (argc > 3) ? argv[3] : "/Users/zhanghaining/2026code/jhcv_lib/result";
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [label_path] [device_id]" << std::endl;
+        return 1;
+    }
+
+    std::string model_path = argv[1];
+    std::string image_path = argv[2];
+    std::string label_path = (argc > 3) ? argv[3] : "";
+    int device_id = (argc > 4) ? std::stoi(argv[4]) : 0;
 
     try {
-        JHDeepCore::Detector detector(model_path, "", 0);
+        JHDeepCore::Detector detector(model_path, label_path, device_id);
 
-        std::vector<std::string> supported_exts = {".png", ".jpg", ".jpeg", ".bmp"};
-        std::vector<std::string> file_names;
-        for (const auto& entry : std::filesystem::directory_iterator(image_dir)) {
-            if (!entry.is_regular_file()) continue;
-            std::string ext = entry.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            for (const auto& s : supported_exts) {
-                if (ext == s) {
-                    file_names.push_back(entry.path().string());
-                    break;
-                }
-            }
-        }
-
-        if (file_names.empty()) {
-            std::cerr << "No images found in: " << image_dir << std::endl;
+        cv::Mat image = cv::imread(image_path);
+        if (image.empty()) {
+            std::cerr << "Failed to read image: " << image_path << std::endl;
             return 1;
         }
-        std::sort(file_names.begin(), file_names.end());
-        ensureDirectoryExists(output_dir);
 
-        for (const auto& file_path : file_names) {
-            std::string name = file_path.substr(file_path.find_last_of("/\\") + 1);
-            cv::Mat image = cv::imread(file_path);
-            if (image.empty()) {
-                std::cerr << "Failed to read: " << file_path << std::endl;
-                continue;
+        std::vector<cv::Mat> images = {image};
+
+        const int warmup_runs = 5;
+        for (int i = 0; i < warmup_runs; ++i) {
+            std::vector<JHDeepCore::DetectionResult> warmup_results;
+            detector.process(images, warmup_results);
+        }
+        std::cout << "Warmup done (" << warmup_runs << " runs)" << std::endl;
+
+        std::vector<JHDeepCore::DetectionResult> results;
+        auto t_start = std::chrono::high_resolution_clock::now();
+        detector.process(images, results);
+        auto t_end = std::chrono::high_resolution_clock::now();
+        double elapsed_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+        std::cout << "Inference time: " << elapsed_ms << " ms" << std::endl;
+
+        for (auto& r : results) {
+            std::cout << "Detection Result:" << std::endl;
+            std::cout << "  Num detections: " << r.num_detections << std::endl;
+            for (const auto& det : r.detections) {
+                std::cout << "  [" << det.class_name << "] conf=" << det.confidence
+                          << " bbox=(" << det.bbox.x << "," << det.bbox.y << ","
+                          << det.bbox.width << "," << det.bbox.height << ")" << std::endl;
             }
-
-            std::vector<cv::Mat> images = {image};
-            std::vector<JHDeepCore::DetectionResult> results;
-
-            auto t0 = std::chrono::high_resolution_clock::now();
-            detector.process(images, results);
-            auto t1 = std::chrono::high_resolution_clock::now();
-            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-
-            int num_det = results.empty() ? 0 : results[0].num_detections;
-            std::cout << name << ": " << num_det << " detections, " << ms << "ms" << std::endl;
-
-            cv::Mat result_image = image.clone();
-            if (!results.empty()) {
-                drawDetections(result_image, results[0]);
-            }
-            cv::imwrite(output_dir + "/" + name, result_image);
-            std::cout << "  Saved: " << output_dir + "/" + name << std::endl;
         }
 
     } catch (const std::exception& e) {

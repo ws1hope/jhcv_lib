@@ -239,23 +239,39 @@ SegmentationResult BaseInference::ProcessSegmentationOutput(const std::vector<fl
 
     cv::Mat segmentation_mask(height, width, CV_8UC1);
 
+    // 预分配像素概率缓冲区，循环内复用
+    std::vector<float> pixel_probs(channels);
+
     for (int h = 0; h < height; ++h) {
         for (int w = 0; w < width; ++w) {
-            std::vector<float> pixel_logits(channels);
+            float max_val = -1e30f;
             for (int c = 0; c < channels; ++c) {
                 int idx = data_offset + c * height * width + h * width + w;
                 if (idx >= static_cast<int>(output.size())) {
                     throw std::runtime_error("Output data index out of bounds: " + std::to_string(idx));
                 }
-                pixel_logits[c] = output[idx];
+                float val = output[idx];
+                pixel_probs[c] = val;
+                if (val > max_val) max_val = val;
             }
 
-            std::vector<float> probabilities = Softmax(pixel_logits);
+            float sum = 0.0f;
+            for (int c = 0; c < channels; ++c) {
+                pixel_probs[c] = std::exp(pixel_probs[c] - max_val);
+                sum += pixel_probs[c];
+            }
 
-            auto max_it = std::max_element(probabilities.begin(), probabilities.end());
-            int class_id = static_cast<int>(std::distance(probabilities.begin(), max_it));
+            int best_class = 0;
+            float best_prob = pixel_probs[0] / sum;
+            for (int c = 1; c < channels; ++c) {
+                float prob = pixel_probs[c] / sum;
+                if (prob > best_prob) {
+                    best_prob = prob;
+                    best_class = c;
+                }
+            }
 
-            segmentation_mask.at<uchar>(h, w) = static_cast<uchar>(class_id);
+            segmentation_mask.at<uchar>(h, w) = static_cast<uchar>(best_class);
         }
     }
 
@@ -285,16 +301,17 @@ std::vector<float> BaseInference::Softmax(const std::vector<float> &logits) {
 
     float max_val = *std::max_element(logits.begin(), logits.end());
 
-    std::vector<float> exp_values(logits.size());
-    std::transform(logits.begin(), logits.end(), exp_values.begin(),
-                   [max_val](float x) { return std::exp(x - max_val); });
+    std::vector<float> result(logits.size());
+    float sum = 0.0f;
+    for (size_t i = 0; i < logits.size(); ++i) {
+        result[i] = std::exp(logits[i] - max_val);
+        sum += result[i];
+    }
+    for (size_t i = 0; i < result.size(); ++i) {
+        result[i] /= sum;
+    }
 
-    float sum = std::accumulate(exp_values.begin(), exp_values.end(), 0.0f);
-
-    std::vector<float> probabilities(exp_values.size());
-    std::transform(exp_values.begin(), exp_values.end(), probabilities.begin(), [sum](float x) { return x / sum; });
-
-    return probabilities;
+    return result;
 }
 
 cv::Mat BaseInference::Letterbox(const cv::Mat &img, const cv::Size &new_shape, cv::Point2i &pad, float &gain) {
@@ -358,6 +375,9 @@ DetectionResult BaseInference::ProcessDetectionOutput(const std::vector<float> &
     std::vector<cv::Rect> boxes;
     std::vector<float> confidences;
     std::vector<int> class_ids;
+    boxes.reserve(num_detections);
+    confidences.reserve(num_detections);
+    class_ids.reserve(num_detections);
 
     for (int i = 0; i < num_detections; ++i) {
         float x_center = output[0 * num_detections + i];
@@ -541,6 +561,10 @@ InstanceSegmentationResult BaseInference::ProcessInstanceSegmentationOutput(
     std::vector<float> confidences;
     std::vector<int> class_ids;
     std::vector<std::vector<float>> mask_coeffs;
+    boxes.reserve(num_detections);
+    confidences.reserve(num_detections);
+    class_ids.reserve(num_detections);
+    mask_coeffs.reserve(num_detections);
 
     for (int i = 0; i < num_detections; ++i) {
         float x_center = pred_output[i * num_info + 0];
@@ -652,22 +676,20 @@ std::vector<cv::Mat> BaseInference::ProcessInstanceMasks(const std::vector<float
             }
         }
 
-        cv::Mat mask_sigmoid;
-        cv::exp(-mask, mask_sigmoid);
-        mask_sigmoid = 1.0f / (1.0f + mask_sigmoid);
+        // sigmoid: mask = 1 / (1 + exp(-mask))，原地操作复用 Mat
+        cv::exp(-mask, mask);
+        mask = 1.0f / (1.0f + mask);
 
         int top = static_cast<int>(letterbox_pad_.y);
         int left = static_cast<int>(letterbox_pad_.x);
         int bottom = input_height - top;
         int right = input_width - left;
 
-        cv::Mat mask_input;
-        cv::resize(mask_sigmoid, mask_input, cv::Size(input_width, input_height), 0, 0, cv::INTER_LINEAR);
+        cv::resize(mask, mask, cv::Size(input_width, input_height), 0, 0, cv::INTER_LINEAR);
 
-        cv::Mat mask_unpadded = mask_input(cv::Range(top, bottom), cv::Range(left, right));
+        cv::Mat mask_unpadded = mask(cv::Range(top, bottom), cv::Range(left, right));
 
-        cv::Mat mask_orig;
-        cv::resize(mask_unpadded, mask_orig, cv::Size(img_w, img_h), 0, 0, cv::INTER_LINEAR);
+        cv::resize(mask_unpadded, mask, cv::Size(img_w, img_h), 0, 0, cv::INTER_LINEAR);
 
         cv::Rect bbox = bboxes[i];
         int x1 = std::max(0, std::min(bbox.x, img_w));
@@ -677,15 +699,13 @@ std::vector<cv::Mat> BaseInference::ProcessInstanceMasks(const std::vector<float
 
         cv::Mat mask_final = cv::Mat::zeros(img_h, img_w, CV_32F);
         if (x2 > x1 && y2 > y1) {
-            cv::Mat mask_cropped = mask_orig(cv::Range(y1, y2), cv::Range(x1, x2));
-            mask_cropped.copyTo(mask_final(cv::Range(y1, y2), cv::Range(x1, x2)));
+            mask(cv::Range(y1, y2), cv::Range(x1, x2)).copyTo(mask_final(cv::Range(y1, y2), cv::Range(x1, x2)));
         }
 
-        cv::Mat mask_binary;
-        cv::threshold(mask_final, mask_binary, 0.5, 1.0, cv::THRESH_BINARY);
-        mask_binary.convertTo(mask_binary, CV_8U, 255.0);
+        cv::threshold(mask_final, mask_final, 0.5, 1.0, cv::THRESH_BINARY);
+        mask_final.convertTo(mask_final, CV_8U, 255.0);
 
-        masks.push_back(mask_binary);
+        masks.push_back(mask_final);
     }
 
     return masks;

@@ -50,7 +50,12 @@ class OnnxInference : public BaseInference {
     bool model_loaded_;
     bool warmup_enabled_;
 
-    std::vector<float> PreprocessForOnnx(const cv::Mat &image);
+    // 预分配缓冲区，避免每次推理重复申请释放
+    std::vector<float> input_buffer_;
+    std::vector<const char *> output_names_cstr_;
+    std::vector<const char *> input_names_cstr_;
+
+    void PreprocessForOnnx(const cv::Mat &image);
     std::vector<float> RunInference(const std::vector<float> &input_data);
 };
 

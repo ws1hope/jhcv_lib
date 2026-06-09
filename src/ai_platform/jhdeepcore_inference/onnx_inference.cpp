@@ -38,13 +38,11 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
       ,
       model_loaded_(false), warmup_enabled_(warmup) {
 #ifdef ONNXRUNTIME_FOUND
-    // 对于Mac M系列芯片，使用更多线程和优化选项
-    session_options_.SetIntraOpNumThreads(8);  // M系列芯片有8个性能核心
+    session_options_.SetIntraOpNumThreads(8);
     session_options_.SetInterOpNumThreads(8);
     session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
     session_options_.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
-    // 启用内存优化
     session_options_.AddConfigEntry("session.enable_mem_pattern", "0");
     session_options_.AddConfigEntry("session.enable_mem_reuse", "1");
 
@@ -113,6 +111,20 @@ bool OnnxInference::LoadModel() {
             output_shapes_.push_back(output_tensor_info.GetShape());
         }
 
+        // 预分配推理输入缓冲区
+        size_t input_size = 1;
+        for (int64_t dim : input_shape_) {
+            input_size *= static_cast<size_t>(dim);
+        }
+        input_buffer_.resize(input_size);
+
+        // 预构建 C 字符串指针（推理时不再重复构建）
+        output_names_cstr_.clear();
+        for (const auto &name : output_names_) {
+            output_names_cstr_.push_back(name.c_str());
+        }
+        input_names_cstr_ = {input_name_.c_str()};
+
         model_loaded_ = true;
 
         if (warmup_enabled_ && device_ == "cuda") {
@@ -137,9 +149,9 @@ ClassificationResult OnnxInference::InferSingle(const cv::Mat &image) {
     }
 
     cv::Mat preprocessed = PreprocessImageCommon(image);
-    std::vector<float> input_data = PreprocessForOnnx(preprocessed);
+    PreprocessForOnnx(preprocessed);
 
-    std::vector<float> output = RunInference(input_data);
+    std::vector<float> output = RunInference(input_buffer_);
 
     return ProcessClassificationOutput(output);
 }
@@ -158,36 +170,19 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     }
 
     cv::Mat preprocessed = PreprocessImageCommon(image);
-    std::vector<float> input_data = PreprocessForOnnx(preprocessed);
+    PreprocessForOnnx(preprocessed);
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
 
-    std::vector<int64_t> input_shape = input_shape_;
-    if (input_shape[0] == -1) {
-        input_shape[0] = 1;
-    }
-
-    size_t input_tensor_size = 1;
-    for (int64_t dim : input_shape) {
-        input_tensor_size *= static_cast<size_t>(dim);
-    }
-
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
-                                        input_shape.data(), input_shape.size());
+        Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
+                                        input_shape_.data(), input_shape_.size());
 
-    std::vector<const char *> output_names_cstr;
-    for (const auto &name : output_names_) {
-        output_names_cstr.push_back(name.c_str());
-    }
-
-    std::vector<const char *> input_names_cstr = {input_name_.c_str()};
-
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr.data(), &input_tensor, 1,
-                                        output_names_cstr.data(), output_names_cstr.size());
+    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
+                                        output_names_cstr_.data(), output_names_cstr_.size());
 
     if (output_tensors.empty()) {
         throw std::runtime_error("Inference output is empty");
@@ -196,9 +191,7 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     float *float_array = output_tensors.front().GetTensorMutableData<float>();
     auto tensor_info = output_tensors.front().GetTensorTypeAndShapeInfo();
     size_t output_size = tensor_info.GetElementCount();
-
     std::vector<int64_t> output_shape = tensor_info.GetShape();
-
     std::vector<float> output(float_array, float_array + output_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
@@ -221,36 +214,19 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     }
 
     cv::Mat preprocessed = PreprocessImageDetection(image);
-    std::vector<float> input_data = PreprocessForOnnx(preprocessed);
+    PreprocessForOnnx(preprocessed);
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
 
-    std::vector<int64_t> input_shape = input_shape_;
-    if (input_shape[0] == -1) {
-        input_shape[0] = 1;
-    }
-
-    size_t input_tensor_size = 1;
-    for (int64_t dim : input_shape) {
-        input_tensor_size *= static_cast<size_t>(dim);
-    }
-
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
-                                        input_shape.data(), input_shape.size());
+        Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
+                                        input_shape_.data(), input_shape_.size());
 
-    std::vector<const char *> output_names_cstr;
-    for (const auto &name : output_names_) {
-        output_names_cstr.push_back(name.c_str());
-    }
-
-    std::vector<const char *> input_names_cstr = {input_name_.c_str()};
-
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr.data(), &input_tensor, 1,
-                                        output_names_cstr.data(), output_names_cstr.size());
+    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
+                                        output_names_cstr_.data(), output_names_cstr_.size());
 
     if (output_tensors.empty()) {
         throw std::runtime_error("Inference output is empty");
@@ -259,9 +235,7 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     float *float_array = output_tensors.front().GetTensorMutableData<float>();
     auto tensor_info = output_tensors.front().GetTensorTypeAndShapeInfo();
     size_t output_size = tensor_info.GetElementCount();
-
     std::vector<int64_t> output_shape = tensor_info.GetShape();
-
     std::vector<float> output(float_array, float_array + output_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
@@ -284,36 +258,19 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     }
 
     cv::Mat preprocessed = PreprocessImageDetection(image);
-    std::vector<float> input_data = PreprocessForOnnx(preprocessed);
+    PreprocessForOnnx(preprocessed);
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
 
-    std::vector<int64_t> input_shape = input_shape_;
-    if (input_shape[0] == -1) {
-        input_shape[0] = 1;
-    }
-
-    size_t input_tensor_size = 1;
-    for (int64_t dim : input_shape) {
-        input_tensor_size *= static_cast<size_t>(dim);
-    }
-
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
-                                        input_shape.data(), input_shape.size());
+        Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
+                                        input_shape_.data(), input_shape_.size());
 
-    std::vector<const char *> output_names_cstr;
-    for (const auto &name : output_names_) {
-        output_names_cstr.push_back(name.c_str());
-    }
-
-    std::vector<const char *> input_names_cstr = {input_name_.c_str()};
-
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr.data(), &input_tensor, 1,
-                                        output_names_cstr.data(), output_names_cstr.size());
+    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
+                                        output_names_cstr_.data(), output_names_cstr_.size());
 
     if (output_tensors.empty() || output_tensors.size() < 2) {
         throw std::runtime_error("Instance segmentation model should have two outputs");
@@ -339,7 +296,8 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
                                              protos_output_shape);
 }
 
-std::vector<InstanceSegmentationResult> OnnxInference::InferBatchInstanceSegmentation(const std::vector<cv::Mat> &images) {
+std::vector<InstanceSegmentationResult> OnnxInference::InferBatchInstanceSegmentation(
+    const std::vector<cv::Mat> &images) {
     std::vector<InstanceSegmentationResult> results;
     for (const auto &image : images) {
         results.push_back(InferSingleInstanceSegmentation(image));
@@ -354,17 +312,9 @@ void OnnxInference::WarmupModel(int iterations) {
     }
 
     try {
-        int input_size = 1;
-        for (int64_t dim : input_shape_) {
-            if (dim > 0) {
-                input_size *= static_cast<int>(dim);
-            }
-        }
-
-        std::vector<float> dummy_input(input_size, 0.0f);
-
+        std::fill(input_buffer_.begin(), input_buffer_.end(), 0.0f);
         for (int i = 0; i < iterations; ++i) {
-            RunInference(dummy_input);
+            RunInference(input_buffer_);
         }
     } catch (const std::exception &e) {
         std::cerr << "Warning: GPU warmup failed: " << e.what() << std::endl;
@@ -372,24 +322,23 @@ void OnnxInference::WarmupModel(int iterations) {
 #endif
 }
 
-std::vector<float> OnnxInference::PreprocessForOnnx(const cv::Mat &image) {
+void OnnxInference::PreprocessForOnnx(const cv::Mat &image) {
     int channels = image.channels();
     int height = image.rows;
     int width = image.cols;
+    int hw = height * width;
 
-    std::vector<float> input_data(channels * height * width);
-
-    for (int c = 0; c < channels; ++c) {
-        for (int h = 0; h < height; ++h) {
-            for (int w = 0; w < width; ++w) {
-                cv::Vec3f pixel = image.at<cv::Vec3f>(h, w);
-                int idx = c * height * width + h * width + w;
-                input_data[idx] = pixel[c];
-            }
+    // 按行遍历，每个像素一次访问写完所有通道
+    for (int h = 0; h < height; ++h) {
+        const cv::Vec3f *row = image.ptr<cv::Vec3f>(h);
+        for (int w = 0; w < width; ++w) {
+            const cv::Vec3f &pixel = row[w];
+            int spatial = h * width + w;
+            input_buffer_[spatial] = pixel[0];
+            input_buffer_[hw + spatial] = pixel[1];
+            input_buffer_[2 * hw + spatial] = pixel[2];
         }
     }
-
-    return input_data;
 }
 
 std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_data) {
@@ -398,29 +347,12 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
         throw std::runtime_error("Model not loaded");
     }
 
-    std::vector<int64_t> input_shape = input_shape_;
-    if (input_shape[0] == -1) {
-        input_shape[0] = 1;
-    }
-
-    size_t input_tensor_size = 1;
-    for (int64_t dim : input_shape) {
-        input_tensor_size *= static_cast<size_t>(dim);
-    }
-
     Ort::Value input_tensor =
         Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
-                                        input_shape.data(), input_shape.size());
+                                        input_shape_.data(), input_shape_.size());
 
-    std::vector<const char *> output_names_cstr;
-    for (const auto &name : output_names_) {
-        output_names_cstr.push_back(name.c_str());
-    }
-
-    std::vector<const char *> input_names_cstr = {input_name_.c_str()};
-
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr.data(), &input_tensor, 1,
-                                        output_names_cstr.data(), output_names_cstr.size());
+    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
+                                        output_names_cstr_.data(), output_names_cstr_.size());
 
     if (output_tensors.empty()) {
         throw std::runtime_error("Inference output is empty");

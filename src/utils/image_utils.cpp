@@ -190,6 +190,7 @@ std::vector<CharCropInfo> ImageHelper::rotateAndRemapBBoxes(
         CharCropInfo crop_info;
         crop_info.center_x = (max_x + min_x) / 2;
         crop_info.center_y = (max_y + min_y) / 2;
+        crop_info.bbox = roi;
         crop_info.image = crop;
         crops.push_back(crop_info);
     }

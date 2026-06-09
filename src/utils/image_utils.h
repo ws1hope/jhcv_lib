@@ -27,6 +27,7 @@ struct CharAngleInfo {
 struct CharCropInfo {
     int center_x = 0;
     int center_y = 0;
+    cv::Rect bbox;   // 旋转后图像坐标系中的字符定位框
     cv::Mat image;
 };
 

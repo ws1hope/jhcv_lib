@@ -205,57 +205,146 @@ std::vector<std::string> TiebiaoPipeline::recognizeChars(const std::vector<CharC
     return texts;
 }
 
-cv::Mat TiebiaoPipeline::createAnnotatedImage(const cv::Mat& src_img,
-                                                const cv::Mat& rotated_img,
-                                                const std::vector<std::string>& ocr_texts,
-                                                const std::vector<CharCropInfo>& crops,
-                                                const std::string& label_type,
-                                                int direction_flag)
+cv::Mat TiebiaoPipeline::createAnnotatedImage(
+    const cv::Mat& src_img,
+    const std::vector<LabelDisplayInfo>& labels)
 {
-    cv::Mat src_copy = src_img.clone();
+    const int margin = 15;
+    const int row_h = 60;
+    const int thumb_height = 200;
+    const int char_margin = 4;
+    const int gap = 15;
+    const int section_gap = 10;
+    const int pad_bottom = 15;
+    const double strip_font_scale = 0.7;
 
-    cv::Mat yuanbiao = rotated_img.clone();
-    if (direction_flag == 180) {
-        cv::flip(yuanbiao, yuanbiao, -1);
+    // 底部区域：每个标签一行，行内水平排列
+    int bottom_area_h = 0;
+    for (auto& lbl : labels) {
+        int num_char_rows = (lbl.direction_flag == 180) ? 2 : 1;
+        int strip_total_h = num_char_rows * (row_h + section_gap + 20);
+        int row_total = std::max(thumb_height, strip_total_h);
+        bottom_area_h += row_total + section_gap;
     }
 
-    double scale = 3.0;
-    cv::Mat yuanbiao_scaled;
-    cv::resize(yuanbiao, yuanbiao_scaled, cv::Size(), scale, scale, cv::INTER_LINEAR);
+    int canvas_h = src_img.rows + bottom_area_h + pad_bottom;
+    cv::Mat result = cv::Mat::zeros(canvas_h, src_img.cols, src_img.type());
+    src_img.copyTo(result(cv::Rect(0, 0, src_img.cols, src_img.rows)));
 
-    int x = src_copy.cols - yuanbiao_scaled.cols - 1000;
-    int y = 20;
-    if (x < 0) x = 0;
-
-    cv::Rect dst_rect(x, y, yuanbiao_scaled.cols, yuanbiao_scaled.rows);
-    cv::Rect img_rect(0, 0, src_copy.cols, src_copy.rows);
-    cv::Rect clipped = dst_rect & img_rect;
-
-    if (!clipped.empty()) {
-        cv::Mat src_roi = yuanbiao_scaled(
-            cv::Rect(clipped.x - x, clipped.y - y, clipped.width, clipped.height));
-        src_roi.copyTo(src_copy(clipped));
+    // 左上角：最终匹配结果（大字体，从上到下排列）
+    {
+        int y = 70;
+        int idx = 1;
+        for (auto& lbl : labels) {
+            std::string text = lbl.label_type + std::to_string(idx);
+            if (!lbl.matched_luhao.empty()) text += ":" + lbl.matched_luhao;
+            cv::putText(result, text, cv::Point(margin, y),
+                        cv::FONT_HERSHEY_SIMPLEX, 1.5, cv::Scalar(0, 255, 0), 3);
+            y += 65;
+            idx++;
+        }
     }
 
-    int font_face = cv::FONT_HERSHEY_SIMPLEX;
-    double font_scale = 1.5;
-    cv::Scalar color_red(0, 0, 255);
-    cv::Scalar color_blue(255, 0, 0);
-    int thickness = 3;
-    int text_y = yuanbiao_scaled.rows + 60;
+    auto buildCharStrip = [&](const std::vector<cv::Mat>& imgs) -> cv::Mat {
+        std::vector<cv::Mat> resized;
+        for (auto& img : imgs) {
+            if (img.empty()) continue;
+            float s = static_cast<float>(row_h) / img.rows;
+            cv::Mat r;
+            cv::resize(img, r, cv::Size(), s, s, cv::INTER_LINEAR);
+            resized.push_back(r);
+        }
+        if (resized.empty()) return cv::Mat();
+        int total_w = 0;
+        for (auto& r : resized) total_w += r.cols + char_margin;
+        total_w -= char_margin;
+        cv::Mat strip = cv::Mat::zeros(row_h, total_w, CV_8UC3);
+        int cx = 0;
+        for (auto& r : resized) {
+            cv::Rect roi(cx, 0, r.cols, r.rows);
+            r.copyTo(strip(roi));
+            cx += r.cols + char_margin;
+        }
+        return strip;
+    };
 
-    cv::putText(src_copy, label_type, cv::Point(50, text_y),
-                font_face, font_scale, color_blue, thickness);
+    auto pasteAt = [&](const cv::Mat& img, int x, int y) {
+        if (img.empty()) return;
+        cv::Rect paste_rect(x, y, img.cols, img.rows);
+        cv::Rect clipped = paste_rect & cv::Rect(0, 0, result.cols, result.rows);
+        if (clipped.empty()) return;
+        cv::Rect src_roi(clipped.x - x, clipped.y - y, clipped.width, clipped.height);
+        img(src_roi).copyTo(result(clipped));
+    };
 
-    for (int i = 0; i < (int)ocr_texts.size(); i++) {
-        if (ocr_texts[i].empty()) continue;
-        std::string line = ocr_texts[i];
-        text_y += 50;
-        cv::putText(src_copy, line, cv::Point(50, text_y),
-                    font_face, font_scale, color_red, thickness);
+    // 底部区域：每个标签一行（缩略图 + 字符片段水平排列）
+    int bottom_y = src_img.rows;
+
+    for (int lbl_idx = 0; lbl_idx < (int)labels.size(); lbl_idx++) {
+        auto& lbl = labels[lbl_idx];
+        std::string tag = lbl.label_type + std::to_string(lbl_idx + 1);
+
+        cv::Mat tiebiao_img = lbl.rotated_image.clone();
+        if (lbl.direction_flag == 180) {
+            cv::flip(tiebiao_img, tiebiao_img, -1);
+        }
+
+        float thumb_scale = static_cast<float>(thumb_height) / tiebiao_img.rows;
+        cv::Mat thumb;
+        cv::resize(tiebiao_img, thumb, cv::Size(), thumb_scale, thumb_scale, cv::INTER_LINEAR);
+
+        cv::Scalar color_green(0, 255, 0);
+        for (auto& crop : lbl.char_crops) {
+            cv::Rect draw_rect = crop.bbox;
+            if (lbl.direction_flag == 180) {
+                draw_rect.x = tiebiao_img.cols - draw_rect.x - draw_rect.width;
+                draw_rect.y = tiebiao_img.rows - draw_rect.y - draw_rect.height;
+            }
+            cv::Rect scaled_rect(
+                static_cast<int>(draw_rect.x * thumb_scale),
+                static_cast<int>(draw_rect.y * thumb_scale),
+                static_cast<int>(draw_rect.width * thumb_scale),
+                static_cast<int>(draw_rect.height * thumb_scale));
+            scaled_rect &= cv::Rect(0, 0, thumb.cols, thumb.rows);
+            if (scaled_rect.area() > 0) {
+                cv::rectangle(thumb, scaled_rect, color_green, 2);
+            }
+        }
+
+        int cur_y = bottom_y;
+
+        // 缩略图（左侧）
+        pasteAt(thumb, margin, cur_y);
+        int strip_x = margin + thumb.cols + gap;
+
+        // 字符片段（缩略图右侧）
+        if (lbl.direction_flag == 180) {
+            cv::Mat strip_before = buildCharStrip(lbl.char_images_before_flip);
+            cv::Mat strip_after = buildCharStrip(lbl.char_images_after_flip);
+
+            int strip_y = cur_y + 20;
+            cv::putText(result, tag + " Before flip:", cv::Point(strip_x, strip_y),
+                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 2);
+            pasteAt(strip_before, strip_x, strip_y + 10);
+
+            int strip2_y = strip_y + row_h + section_gap + 10;
+            cv::putText(result, tag + " After flip:", cv::Point(strip_x, strip2_y),
+                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 2);
+            pasteAt(strip_after, strip_x, strip2_y + 10);
+
+            bottom_y = cur_y + thumb_height + section_gap;
+        } else {
+            cv::Mat strip_crops = buildCharStrip(lbl.char_images_after_flip);
+            int strip_y = cur_y + (thumb_height - row_h) / 2;
+            cv::putText(result, tag + " Char crops:", cv::Point(strip_x, strip_y),
+                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 2);
+            pasteAt(strip_crops, strip_x, strip_y + 10);
+
+            bottom_y = cur_y + thumb_height + section_gap;
+        }
     }
 
-    return src_copy;
+    return result;
 }
 
 TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
@@ -278,7 +367,7 @@ TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
     if (verbose) std::cout << "[DEBUG] Detected " << labels.size() << " labels" << std::endl;
 
     std::string ocr_combined;
-    cv::Mat best_annotated;
+    std::vector<LabelDisplayInfo> display_infos;
 
     for (int kk = 0; kk < (int)labels.size(); kk++) {
         auto& [label_roi, class_id] = labels[kk];
@@ -304,6 +393,20 @@ TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
         int dir_flag = classifyDirection(char_images);
 
         if (verbose) std::cout << "[DEBUG] Direction: " << dir_flag << std::endl;
+
+        std::vector<cv::Mat> char_images_before;
+        std::vector<cv::Mat> char_images_after;
+        for (auto& crop : char_crops) {
+            char_images_before.push_back(crop.image.clone());
+            if (dir_flag == 180 && !crop.image.empty()) {
+                cv::Mat flipped;
+                cv::flip(crop.image, flipped, -1);
+                char_images_after.push_back(flipped);
+                crop.image = flipped.clone();
+            } else {
+                char_images_after.push_back(crop.image.clone());
+            }
+        }
 
         std::vector<std::string> ocr_texts = recognizeChars(char_crops);
 
@@ -334,8 +437,16 @@ TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
             ocr_combined += label_type + "#" + luhao;
         }
 
-        best_annotated = createAnnotatedImage(
-            image, rotated_image, ocr_texts, char_crops, label_type, dir_flag);
+        LabelDisplayInfo info;
+        info.rotated_image = rotated_image;
+        info.char_crops = char_crops;
+        info.ocr_texts = ocr_texts;
+        info.label_type = label_type;
+        info.direction_flag = dir_flag;
+        info.matched_luhao = luhao;
+        info.char_images_before_flip = std::move(char_images_before);
+        info.char_images_after_flip = std::move(char_images_after);
+        display_infos.push_back(std::move(info));
     }
 
     auto infer_end = std::chrono::high_resolution_clock::now();
@@ -345,7 +456,7 @@ TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
     if (!ocr_combined.empty()) {
         result.state_flag = "OK";
         result.ocr_text = ocr_combined;
-        result.annotated_image = best_annotated;
+        result.annotated_image = createAnnotatedImage(image, display_infos);
     } else {
         result.state_flag = "NG";
     }

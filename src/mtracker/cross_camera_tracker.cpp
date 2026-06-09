@@ -610,9 +610,21 @@ class CrossCameraTrackerPrivate {
                               secondCameras.begin(), secondCameras.end(),
                               std::back_inserter(duplicateCameras));
         if (!duplicateCameras.empty()) {
+            std::string cam_list;
+            for (auto cam : duplicateCameras) {
+                if (!cam_list.empty()) cam_list += ",";
+                cam_list += std::to_string(cam);
+            }
+            const auto &obs_a = observations[candidate.first];
+            const auto &obs_b = observations[candidate.second];
             logger_.warning("MATCH_REJECTED_CONFLICT",
-                            "reason=duplicate_camera distance=" +
-                                std::to_string(candidate.distance));
+                            "reason=duplicate_camera"
+                            " cam_a=" + std::to_string(obs_a.key.camera_id) +
+                            " local_a=" + std::to_string(obs_a.key.local_id) +
+                            " cam_b=" + std::to_string(obs_b.key.camera_id) +
+                            " local_b=" + std::to_string(obs_b.key.local_id) +
+                            " dup_cams=[" + cam_list + "]"
+                            " distance=" + std::to_string(candidate.distance));
             return;
         }
 
@@ -621,9 +633,21 @@ class CrossCameraTrackerPrivate {
             groupTargetIds(secondRoot, observations, groups);
         targetIds.insert(secondTargetIds.begin(), secondTargetIds.end());
         if (targetIds.size() > 1) {
+            std::string id_list;
+            for (auto id : targetIds) {
+                if (!id_list.empty()) id_list += ",";
+                id_list += std::to_string(id);
+            }
+            const auto &obs_a = observations[candidate.first];
+            const auto &obs_b = observations[candidate.second];
             logger_.warning("MATCH_REJECTED_CONFLICT",
-                            "reason=different_target_ids distance=" +
-                                std::to_string(candidate.distance));
+                            "reason=different_target_ids"
+                            " cam_a=" + std::to_string(obs_a.key.camera_id) +
+                            " local_a=" + std::to_string(obs_a.key.local_id) +
+                            " cam_b=" + std::to_string(obs_b.key.camera_id) +
+                            " local_b=" + std::to_string(obs_b.key.local_id) +
+                            " target_ids=[" + id_list + "]"
+                            " distance=" + std::to_string(candidate.distance));
             return;
         }
 

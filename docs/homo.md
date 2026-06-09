@@ -22,8 +22,8 @@ td2 (源坐标)
 td2 (映射坐标)
 2505  836
 2505  702
-5000  702
-5000  836
+4800  702
+4800  836
 
 /Users/zhanghaining/2026code/jhcv_lib/images/td_video/td3.mp4
 td3 (源坐标)

@@ -205,8 +205,8 @@ int main(int argc, char* argv[])
         std::vector<PointPair> pairs2 = {
             {{2430, 1091}, {2505, 836}},
             {{2008, 1439}, {2505, 702}},
-            {{951,  88},   {5200, 702}},
-            {{1190, 0},    {5200, 836}},
+            {{951,  88},   {4800, 702}},
+            {{1190, 0},    {4800, 836}},
         };
         std::vector<PointPair> pairs3 = {
             {{115, 337},   {4500, 836}},
@@ -272,7 +272,7 @@ int main(int argc, char* argv[])
         int map_width = 7500;
         int map_height = 1000;
         int canvas_width = top_width;
-        int canvas_height = top_height + map_height;
+        int canvas_height = top_height + map_height * 2;
 
         std::string ext = output_path.substr(output_path.find_last_of('.'));
         if (ext != ".avi") {
@@ -318,13 +318,23 @@ int main(int argc, char* argv[])
                                                   channels[i]->width, channels[i]->height)));
             }
 
-            // 左下白底
+            // 左下白底（全局 EMA 点）
             cv::Mat white_roi = canvas(cv::Rect(0, top_height, map_width, map_height));
             white_roi.setTo(cv::Scalar(255, 255, 255));
+
+            // 第二块白底（各 cam 映射点）
+            cv::Mat cam_roi = canvas(cv::Rect(0, top_height + map_height, map_width, map_height));
+            cam_roi.setTo(cv::Scalar(255, 255, 255));
+            cv::putText(cam_roi, "Per-Camera Mapped Points", cv::Point(20, 50),
+                        cv::FONT_HERSHEY_SIMPLEX, 1.5, cv::Scalar(0, 0, 0), 3, cv::LINE_AA);
+
+            auto t_frame_start = std::chrono::high_resolution_clock::now();
 
             // Run one image at a time because the model may only support batch size 1.
             std::vector<CrossCameraFrameInput> cross_inputs;
             cross_inputs.reserve(channels.size());
+
+            auto t_det_start = std::chrono::high_resolution_clock::now();
             for (size_t i = 0; i < channels.size(); ++i) {
                 std::vector<cv::Mat> detector_input = {frames[i]};
                 std::vector<JHDeepCore::DetectionResult> det_results;
@@ -341,25 +351,57 @@ int main(int argc, char* argv[])
                 input.detections = convertDetections(det_results[0]);
                 cross_inputs.push_back(std::move(input));
             }
+            auto t_det_end = std::chrono::high_resolution_clock::now();
 
+            auto t_track_start = std::chrono::high_resolution_clock::now();
             std::vector<CrossCameraTrackedObject> tracked_objects;
             std::vector<CrossCameraGlobalTarget> global_targets;
             cross_tracker.update(
                 cross_inputs, tracked_objects, global_targets);
+            auto t_track_end = std::chrono::high_resolution_clock::now();
+
             for (auto& channel : channels) {
                 drawTrackedObjects(canvas, *channel, tracked_objects);
             }
             drawGlobalTargets(canvas, global_targets, top_height);
 
+            // 在第二块白底区域画各 cam 的 mapped_point
+            int cam_map_y_offset = top_height + map_height;
+            for (const auto& cross_obj : tracked_objects) {
+                for (const auto& channel : channels) {
+                    if (cross_obj.camera_id != channel->camera_id) continue;
+                    cv::Point canvas_pt(
+                        cvRound(cross_obj.mapped_point.x),
+                        cvRound(cross_obj.mapped_point.y) + cam_map_y_offset);
+                    cv::circle(canvas, canvas_pt, 6, channel->map_color, -1, cv::LINE_AA);
+                    std::string label = "C" + std::to_string(cross_obj.camera_id) +
+                                        "L" + std::to_string(cross_obj.local_track.track_id) +
+                                        " G" + std::to_string(cross_obj.target_id);
+                    cv::putText(canvas, label, cv::Point(canvas_pt.x + 10, canvas_pt.y + 8),
+                                cv::FONT_HERSHEY_SIMPLEX, 1.2, channel->map_color, 3, cv::LINE_AA);
+                }
+            }
+
+            // 左上角帧号
+            std::string frame_label = "Frame: " + std::to_string(total_count) +
+                                      "  Processed: " + std::to_string(processed_count);
+            cv::putText(canvas, frame_label, cv::Point(30, 300),
+                        cv::FONT_HERSHEY_SIMPLEX, 3.0, cv::Scalar(0, 0, 255), 6, cv::LINE_AA);
+
             writer.write(canvas);
             processed_count++;
 
+            auto t_frame_end = std::chrono::high_resolution_clock::now();
+            auto det_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_det_end - t_det_start).count();
+            auto track_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_track_end - t_track_start).count();
+            auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_frame_end - t_frame_start).count();
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::high_resolution_clock::now() - start_time).count();
+                t_frame_end - start_time).count();
             float progress = static_cast<float>(total_count) / total_frames * 100.0f;
 
             std::cout << "Frame " << total_count << "/" << total_frames
                       << " (" << std::fixed << std::setprecision(1) << progress << "%)"
+                      << " | det:" << det_ms << "ms track:" << track_ms << "ms total:" << frame_ms << "ms"
                       << " | Processed: " << processed_count
                       << " | Elapsed: " << elapsed << "s" << std::endl;
         }

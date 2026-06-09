@@ -91,6 +91,14 @@ bool OnnxInference::LoadModel() {
             Ort::TypeInfo input_type_info = session_->GetInputTypeInfo(0);
             auto input_tensor_info = input_type_info.GetTensorTypeAndShapeInfo();
             input_shape_ = input_tensor_info.GetShape();
+
+            // 动态尺寸模型（-1 3 -1 -1）从 YAML 配置解析 H/W
+            if (input_shape_.size() >= 4) {
+                cv::Size target = config_.img_scale.width > 0 ? config_.img_scale : cv::Size(640, 640);
+                if (input_shape_[0] == -1) input_shape_[0] = 1;
+                if (input_shape_[2] == -1) input_shape_[2] = target.height;
+                if (input_shape_[3] == -1) input_shape_[3] = target.width;
+            }
         }
 
         size_t num_output_nodes = session_->GetOutputCount();

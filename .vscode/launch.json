@@ -313,7 +313,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/jhdeepcore_det_test",
             "args": [
-                "${workspaceFolder}/models/panjuan_det/tt/best.onnx",
+                "${workspaceFolder}/models/panjuan_det/best.onnx",
                 "${workspaceFolder}/images/multibatch",
                 "${workspaceFolder}/result"
             ],

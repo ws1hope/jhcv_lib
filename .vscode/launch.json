@@ -426,6 +426,30 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "mac dispatch - local test",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/dispatch",
+            "args": [
+                "--test",
+                "-c", "test/dispatch/config.yaml",
+                "-i", "images/test_yuanbiao.jpg",
+                "-H", "26702502",
+                "-s", "1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "mac homography",
             "type": "cppdbg",
             "request": "launch",

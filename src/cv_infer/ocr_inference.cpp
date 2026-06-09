@@ -9,11 +9,44 @@
 #include <regex>
 #include <chrono>
 #include <thread>
+#include <yaml-cpp/yaml.h>
 
 static std::vector<std::string> parseYamlCharDict(const std::string& yaml_path,
-                                                   std::vector<float>& out_mean,
-                                                   std::vector<float>& out_std) {
+                                                    std::vector<float>& out_mean,
+                                                    std::vector<float>& out_std) {
     std::vector<std::string> labels;
+
+    try {
+        YAML::Node root = YAML::LoadFile(yaml_path);
+
+        if (root["character_dict"] && root["character_dict"].IsSequence()) {
+            for (const auto& item : root["character_dict"]) {
+                labels.push_back(item.as<std::string>());
+            }
+        }
+
+        if (root["mean"] && root["mean"].IsSequence()) {
+            out_mean.clear();
+            for (const auto& v : root["mean"]) {
+                out_mean.push_back(v.as<float>());
+            }
+        }
+
+        if (root["std"] && root["std"].IsSequence()) {
+            out_std.clear();
+            for (const auto& v : root["std"]) {
+                out_std.push_back(v.as<float>());
+            }
+        }
+
+        if (!labels.empty()) {
+            return labels;
+        }
+    } catch (const YAML::Exception& e) {
+        std::cerr << "[WARN] yaml-cpp parse failed for " << yaml_path
+                  << ": " << e.what() << ", trying regex fallback" << std::endl;
+    }
+
     std::ifstream ifs(yaml_path);
     if (!ifs.is_open()) {
         std::cerr << "[WARN] Cannot open yaml: " << yaml_path << std::endl;
@@ -114,20 +147,31 @@ static std::vector<std::string> parseYamlCharDict(const std::string& yaml_path,
 
 static void loadRecLabels(const std::string& path, std::vector<std::string>& out_labels,
                           std::vector<float>& out_mean, std::vector<float>& out_std) {
-    if (path.empty()) return;
+    if (path.empty()) {
+        std::cerr << "[ERROR] OCR label path is empty, recognition will produce '?' for all characters" << std::endl;
+        return;
+    }
     if (path.size() >= 5 && (path.substr(path.size() - 5) == ".yaml" || path.substr(path.size() - 5) == ".yml")) {
         out_labels = parseYamlCharDict(path, out_mean, out_std);
     } else {
         std::ifstream ifs(path);
-        if (ifs.is_open()) {
-            std::string line;
-            while (std::getline(ifs, line)) {
-                if (!line.empty() && line.back() == '\r') line.pop_back();
-                out_labels.push_back(line);
-            }
+        if (!ifs.is_open()) {
+            std::cerr << "[ERROR] Cannot open OCR label file: " << path
+                      << ", recognition will produce '?' for all characters" << std::endl;
+            return;
+        }
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            out_labels.push_back(line);
         }
     }
-    std::cout << "[INFO] Loaded " << out_labels.size() << " recognition labels from: " << path << std::endl;
+    if (out_labels.empty()) {
+        std::cerr << "[ERROR] OCR label dictionary is empty after loading: " << path
+                  << ", recognition will produce '?' for all characters" << std::endl;
+    } else {
+        std::cout << "[INFO] Loaded " << out_labels.size() << " recognition labels from: " << path << std::endl;
+    }
 }
 
 struct OCRInference::Impl {
@@ -577,6 +621,11 @@ OCRRecResult OCRInference::recognize_only(const std::string& image_path) {
 
 OCRRecResult OCRInference::recognize_only(const cv::Mat& text_image) {
     OCRRecResult result;
+
+    if (impl_->rec_labels.empty()) {
+        std::cerr << "[ERROR] rec_labels is empty, OCR recognition will produce '?' for all characters. "
+                  << "Check label file path and loading." << std::endl;
+    }
 
     float cr_ratio = static_cast<float>(text_image.cols) / text_image.rows;
     int rec_img_h = 48;

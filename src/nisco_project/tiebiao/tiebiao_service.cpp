@@ -88,7 +88,7 @@ public:
             }
 
             TiebiaoResult result = pipeline_->process(
-                src_img, station_id, heat_number, false);
+                src_img, station_id, heat_number, true);
 
             time_t currtime = time(NULL);
             tm* t = localtime(&currtime);

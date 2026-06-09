@@ -58,7 +58,7 @@ public:
             return config_.default_branch;
         }
 
-        std::string branch = results[0].class_name;
+        std::string branch = std::to_string(results[0].class_id);
         std::cout << "[INFO] Dispatch -> " << branch
                   << " (confidence: " << results[0].confidence << ")" << std::endl;
         return branch;

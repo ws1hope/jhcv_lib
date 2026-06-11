@@ -27,6 +27,9 @@ add_executable(tiebiao ${CMAKE_CURRENT_SOURCE_DIR}/tiebiao/main.cpp)
 # ========== 调度服务 ==========
 add_executable(dispatch ${CMAKE_CURRENT_SOURCE_DIR}/dispatch/main.cpp)
 
+# ========== ZBHC 服务 ==========
+add_executable(zbhc ${CMAKE_CURRENT_SOURCE_DIR}/zbhc/main.cpp)
+
 # ========== 单应矩阵测试 ==========
 add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
 
@@ -49,6 +52,7 @@ set(TEST_TARGETS
     dabang_jiguang
     tiebiao
     dispatch
+    zbhc
     homography_test
 )
 
@@ -84,6 +88,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/dispatch/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== ZBHC 服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/zbhc/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

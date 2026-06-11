@@ -58,6 +58,21 @@ struct DispatchServerConfig {
     std::string device = "cuda";
 };
 
+struct ZbhcServerConfig {
+    std::string service_name = "zbhc";
+    std::string host = "0.0.0.0";
+    int port = 8083;
+    std::string result_dir = "D:\\ZbhcResult";
+    std::string split_dir = "D:\\ZbhcSplit";
+    std::string log_dir = "D:\\ZbhcLog";
+    std::string det1_model;
+    std::string det2_model;
+    std::string seg_model;
+    std::string ocr_model;
+    std::string ocr_label;
+    std::string device = "cuda";
+};
+
 } // namespace JHDeepCore
 
 class FileHelper {
@@ -69,6 +84,8 @@ public:
     static JHDeepCore::TiebiaoServerConfig loadTiebiaoConfig(const std::string& config_path);
 
     static JHDeepCore::DispatchServerConfig loadDispatchConfig(const std::string& config_path);
+
+    static JHDeepCore::ZbhcServerConfig loadZbhcConfig(const std::string& config_path);
 
     static std::vector<std::string> splitStringByCsharp(const std::string& str);
 

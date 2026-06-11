@@ -475,6 +475,47 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "zbhc - HTTP server",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/zbhc.exe",
+            "args": [
+                "-c",
+                "test/zbhc/config.yaml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "zbhc - local test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/zbhc.exe",
+            "args": [
+                "--test",
+                "-c", "test/zbhc/config.yaml",
+                "-i", "images/zbhc2.png",
+                "-H", "12345678",
+                "-s", "1"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
             "name": "mac homography",
             "type": "cppdbg",
             "request": "launch",

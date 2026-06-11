@@ -1,0 +1,18 @@
+server:
+  service_name: "zbhc"
+  host: "127.0.0.1"
+  port: 8083
+models:
+  det1_model: "models/zbhc/all_piliao_det.onnx"
+  det2_model: "models/zbhc/single_piliao_det.onnx"
+  seg_model: "models/zbhc/penma_best_zifu.onnx"
+  ocr_model: "models/zbhc/rec.onnx"
+  ocr_label: "models/zbhc/rec.yaml"
+inference:
+  device: "cpu"
+output:
+  result_dir: "D:\\CharacterDetect"
+  split_dir: "D:\\ZbhcSplit"
+  log_dir: "D:\\ZbhcLog"
+   
+   

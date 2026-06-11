@@ -247,6 +247,25 @@ class DispatchService {
     std::shared_ptr<DispatchServicePrivate> m_pHandle;
 };
 
+class ZbhcServicePrivate;
+class ZbhcService {
+  public:
+    explicit ZbhcService(const std::string &config_path);
+    ~ZbhcService();
+
+    ZbhcService(const ZbhcService &) = delete;
+    ZbhcService &operator=(const ZbhcService &) = delete;
+
+    const struct ZbhcServerConfig &config() const;
+    std::string handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int station_id);
+
+  private:
+    std::shared_ptr<ZbhcServicePrivate> m_pHandle;
+};
+
 class TrackerPrivate;
 class Tracker {
   public:

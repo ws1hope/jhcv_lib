@@ -16,6 +16,7 @@ add_executable(jhdeepcore_tracker_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_tr
 add_executable(jhdeepcore_video_track_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_video_track/main.cpp)
 add_executable(video_to_dataset_test ${CMAKE_CURRENT_SOURCE_DIR}/video_to_dataset/main.cpp)
 add_executable(cross_camera_track_test ${CMAKE_CURRENT_SOURCE_DIR}/cross_camera_track/main.cpp)
+add_executable(five_camera_track_test ${CMAKE_CURRENT_SOURCE_DIR}/cross_camera_track/five_camera_track.cpp)
 add_executable(cross_camera_tracker_test ${CMAKE_CURRENT_SOURCE_DIR}/cross_camera_tracker/main.cpp)
 
 # ========== 大棒激光 HTTP 服务 ==========
@@ -48,6 +49,7 @@ set(TEST_TARGETS
     jhdeepcore_video_track_test
     video_to_dataset_test
     cross_camera_track_test
+    five_camera_track_test
     cross_camera_tracker_test
     dabang_jiguang
     tiebiao
@@ -104,6 +106,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_video_track/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== five_camera_track 测试 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cross_camera_track/five_camera_track.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

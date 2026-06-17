@@ -354,7 +354,7 @@
             "program": "${workspaceFolder}/build/bin/jhdeepcore_video_track_test",
             "args": [
                 "${workspaceFolder}/models/panjuan_det/best.onnx",
-                "${workspaceFolder}/images/test.mp4",
+                "${workspaceFolder}/images/test_video/camera1.mp4",
                 "${workspaceFolder}/models/panjuan_det/best.yaml",
                 "${workspaceFolder}/result/video_track_result.avi",
                 "0",
@@ -435,6 +435,33 @@
                 "${workspaceFolder}/images/td_video/td3.mp4",
                 "${workspaceFolder}/models/panjuan_det/best.yaml",
                 "${workspaceFolder}/result/cross_camera_result.avi",
+                "0",
+                "3"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "mac five_camera_track",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/five_camera_track_test",
+            "args": [
+                "${workspaceFolder}/models/panjuan_det/best.onnx",
+                "${workspaceFolder}/images/test_video/camera1.mp4",
+                "${workspaceFolder}/images/test_video/camera2.mp4",
+                "${workspaceFolder}/images/test_video/camera3.mp4",
+                "${workspaceFolder}/models/panjuan_det/best.yaml",
+                "${workspaceFolder}/result/five_camera_track_result.avi",
                 "0",
                 "3"
             ],
@@ -541,6 +568,24 @@
             "externalConsole": false,
             "MIMode": "lldb",
             "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "biaoding calibration tool",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/utils/biaoding/biaoding_tool.py",
+            "args": [
+                "${workspaceFolder}/images/test_video/biaoding",
+                "12500",
+                "3000",
+                "${workspaceFolder}/result/biaoding_calibration.json"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            },
+            "python": "python3"
         }
     ]
 }

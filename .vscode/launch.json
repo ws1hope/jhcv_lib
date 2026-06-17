@@ -457,13 +457,13 @@
             "program": "${workspaceFolder}/build/bin/five_camera_track_test",
             "args": [
                 "${workspaceFolder}/models/panjuan_det/best.onnx",
-                "${workspaceFolder}/images/test_video/camera1.mp4",
-                "${workspaceFolder}/images/test_video/camera2.mp4",
-                "${workspaceFolder}/images/test_video/camera3.mp4",
                 "${workspaceFolder}/models/panjuan_det/best.yaml",
-                "${workspaceFolder}/result/five_camera_track_result.avi",
+                "${workspaceFolder}/result/biaoding_calibration.json",
+                "${workspaceFolder}/images/test_video",
+                "${workspaceFolder}/result/five_camera_cross_result.avi",
                 "0",
-                "3"
+                "3",
+                "200"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

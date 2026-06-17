@@ -111,6 +111,7 @@ if(MSVC)
 endif()
 
 # ========== five_camera_track 测试 ==========
+target_include_directories(five_camera_track_test PRIVATE ${CMAKE_SOURCE_DIR}/src/third_party)
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/cross_camera_track/five_camera_track.cpp

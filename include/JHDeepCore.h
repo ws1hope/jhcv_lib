@@ -266,6 +266,25 @@ class ZbhcService {
     std::shared_ptr<ZbhcServicePrivate> m_pHandle;
 };
 
+class GxJingzhengServicePrivate;
+class GxJingzhengService {
+  public:
+    explicit GxJingzhengService(const std::string &config_path);
+    ~GxJingzhengService();
+
+    GxJingzhengService(const GxJingzhengService &) = delete;
+    GxJingzhengService &operator=(const GxJingzhengService &) = delete;
+
+    const struct GxJingzhengServerConfig &config() const;
+    std::string handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int station_id);
+
+  private:
+    std::shared_ptr<GxJingzhengServicePrivate> m_pHandle;
+};
+
 class TrackerPrivate;
 class Tracker {
   public:

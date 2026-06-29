@@ -31,6 +31,9 @@ add_executable(dispatch ${CMAKE_CURRENT_SOURCE_DIR}/dispatch/main.cpp)
 # ========== ZBHC 服务 ==========
 add_executable(zbhc ${CMAKE_CURRENT_SOURCE_DIR}/zbhc/main.cpp)
 
+# ========== gx_jingzheng 服务 ==========
+add_executable(gx_jingzheng ${CMAKE_CURRENT_SOURCE_DIR}/gx_jingzheng/main.cpp)
+
 # ========== 单应矩阵测试 ==========
 add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
 
@@ -55,6 +58,7 @@ set(TEST_TARGETS
     tiebiao
     dispatch
     zbhc
+    gx_jingzheng
     homography_test
 )
 
@@ -98,6 +102,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/zbhc/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== gx_jingzheng 服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/gx_jingzheng/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

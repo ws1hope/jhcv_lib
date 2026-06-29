@@ -543,6 +543,50 @@
             "preLaunchTask": "build"
         },
         {
+            "name": "mac gx_jingzheng - HTTP server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/gx_jingzheng",
+            "args": [
+                "-c", "test/gx_jingzheng/config.yaml"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "mac gx_jingzheng - local test",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/gx_jingzheng",
+            "args": [
+                "--test",
+                "-c", "test/gx_jingzheng/config.yaml",
+                "-i", "images/gx_pw_test/20260626084218997_1.jpg",
+                "-H", "26702502",
+                "-s", "1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "mac homography",
             "type": "cppdbg",
             "request": "launch",

@@ -8,9 +8,9 @@ models:
   dingwei_model: "models/gx_xm/piliao_dingwei.onnx"
   dingwei_label: "models/gx_xm/piliao_dingwei.yaml"
 
-  # 第二阶段：语义分割 (3 类: back_ground / gangbiao / zifu)
-  seg_model: "models/gx_xm/pm_yb_dw.onnx"
-  seg_label: "models/gx_xm/pm_yb_dw.yaml"
+  # 第二阶段：实例分割 (输出多个独立 mask；yaml 的 task_type 应为 instance_segmentation)
+  seg_model: "models/gx_xm/pm_yb_dw_instance.onnx"
+  seg_label: "models/gx_xm/pm_yb_dw_instance.yaml"
 
   # zifu 分支：方向分类 + OCR
   direction_cls_model: "models/gx_xm/pm_fx_cls.onnx"

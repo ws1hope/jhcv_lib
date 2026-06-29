@@ -23,6 +23,14 @@ struct GxJingzhengCharInfo {
     std::string ocr_text;
 };
 
+// 实例分割的一条结果（crop 坐标系下）
+struct GxJingzhengSegInstance {
+    std::string class_name;
+    cv::Rect bbox;
+    cv::Mat mask;            // 与 crop 同尺寸的二值 mask (CV_8UC1)
+    float confidence = 0.f;
+};
+
 struct GxJingzhengPipelineResult {
     std::string state_flag;       // "OK" / "NG"
     std::string branch;           // "zifu" / "gangbiao" / ""
@@ -33,8 +41,8 @@ struct GxJingzhengPipelineResult {
     std::vector<Detection> det_detections;
     cv::Rect chosen_bbox;         // 选中的最左 det 框
 
-    // 语义分割完整 mask（crop 坐标系，CV_8UC1，每像素值 = class_id），用于绘图时按类别上色
-    cv::Mat seg_mask;
+    // 实例分割结果（crop 坐标系），绘图时每个实例独立上色
+    std::vector<GxJingzhengSegInstance> seg_instances;
 
     // zifu 分支展示信息
     cv::Mat rotated_crop;
@@ -57,12 +65,13 @@ public:
 private:
     void warmup();
 
-    // 在 crop 上跑语义分割，统计前景像素决定分支
-    std::string decideBranch(const cv::Mat& crop, cv::Mat& seg_mask_full_size);
+    // 在 crop 上跑实例分割，把结果转为 crop 坐标系的实例列表，并按类别像素数选择分支
+    std::string decideBranch(const cv::Mat& crop,
+                              std::vector<GxJingzhengSegInstance>& instances_out);
 
-    // zifu 分支：从 zifu 二值掩码切连通域 → 计算字符角度 → 整体矫正 → 排版
+    // zifu 分支：对每个 zifu 实例 mask 各自算最小外接矩 → 透视裁剪 → 方向分类 + OCR
     bool handleZifuBranch(const cv::Mat& crop,
-                          const cv::Mat& zifu_binary,
+                          const std::vector<GxJingzhengSegInstance>& zifu_instances,
                           GxJingzhengPipelineResult& result,
                           bool verbose);
 
@@ -78,7 +87,7 @@ private:
     int gangbiao_class_id_ = -1;
 
     std::unique_ptr<Detector> det_;
-    std::unique_ptr<Segmenter> seg_;
+    std::unique_ptr<InstanceSegmenter> seg_;
     std::unique_ptr<Classifier> direction_cls_;
     std::unique_ptr<OCRRecognizer> ocr_;
 

@@ -52,6 +52,28 @@ cv::Mat extractClassBinary(const cv::Mat& seg_mask, int class_id, const cv::Size
     return bin;
 }
 
+// 每个 mask (连通域) 取一种颜色 — 与类别无关，按全局序号取色环；
+// 避开绿色 (det 框) 和黄色 (左上角文字) 这两个已用色。
+cv::Scalar colorForMaskIndex(int index)
+{
+    static const std::vector<cv::Scalar> palette = {
+        cv::Scalar(0, 0, 255),     // 红
+        cv::Scalar(255, 0, 255),   // 品红
+        cv::Scalar(255, 0, 0),     // 蓝
+        cv::Scalar(0, 165, 255),   // 橙
+        cv::Scalar(128, 0, 255),   // 紫
+        cv::Scalar(0, 255, 128),   // 薄荷绿
+        cv::Scalar(255, 128, 0),   // 浅蓝
+        cv::Scalar(0, 128, 255),   // 红橙
+        cv::Scalar(128, 255, 0),   // 黄绿
+        cv::Scalar(255, 255, 0),   // 青
+        cv::Scalar(180, 180, 255), // 浅粉
+        cv::Scalar(180, 255, 180), // 浅薄荷
+    };
+    int n = static_cast<int>(palette.size());
+    return palette[((index % n) + n) % n];
+}
+
 } // namespace
 
 GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
@@ -189,66 +211,19 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         return false;
     }
 
-    // 连通域 → 每个连通域作为一个字符
-    cv::Mat labels, stats, centroids;
-    int num_components = cv::connectedComponentsWithStats(
-        zifu_binary, labels, stats, centroids, 8, CV_32S);
-    if (num_components <= 1) {
-        if (verbose) std::cout << "[DEBUG] zifu connected components = 0" << std::endl;
+    // 直接对整张 zifu mask 算最小外接矩 (不再切连通域)
+    MinAreaRectResult mr = ImageHelper::computeMinAreaRect(zifu_binary);
+    if (mr.height <= 0) {
+        if (verbose) std::cout << "[DEBUG] zifu mask has no valid contour" << std::endl;
         return false;
     }
-
-    // 过滤掉过小的连通域（噪声）；阈值取整张 crop 面积的 0.01%
-    const int min_area = std::max(20, crop.cols * crop.rows / 10000);
-
-    std::vector<CharAngleInfo> char_infos;
-    for (int comp = 1; comp < num_components; comp++) {
-        int area = stats.at<int>(comp, cv::CC_STAT_AREA);
-        if (area < min_area) continue;
-
-        int x = stats.at<int>(comp, cv::CC_STAT_LEFT);
-        int y = stats.at<int>(comp, cv::CC_STAT_TOP);
-        int w = stats.at<int>(comp, cv::CC_STAT_WIDTH);
-        int h = stats.at<int>(comp, cv::CC_STAT_HEIGHT);
-
-        cv::Rect safe = ImageHelper::safeClampROI(x, y, w, h, crop.cols, crop.rows);
-        if (safe.area() <= 0) continue;
-
-        // 该连通域在局部 ROI 内的二值 mask
-        cv::Mat comp_mask = (labels(safe) == comp);
-        if (cv::countNonZero(comp_mask) <= 0) continue;
-
-        MinAreaRectResult mr = ImageHelper::computeMinAreaRect(comp_mask);
-
-        CharAngleInfo info;
-        info.angle = mr.angle;
-        info.center_x = mr.center_x;
-        info.center_y = mr.center_y;
-        info.class_id = 0;
-        info.bbox_offset = cv::Point2i(safe.x, safe.y);
-        info.height = mr.height;
-        for (int j = 0; j < 4; j++) info.corners[j] = mr.corners[j];
-        char_infos.push_back(info);
+    if (verbose) {
+        std::cout << "[DEBUG] zifu mask angle=" << mr.angle
+                  << " center=(" << mr.center_x << "," << mr.center_y << ")"
+                  << " height=" << mr.height << std::endl;
     }
 
-    if (char_infos.empty()) {
-        if (verbose) std::cout << "[DEBUG] no zifu chars after filtering" << std::endl;
-        return false;
-    }
-
-    // 取最高字符的角度作为整体旋转角，以所有字符的中心点平均作为旋转中心
-    ImageHelper::sortByHeight(char_infos);
-    float angle = char_infos.back().angle;
-
-    int sum_x = 0, sum_y = 0;
-    for (auto& info : char_infos) {
-        sum_x += info.center_x + info.bbox_offset.x;
-        sum_y += info.center_y + info.bbox_offset.y;
-    }
-    int center_x = sum_x / static_cast<int>(char_infos.size());
-    int center_y = sum_y / static_cast<int>(char_infos.size());
-
-    // 与 tiebiao_pipeline 一致：先 zero-pad，再围绕扩边后的中心点旋转
+    // 围绕 mask 中心旋转 crop 和 mask
     const int bias = 30;
     cv::Mat padded = cv::Mat::zeros(
         crop.rows + 2 * bias, crop.cols + 2 * bias, CV_8UC3);
@@ -256,71 +231,88 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
 
     int x_off = 0, y_off = 0;
     cv::Mat rotated = ImageHelper::rotateImageAroundPoint(
-        padded, center_x + bias, center_y + bias, angle, x_off, y_off);
+        padded, mr.center_x + bias, mr.center_y + bias, mr.angle, x_off, y_off);
 
-    std::vector<CharCropInfo> char_crops = ImageHelper::rotateAndRemapBBoxes(
-        char_infos, cv::Point2f(static_cast<float>(center_x),
-                                 static_cast<float>(center_y)),
-        angle, rotated, bias, bias, x_off, y_off);
+    // mask 用同一个中心 + 角度做相同的平移+旋转变换 (用 warpAffine 两步)
+    cv::Mat padded_mask = cv::Mat::zeros(padded.rows, padded.cols, CV_8UC1);
+    zifu_binary.copyTo(padded_mask(cv::Rect(bias, bias, zifu_binary.cols, zifu_binary.rows)));
 
-    if (char_crops.empty()) {
-        if (verbose) std::cout << "[DEBUG] rotateAndRemapBBoxes returned 0 chars" << std::endl;
+    cv::Point2f center_img(padded.cols / 2.0f, padded.rows / 2.0f);
+    double tx = static_cast<double>(center_img.x) - (mr.center_x + bias);
+    double ty = static_cast<double>(center_img.y) - (mr.center_y + bias);
+    cv::Mat M_trans = (cv::Mat_<double>(2, 3) << 1, 0, tx, 0, 1, ty);
+    cv::Mat translated_mask;
+    cv::warpAffine(padded_mask, translated_mask, M_trans, padded.size(),
+                   cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
+    cv::Mat M_rot = cv::getRotationMatrix2D(center_img, static_cast<double>(mr.angle), 1.0);
+    cv::Mat rotated_mask;
+    cv::warpAffine(translated_mask, rotated_mask, M_rot, padded.size(),
+                   cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
+
+    // 从矫正后的 mask 找字符串轴对齐 bbox
+    std::vector<cv::Point> nonzero_pts;
+    cv::findNonZero(rotated_mask, nonzero_pts);
+    if (nonzero_pts.empty()) {
+        if (verbose) std::cout << "[DEBUG] rotated zifu mask empty" << std::endl;
+        return false;
+    }
+    cv::Rect str_bbox = cv::boundingRect(nonzero_pts);
+
+    // 给字符串 bbox 加点边距，再 clip 到 rotated 范围内
+    const int pad = 6;
+    cv::Rect str_padded(
+        str_bbox.x - pad, str_bbox.y - pad,
+        str_bbox.width + 2 * pad, str_bbox.height + 2 * pad);
+    str_padded &= cv::Rect(0, 0, rotated.cols, rotated.rows);
+    if (str_padded.area() <= 0) {
+        if (verbose) std::cout << "[DEBUG] zifu str bbox empty" << std::endl;
         return false;
     }
 
-    // 方向分类
-    std::vector<cv::Mat> char_imgs_before;
-    char_imgs_before.reserve(char_crops.size());
-    for (auto& c : char_crops) char_imgs_before.push_back(c.image);
-    int dir_flag = classifyDirection(char_imgs_before);
+    cv::Mat string_img = rotated(str_padded).clone();
+    if (string_img.empty()) return false;
 
+    // 方向分类 (对整张字符串图做一次)
+    int dir_flag = classifyDirection({string_img});
     if (verbose) std::cout << "[DEBUG] zifu direction flag = " << dir_flag << std::endl;
 
-    // 按方向翻转后送 OCR，拼接最终文本
-    std::string concatenated;
-    result.chars.clear();
-    result.chars.reserve(char_crops.size());
-
-    for (auto& crop_info : char_crops) {
-        GxJingzhengCharInfo cinfo;
-        cinfo.bbox = crop_info.bbox;
-        cinfo.image_before_flip = crop_info.image.clone();
-
-        cv::Mat send_img;
-        if (dir_flag == 180 && !crop_info.image.empty()) {
-            cv::flip(crop_info.image, send_img, -1);
-        } else {
-            send_img = crop_info.image;
-        }
-        cinfo.image_after_flip = send_img.clone();
-
-        if (!send_img.empty()) {
-            cv::Mat bgr;
-            if (send_img.channels() == 1)
-                cv::cvtColor(send_img, bgr, cv::COLOR_GRAY2BGR);
-            else
-                bgr = send_img;
-
-            std::vector<cv::Mat> ocr_imgs = {bgr};
-            std::vector<OCRResult> ocr_results;
-            ocr_->process(ocr_imgs, ocr_results);
-            if (!ocr_results.empty() && !ocr_results[0].boxes.empty()) {
-                cinfo.ocr_text = ocr_results[0].boxes[0].text;
-            }
-        }
-
-        if (verbose) {
-            std::cout << "[DEBUG]   char text=\"" << cinfo.ocr_text << "\"" << std::endl;
-        }
-
-        concatenated += cinfo.ocr_text;
-        result.chars.push_back(std::move(cinfo));
+    cv::Mat send_img;
+    if (dir_flag == 180) {
+        cv::flip(string_img, send_img, -1);
+    } else {
+        send_img = string_img;
     }
+
+    // 整张字符串送 OCR
+    cv::Mat bgr;
+    if (send_img.channels() == 1)
+        cv::cvtColor(send_img, bgr, cv::COLOR_GRAY2BGR);
+    else
+        bgr = send_img;
+
+    std::vector<cv::Mat> ocr_imgs = {bgr};
+    std::vector<OCRResult> ocr_results;
+    ocr_->process(ocr_imgs, ocr_results);
+
+    std::string text;
+    if (!ocr_results.empty() && !ocr_results[0].boxes.empty()) {
+        text = ocr_results[0].boxes[0].text;
+    }
+    if (verbose) std::cout << "[DEBUG] zifu ocr text=\"" << text << "\"" << std::endl;
+
+    // 保留 chars 字段，把整张字符串作为唯一元素，复用现有底部绘图逻辑
+    GxJingzhengCharInfo cinfo;
+    cinfo.bbox = str_padded;
+    cinfo.image_before_flip = string_img.clone();
+    cinfo.image_after_flip = send_img.clone();
+    cinfo.ocr_text = text;
+    result.chars.clear();
+    result.chars.push_back(std::move(cinfo));
 
     result.rotated_crop = rotated;
     result.direction_flag = dir_flag;
-    result.ocr_text = concatenated;
-    return !concatenated.empty();
+    result.ocr_text = text;
+    return !text.empty();
 }
 
 cv::Mat GxJingzhengPipeline::createAnnotatedImage(
@@ -334,40 +326,106 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
 
     cv::Mat annotated = src_img.clone();
 
+    // 第 0 层：把语义分割 mask 半透明叠加到 chosen_bbox 区域。
+    // 同一类别如果有多个连通域，也用不同颜色区分，方便人眼分辨独立的 mask。
+    std::vector<std::pair<cv::Scalar, std::string>> drawn_masks; // (color, label)
+    if (!result.seg_mask.empty() && result.chosen_bbox.area() > 0) {
+        cv::Rect roi = result.chosen_bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
+        if (roi.area() > 0) {
+            cv::Mat seg_resized;
+            if (result.seg_mask.size() != roi.size()) {
+                cv::resize(result.seg_mask, seg_resized, roi.size(), 0, 0, cv::INTER_NEAREST);
+            } else {
+                seg_resized = result.seg_mask;
+            }
+            cv::Mat roi_view = annotated(roi);
+            cv::Mat overlay = roi_view.clone();
+
+            // 过滤小连通域（噪声），阈值取 chosen_bbox 面积的 0.01%
+            const int min_area = std::max(20, roi.area() / 10000);
+
+            int mask_idx = 0;
+            for (int cid = 0; cid < (int)seg_class_names_.size(); cid++) {
+                const std::string& cname = seg_class_names_[cid];
+                if (cname == "back_ground") continue;
+                cv::Mat cls_bin = (seg_resized == cid);
+                if (cv::countNonZero(cls_bin) <= 0) continue;
+
+                cv::Mat comp_labels, comp_stats, comp_centroids;
+                int n_comp = cv::connectedComponentsWithStats(
+                    cls_bin, comp_labels, comp_stats, comp_centroids, 8, CV_32S);
+
+                int sub_idx = 1;
+                for (int comp = 1; comp < n_comp; comp++) {
+                    int area = comp_stats.at<int>(comp, cv::CC_STAT_AREA);
+                    if (area < min_area) continue;
+                    cv::Mat comp_mask = (comp_labels == comp);
+                    cv::Scalar color = colorForMaskIndex(mask_idx);
+                    overlay.setTo(color, comp_mask);
+                    drawn_masks.emplace_back(color, cname + "#" + std::to_string(sub_idx));
+                    mask_idx++;
+                    sub_idx++;
+                }
+            }
+
+            cv::addWeighted(overlay, 0.45, roi_view, 0.55, 0, roi_view);
+        }
+    }
+
     // 第 1 层：所有 det 框（最左被选中的高亮）
     for (size_t i = 0; i < result.det_detections.size(); i++) {
         const auto& det = result.det_detections[i];
         bool is_chosen = (det.bbox == result.chosen_bbox);
         cv::Scalar color = is_chosen ? cv::Scalar(0, 255, 0) : cv::Scalar(120, 120, 120);
-        int thickness = is_chosen ? 3 : 1;
+        int thickness = is_chosen ? 4 : 2;
         cv::rectangle(annotated, det.bbox, color, thickness);
         std::string label = "det" + std::to_string(i + 1) + " " + det.class_name
                             + cv::format(" %.2f", det.confidence);
         cv::putText(annotated, label,
-                    cv::Point(det.bbox.x, std::max(0, det.bbox.y - 5)),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, color, 2);
+                    cv::Point(det.bbox.x, std::max(0, det.bbox.y - 10)),
+                    cv::FONT_HERSHEY_SIMPLEX, 1.5, color, 3);
     }
 
-    // 第 2 层：分支标签与最终 OCR
+    // 第 2 层：分支标签与最终 OCR (左上角)
     {
         std::string head = "branch=" + (result.branch.empty() ? std::string("?") : result.branch)
                            + " state=" + result.state_flag;
-        cv::putText(annotated, head, cv::Point(20, 40),
-                    cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 255, 255), 2);
+        cv::putText(annotated, head, cv::Point(20, 80),
+                    cv::FONT_HERSHEY_SIMPLEX, 2.0, cv::Scalar(0, 255, 255), 4);
         if (!result.ocr_text.empty()) {
             cv::putText(annotated, "ocr: " + result.ocr_text,
-                        cv::Point(20, 90),
-                        cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 255), 3);
+                        cv::Point(20, 180),
+                        cv::FONT_HERSHEY_SIMPLEX, 2.8, cv::Scalar(0, 0, 255), 6);
+        }
+    }
+
+    // 第 3 层：mask legend（每行：色块 + 标签），位于 ocr 行下方
+    if (!drawn_masks.empty()) {
+        const int legend_x = 20;
+        int legend_y = 240;
+        const int box = 50;
+        const int row_gap = 70;
+        for (auto& kv : drawn_masks) {
+            cv::Rect color_box(legend_x, legend_y, box, box);
+            color_box &= cv::Rect(0, 0, annotated.cols, annotated.rows);
+            if (color_box.area() > 0) {
+                cv::rectangle(annotated, color_box, kv.first, -1);
+                cv::rectangle(annotated, color_box, cv::Scalar(255, 255, 255), 2);
+            }
+            cv::putText(annotated, kv.second,
+                        cv::Point(legend_x + box + 15, legend_y + box - 10),
+                        cv::FONT_HERSHEY_SIMPLEX, 1.4, cv::Scalar(255, 255, 255), 3);
+            legend_y += row_gap;
         }
     }
 
     // zifu 分支：底部拼一个矫正后图 + 字符片段长条
     if (result.branch == config_.zifu_class_name && !result.rotated_crop.empty()) {
-        const int row_h = 60;
-        const int margin = 15;
-        const int gap = 15;
-        const int thumb_height = 200;
-        const int char_margin = 4;
+        const int row_h = 140;
+        const int margin = 20;
+        const int gap = 20;
+        const int thumb_height = 450;
+        const int char_margin = 8;
 
         cv::Mat rotated = result.rotated_crop;
         if (result.direction_flag == 180) {
@@ -484,6 +542,7 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
     std::string branch = decideBranch(crop, seg_mask);
     if (verbose) std::cout << "[DEBUG] seg branch = \"" << branch << "\"" << std::endl;
     result.branch = branch;
+    result.seg_mask = seg_mask;
 
     if (branch == config_.zifu_class_name) {
         // ===== 4a) zifu 分支：连通域 → 矫正 → 方向分类 → OCR =====

@@ -33,6 +33,9 @@ struct GxJingzhengPipelineResult {
     std::vector<Detection> det_detections;
     cv::Rect chosen_bbox;         // 选中的最左 det 框
 
+    // 语义分割完整 mask（crop 坐标系，CV_8UC1，每像素值 = class_id），用于绘图时按类别上色
+    cv::Mat seg_mask;
+
     // zifu 分支展示信息
     cv::Mat rotated_crop;
     int direction_flag = 0;       // 0 / 180

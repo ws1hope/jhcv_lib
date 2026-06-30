@@ -438,17 +438,14 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
     const cv::Mat& src_img,
     const GxJingzhengPipelineResult& result)
 {
-    // gangbiao 分支：直接把 tiebiao 的标注图作为最终图
-    if (result.branch == config_.gangbiao_class_name && !result.tiebiao_annotated.empty()) {
-        return result.tiebiao_annotated.clone();
-    }
-
     cv::Mat annotated = src_img.clone();
 
-    // 第 0 层：把每个实例分割 mask 半透明叠加到 chosen_bbox 区域；
-    // 即使同类的多个 mask 也用不同颜色区分，方便人眼分辨独立实例。
     std::vector<std::pair<cv::Scalar, std::string>> drawn_masks; // (color, label)
-    if (!result.seg_instances.empty() && result.chosen_bbox.area() > 0) {
+
+    if (result.branch == config_.zifu_class_name &&
+        !result.seg_instances.empty() && result.chosen_bbox.area() > 0) {
+        // 第 0 层 (zifu)：把每个实例分割 mask 半透明叠加到 chosen_bbox 区域；
+        // 即使同类的多个 mask 也用不同颜色区分，方便人眼分辨独立实例。
         cv::Rect roi = result.chosen_bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
         if (roi.area() > 0) {
             cv::Mat roi_view = annotated(roi);
@@ -472,6 +469,18 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
             }
 
             cv::addWeighted(overlay, 0.45, roi_view, 0.55, 0, roi_view);
+        }
+    } else if (result.branch == config_.gangbiao_class_name &&
+               !result.tiebiao_annotated.empty() && result.chosen_bbox.area() > 0) {
+        // 第 0 层 (gangbiao)：把 tiebiao 标注好的 crop (其标注图顶部 crop 大小区域)
+        // 贴回原图 chosen_bbox 位置，使结果展示在输入原图上 (与 zifu 分支一致)
+        cv::Rect roi = result.chosen_bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
+        if (roi.area() > 0 &&
+            result.tiebiao_annotated.cols >= roi.width &&
+            result.tiebiao_annotated.rows >= roi.height) {
+            cv::Mat crop_ann = result.tiebiao_annotated(
+                cv::Rect(0, 0, roi.width, roi.height));
+            crop_ann.copyTo(annotated(roi));
         }
     }
 
@@ -603,6 +612,28 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
                 .copyTo(canvas(cv::Rect(margin, annotated.rows + margin, paste_w, strip.rows)));
         }
         annotated = canvas;
+    }
+
+    // gangbiao 分支：底部追加 tiebiao 标注图的下方信息条 (缩略图/字符片段)，缩放到原图宽度
+    if (result.branch == config_.gangbiao_class_name &&
+        !result.tiebiao_annotated.empty() && result.chosen_bbox.area() > 0) {
+        int crop_h = result.chosen_bbox.height;
+        if (result.tiebiao_annotated.rows > crop_h &&
+            result.tiebiao_annotated.cols > 0) {
+            cv::Mat strip = result.tiebiao_annotated(
+                cv::Rect(0, crop_h, result.tiebiao_annotated.cols,
+                         result.tiebiao_annotated.rows - crop_h));
+            float s = static_cast<float>(annotated.cols) / std::max(strip.cols, 1);
+            cv::Mat strip_r;
+            cv::resize(strip, strip_r, cv::Size(), s, s, cv::INTER_LINEAR);
+
+            const int margin = 20;
+            int extra_h = strip_r.rows + 2 * margin;
+            cv::Mat canvas = cv::Mat::zeros(annotated.rows + extra_h, annotated.cols, annotated.type());
+            annotated.copyTo(canvas(cv::Rect(0, 0, annotated.cols, annotated.rows)));
+            strip_r.copyTo(canvas(cv::Rect(0, annotated.rows + margin, strip_r.cols, strip_r.rows)));
+            annotated = canvas;
+        }
     }
 
     return annotated;

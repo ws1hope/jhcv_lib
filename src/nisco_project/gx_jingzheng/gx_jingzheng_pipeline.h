@@ -72,10 +72,12 @@ private:
     std::string decideBranch(const cv::Mat& crop,
                               std::vector<GxJingzhengSegInstance>& instances_out);
 
-    // zifu 分支：对每个 zifu 实例 mask 各自算最小外接矩 → 透视裁剪 → 方向分类 + OCR
+    // zifu 分支：对每个 zifu 实例 mask 各自算最小外接矩 → 透视裁剪 → 方向分类 + OCR，
+    // 再依据 heat_number 排列片段顺序拼接结果
     bool handleZifuBranch(const cv::Mat& crop,
                           const std::vector<GxJingzhengSegInstance>& zifu_instances,
                           GxJingzhengPipelineResult& result,
+                          const std::string& heat_number,
                           bool verbose);
 
     // 方向分类（按字符片段多数投票）

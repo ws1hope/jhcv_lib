@@ -63,6 +63,51 @@ cv::Scalar colorForMaskIndex(int index)
     return palette[((index % n) + n) % n];
 }
 
+// 计算字符串 a、b 的公共前缀长度
+size_t commonPrefixLen(const std::string& a, const std::string& b)
+{
+    size_t m = std::min(a.size(), b.size());
+    size_t i = 0;
+    while (i < m && a[i] == b[i]) i++;
+    return i;
+}
+
+// 给定各片段文本（按 x 顺序），依据 heat_number 找出一种排列，
+// 使拼接结果与 heat_number 的公共前缀最长（让 heat_number 尽量成为结果开头）。
+// heat_number 为空 / 片段过多(>8) / 无更优解时，退化为原始 x 顺序。
+std::vector<int> bestOrderByHeat(const std::vector<std::string>& texts,
+                                  const std::string& heat_number)
+{
+    int n = static_cast<int>(texts.size());
+    std::vector<int> identity(n);
+    std::iota(identity.begin(), identity.end(), 0);
+
+    if (n <= 1 || heat_number.empty() || n > 8) {
+        return identity;
+    }
+
+    auto concat = [&](const std::vector<int>& order) {
+        std::string s;
+        for (int i : order) s += texts[i];
+        return s;
+    };
+
+    std::vector<int> best = identity;
+    size_t best_prefix = commonPrefixLen(concat(best), heat_number);
+
+    std::vector<int> cur = identity;
+    std::sort(cur.begin(), cur.end());
+    do {
+        size_t p = commonPrefixLen(concat(cur), heat_number);
+        if (p > best_prefix) {
+            best_prefix = p;
+            best = cur;
+        }
+    } while (std::next_permutation(cur.begin(), cur.end()));
+
+    return best;
+}
+
 } // namespace
 
 GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
@@ -229,6 +274,7 @@ int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_imag
 bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
                                             const std::vector<GxJingzhengSegInstance>& zifu_instances,
                                             GxJingzhengPipelineResult& result,
+                                            const std::string& heat_number,
                                             bool verbose)
 {
     if (zifu_instances.empty()) {
@@ -312,15 +358,11 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         return false;
     }
 
-    // 按 x 中心左→右排序，保证 OCR 拼接顺序正确
+    // 按 x 中心左→右排序（作为初始/兜底顺序）
     std::sort(pieces.begin(), pieces.end(),
         [](const Piece& a, const Piece& b) { return a.center_x < b.center_x; });
 
-    // 逐块：方向分类 + OCR
-    std::string concatenated;
-    result.chars.clear();
-    result.chars.reserve(pieces.size());
-
+    // 第一遍：逐块方向分类 + OCR，先拿到每块的文本
     for (size_t i = 0; i < pieces.size(); i++) {
         auto& p = pieces[i];
         p.dir_flag = classifyDirection({p.warped_before});
@@ -343,17 +385,42 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         }
 
         if (verbose) {
-            std::cout << "[DEBUG]   zifu piece[" << i << "] dir=" << p.dir_flag
+            std::cout << "[DEBUG]   zifu piece[" << i << "] (x-order) dir=" << p.dir_flag
                       << " text=\"" << p.text << "\"" << std::endl;
         }
+    }
 
+    // 第二步：根据 heat_number 重新排列各片段顺序，使拼接结果与 heat_number 的公共前缀最长
+    std::vector<std::string> texts;
+    texts.reserve(pieces.size());
+    for (auto& p : pieces) texts.push_back(p.text);
+
+    std::vector<int> best_order = bestOrderByHeat(texts, heat_number);
+    if (verbose) {
+        std::string xorder;
+        for (auto& t : texts) xorder += t;
+        std::cout << "[DEBUG] zifu x-order concat=\"" << xorder
+                  << "\", heat=\"" << heat_number << "\"" << std::endl;
+        std::string reordered;
+        for (int idx : best_order) reordered += texts[idx];
+        std::cout << "[DEBUG] zifu heat-ordered concat=\"" << reordered << "\"" << std::endl;
+    }
+
+    // 按新顺序构建 chars 并拼接最终结果
+    // 多个片段之间用 '#' 分隔（即第二个片段起前面加 '#'），单片段则不加分隔符
+    std::string concatenated;
+    result.chars.clear();
+    result.chars.reserve(best_order.size());
+    for (size_t k = 0; k < best_order.size(); k++) {
+        int idx = best_order[k];
+        auto& p = pieces[idx];
         GxJingzhengCharInfo cinfo;
         cinfo.bbox = p.rrect.boundingRect();   // 轴对齐 bbox (仅作信息)
         cinfo.image_before_flip = p.warped_before.clone();
         cinfo.image_after_flip = p.warped_after.clone();
         cinfo.ocr_text = p.text;
         result.chars.push_back(std::move(cinfo));
-
+        if (k > 0) concatenated += "#";
         concatenated += p.text;
     }
 
@@ -620,7 +687,7 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
                 zifu_insts.push_back(inst);
             }
         }
-        if (handleZifuBranch(crop, zifu_insts, result, verbose)) {
+        if (handleZifuBranch(crop, zifu_insts, result, heat_number, verbose)) {
             result.state_flag = "OK";
         }
     } else if (branch == config_.gangbiao_class_name) {

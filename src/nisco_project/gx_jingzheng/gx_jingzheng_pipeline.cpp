@@ -484,18 +484,26 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
         }
     }
 
-    // 第 1 层：所有 det 框（最左被选中的高亮）
+    // 第 1 层：所有 det 框（最左被选中的高亮），不写框上方文字标签
+    // 颜色统一偏浅：选中框用浅薄荷绿描边 + 极低 alpha 同色填充；未选中框用浅灰
+    const cv::Scalar chosen_edge(180, 255, 200);   // 浅薄荷绿 (BGR)
+    const cv::Scalar chosen_fill(180, 255, 200);
+    const cv::Scalar other_edge(190, 190, 190);    // 浅灰
     for (size_t i = 0; i < result.det_detections.size(); i++) {
         const auto& det = result.det_detections[i];
         bool is_chosen = (det.bbox == result.chosen_bbox);
-        cv::Scalar color = is_chosen ? cv::Scalar(0, 255, 0) : cv::Scalar(120, 120, 120);
-        int thickness = is_chosen ? 4 : 2;
-        cv::rectangle(annotated, det.bbox, color, thickness);
-        std::string label = "det" + std::to_string(i + 1) + " " + det.class_name
-                            + cv::format(" %.2f", det.confidence);
-        cv::putText(annotated, label,
-                    cv::Point(det.bbox.x, std::max(0, det.bbox.y - 10)),
-                    cv::FONT_HERSHEY_SIMPLEX, 1.5, color, 3);
+        cv::Rect r = det.bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
+        if (r.area() <= 0) continue;
+        if (is_chosen) {
+            // 极低 alpha 半透明填充，避免盖住框内 tiebiao/mask 内容
+            cv::Mat roi_view = annotated(r);
+            cv::Mat overlay = roi_view.clone();
+            overlay.setTo(chosen_fill);
+            cv::addWeighted(overlay, 0.15, roi_view, 0.85, 0, roi_view);
+            cv::rectangle(annotated, det.bbox, chosen_edge, 3, cv::LINE_AA);
+        } else {
+            cv::rectangle(annotated, det.bbox, other_edge, 2, cv::LINE_AA);
+        }
     }
 
     // 第 1.5 层：zifu 分支每个实例 mask 的最小外接矩 (旋转矩形)，画在原图坐标系上
@@ -540,7 +548,29 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
                            + " state=" + result.state_flag;
         cv::putText(annotated, head, cv::Point(20, 80),
                     cv::FONT_HERSHEY_SIMPLEX, 2.0, cv::Scalar(0, 255, 255), 4);
-        if (!result.ocr_text.empty()) {
+
+        if (result.branch == config_.gangbiao_class_name && !result.ocr_text.empty()) {
+            // gangbiao: 每个 tiebiao 结果 (逗号分隔的 类型#炉号) 单独成行、红色大字
+            std::vector<std::string> items;
+            {
+                std::string cur;
+                for (char c : result.ocr_text) {
+                    if (c == ',') { items.push_back(cur); cur.clear(); }
+                    else cur += c;
+                }
+                if (!cur.empty()) items.push_back(cur);
+            }
+            int y = 180;
+            for (const auto& it : items) {
+                if (it.empty()) continue;
+                std::string line = "ocr: " + it;
+                if (y > annotated.rows) break;
+                cv::putText(annotated, line, cv::Point(20, y),
+                            cv::FONT_HERSHEY_SIMPLEX, 3.2, cv::Scalar(0, 0, 255), 7);
+                y += 110;
+            }
+        } else if (!result.ocr_text.empty()) {
+            // zifu 等其它分支：单行红色
             cv::putText(annotated, "ocr: " + result.ocr_text,
                         cv::Point(20, 180),
                         cv::FONT_HERSHEY_SIMPLEX, 2.8, cv::Scalar(0, 0, 255), 6);

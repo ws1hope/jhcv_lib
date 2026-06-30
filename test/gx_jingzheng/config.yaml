@@ -1,0 +1,33 @@
+server:
+  service_name: "gx_jingzheng"
+  host: "127.0.0.1"
+  port: 8084
+
+models:
+  # 第一阶段：定位模型 (object detection)
+  dingwei_model: "models/gx_xm/piliao_dingwei.onnx"
+  dingwei_label: "models/gx_xm/piliao_dingwei.yaml"
+
+  # 第二阶段：实例分割 (输出多个独立 mask；yaml 的 task_type 应为 instance_segmentation)
+  seg_model: "models/gx_xm/pm_yb_dw_instance.onnx"
+  seg_label: "models/gx_xm/pm_yb_dw_instance.yaml"
+
+  # zifu 分支：方向分类 + OCR
+  direction_cls_model: "models/gx_xm/pm_fx_cls.onnx"
+  ocr_model: "models/gx_xm/penma_rec.onnx"
+  ocr_label: "models/gx_xm/penma_rec.yaml"
+
+  # gangbiao 分支：复用 tiebiao 子 pipeline，指向其 yaml
+  tiebiao_config: "test/tiebiao/config.yaml"
+
+classes:
+  zifu_class_name: "zifu"
+  gangbiao_class_name: "gangbiao"
+
+inference:
+  device: "cpu"
+
+output:
+  result_dir: "D:\\GxJingzhengResult"
+  split_dir: "D:\\GxJingzhengSplit"
+  log_dir: "D:\\GxJingzhengLog"

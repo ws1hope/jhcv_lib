@@ -94,6 +94,32 @@ struct ZbsltjConfig {
     std::string device;
 };
 
+struct GxJingzhengServerConfig {
+    std::string service_name = "gx_jingzheng";
+    std::string host = "0.0.0.0";
+    int port = 8084;
+    std::string result_dir = "D:\\GxJingzhengResult";
+    std::string split_dir = "D:\\GxJingzhengSplit";
+    std::string log_dir = "D:\\GxJingzhengLog";
+    // 定位模型 (object detection)
+    std::string dingwei_model;
+    std::string dingwei_label;
+    // 语义分割模型 (pm_yb_dw.onnx, 3 classes: back_ground/gangbiao/zifu)
+    std::string seg_model;
+    std::string seg_label;
+    // zifu 分支
+    std::string direction_cls_model;
+    std::string ocr_model;
+    std::string ocr_label;
+    // gangbiao 分支 — 复用 tiebiao 的 pipeline
+    std::string tiebiao_config;
+    // zifu 类别名 (默认 "zifu"), gangbiao 类别名 (默认 "gangbiao")
+    std::string zifu_class_name = "zifu";
+    std::string gangbiao_class_name = "gangbiao";
+    std::string device = "cuda";
+};
+
+
 } // namespace JHDeepCore
 
 class FileHelper {
@@ -109,6 +135,8 @@ public:
     static JHDeepCore::ZbhcServerConfig loadZbhcConfig(const std::string& config_path);
 
     static JHDeepCore::ZbsltjServerConfig loadZbsltjConfig(const std::string& config_path);
+
+    static JHDeepCore::GxJingzhengServerConfig loadGxJingzhengConfig(const std::string& config_path);
 
     static std::vector<std::string> splitStringByCsharp(const std::string& str);
 

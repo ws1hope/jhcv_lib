@@ -24,6 +24,15 @@ struct TiebiaoResult {
     std::string picture_path;
     cv::Mat annotated_image;
 };
+
+struct GxJingzhengResult {
+    int picture_id = 0;
+    std::string state_flag;        // "OK" / "NG"
+    std::string branch;            // "zifu" / "gangbiao" / ""
+    std::string ocr_text;          // 识别结果
+    std::string picture_path;
+    cv::Mat annotated_image;
+};
 } // namespace JHDeepCore
 
 class InferHelper {

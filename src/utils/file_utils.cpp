@@ -177,6 +177,46 @@ JHDeepCore::ZbsltjServerConfig FileHelper::loadZbsltjConfig(const std::string& c
     return cfg;
 }
 
+JHDeepCore::GxJingzhengServerConfig FileHelper::loadGxJingzhengConfig(const std::string& config_path)
+{
+    JHDeepCore::GxJingzhengServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+    }
+
+    if (node["output"]) {
+        cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
+        cfg.split_dir = node["output"]["split_dir"].as<std::string>(cfg.split_dir);
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+    }
+
+    if (node["models"]) {
+        cfg.dingwei_model = node["models"]["dingwei_model"].as<std::string>("");
+        cfg.dingwei_label = node["models"]["dingwei_label"].as<std::string>("");
+        cfg.seg_model = node["models"]["seg_model"].as<std::string>("");
+        cfg.seg_label = node["models"]["seg_label"].as<std::string>("");
+        cfg.direction_cls_model = node["models"]["direction_cls_model"].as<std::string>("");
+        cfg.ocr_model = node["models"]["ocr_model"].as<std::string>("");
+        cfg.ocr_label = node["models"]["ocr_label"].as<std::string>("");
+        cfg.tiebiao_config = node["models"]["tiebiao_config"].as<std::string>("");
+    }
+
+    if (node["classes"]) {
+        cfg.zifu_class_name = node["classes"]["zifu_class_name"].as<std::string>(cfg.zifu_class_name);
+        cfg.gangbiao_class_name = node["classes"]["gangbiao_class_name"].as<std::string>(cfg.gangbiao_class_name);
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    return cfg;
+}
+
 std::vector<std::string> FileHelper::splitStringByCsharp(const std::string& str)
 {
     std::vector<std::string> tokens;

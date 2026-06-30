@@ -88,6 +88,8 @@ set(NISCO_PROJECT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/zbhc/zbhc_service.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/zbsltj/zbsltj_pipeline.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/zbsltj/zbsltj_service.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/gx_jingzheng/gx_jingzheng_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/gx_jingzheng/gx_jingzheng_service.cpp
 )
 
 # utils 模块
@@ -159,6 +161,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/dispatch
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/zbhc
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/zbsltj
+    ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/gx_jingzheng
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/cv_homography

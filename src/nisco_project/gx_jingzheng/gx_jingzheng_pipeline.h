@@ -34,6 +34,9 @@ struct GxJingzhengSegInstance {
 struct GxJingzhengPipelineResult {
     std::string state_flag;       // "OK" / "NG"
     std::string branch;           // "zifu" / "gangbiao" / ""
+    std::string zifu_type;        // zifu 分支->"Penma", gangbiao 分支->"Tiebiao"
+    std::string penma_version;    // 固定 "new"
+    std::string duanmian;         // 第一阶段 det 有输出 -> "yes" / "no"
     std::string ocr_text;
     cv::Mat annotated_image;
 

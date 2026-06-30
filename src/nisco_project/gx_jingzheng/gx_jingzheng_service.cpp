@@ -65,11 +65,12 @@ public:
             item["picture_id"] = pic_number + 1;
 
             if (!src_img.data) {
-                item["read_picture_flag"] = "NG";
                 item["state_flag"] = "NG";
-                item["branch"] = "";
+                item["zifu_type"] = "";
+                item["penma_version"] = "new";
                 item["result"] = "";
                 item["picture_path"] = "";
+                item["duanmian"] = "no";
                 array_result.push_back(item);
                 fout << "detect failed! empty image" << std::endl;
                 continue;
@@ -99,16 +100,17 @@ public:
                 cv::imwrite(save_picture_name, src_img);
             }
 
-            item["read_picture_flag"] = "OK";
             item["state_flag"] = pres.state_flag;
-            item["branch"] = pres.branch;
+            item["zifu_type"] = pres.zifu_type;
+            item["penma_version"] = pres.penma_version;
             item["result"] = pres.ocr_text;
             item["picture_path"] = save_picture_name;
+            item["duanmian"] = pres.duanmian;
             array_result.push_back(item);
         }
 
         json root_all;
-        root_all["station_id"] = std::to_string(station_id);
+        root_all["station_id"] = station_id;
         root_all["all_results"] = array_result;
 
         std::cout << "[RESULT] " << root_all.dump() << std::endl;
@@ -140,7 +142,11 @@ public:
                 json item;
                 item["picture_id"] = pic_number + 1;
                 item["state_flag"] = "NG";
-                item["branch"] = "";
+                item["zifu_type"] = "";
+                item["penma_version"] = "new";
+                item["result"] = "";
+                item["picture_path"] = "";
+                item["duanmian"] = "no";
                 array_result.push_back(item);
                 continue;
             }
@@ -151,8 +157,11 @@ public:
             json item;
             item["picture_id"] = pic_number + 1;
             item["state_flag"] = pres.state_flag;
-            item["branch"] = pres.branch;
+            item["zifu_type"] = pres.zifu_type;
+            item["penma_version"] = pres.penma_version;
             item["result"] = pres.ocr_text;
+            item["picture_path"] = "";
+            item["duanmian"] = pres.duanmian;
             array_result.push_back(item);
 
             if (!pres.annotated_image.empty()) {
@@ -166,7 +175,7 @@ public:
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
         json root_all;
-        root_all["station_id"] = std::to_string(station_id);
+        root_all["station_id"] = station_id;
         root_all["all_results"] = array_result;
 
         std::cout << std::endl;

@@ -550,6 +550,7 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
 
     GxJingzhengPipelineResult result;
     result.state_flag = "NG";
+    result.penma_version = "new";
 
     // ===== 1) 定位检测 =====
     std::vector<cv::Mat> det_imgs = {image};
@@ -557,6 +558,8 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
     det_->process(det_imgs, det_results);
     DetectionResult det_res = det_results.empty() ? DetectionResult{} : det_results[0];
     result.det_detections = det_res.detections;
+    // duanmian: 第一阶段 det 有输出即 yes
+    result.duanmian = (det_res.num_detections > 0) ? "yes" : "no";
 
     if (verbose) {
         std::cout << "[DEBUG] dingwei det = " << det_res.num_detections << std::endl;
@@ -603,6 +606,11 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
     }
     result.branch = branch;
     result.seg_instances = instances;
+    if (branch == config_.zifu_class_name) {
+        result.zifu_type = "Penma";
+    } else if (branch == config_.gangbiao_class_name) {
+        result.zifu_type = "Tiebiao";
+    }
 
     if (branch == config_.zifu_class_name) {
         // ===== 4a) zifu 分支：每个实例独立 minAreaRect → 透视裁剪 → 方向分类 + OCR =====

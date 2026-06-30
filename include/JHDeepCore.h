@@ -266,6 +266,25 @@ class ZbhcService {
     std::shared_ptr<ZbhcServicePrivate> m_pHandle;
 };
 
+class ZbsltjServicePrivate;
+class ZbsltjService {
+  public:
+    explicit ZbsltjService(const std::string &config_path);
+    ~ZbsltjService();
+
+    ZbsltjService(const ZbsltjService &) = delete;
+    ZbsltjService &operator=(const ZbsltjService &) = delete;
+
+    const struct ZbsltjServerConfig &config() const;
+    std::string handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int camera_id);
+
+  private:
+    std::shared_ptr<ZbsltjServicePrivate> m_pHandle;
+};
+
 class TrackerPrivate;
 class Tracker {
   public:

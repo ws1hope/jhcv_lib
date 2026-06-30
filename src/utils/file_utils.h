@@ -73,6 +73,27 @@ struct ZbhcServerConfig {
     std::string device = "cuda";
 };
 
+struct ZbsltjServerConfig {
+    std::string service_name = "zbsltj";
+    std::string host = "127.0.0.1";
+    int port = 7903;
+    std::string result_dir = "D:\\ZbsltjResult";
+    std::string log_dir = "D:\\ZbsltjLog";
+    std::string billet_det_model;
+    std::string char_seg_model;
+    std::string ocr_model;
+    std::string ocr_label;
+    std::string device = "cuda";
+};
+
+struct ZbsltjConfig {
+    std::string billet_det_model;
+    std::string char_seg_model;
+    std::string ocr_model;
+    std::string ocr_label;
+    std::string device;
+};
+
 } // namespace JHDeepCore
 
 class FileHelper {
@@ -86,6 +107,8 @@ public:
     static JHDeepCore::DispatchServerConfig loadDispatchConfig(const std::string& config_path);
 
     static JHDeepCore::ZbhcServerConfig loadZbhcConfig(const std::string& config_path);
+
+    static JHDeepCore::ZbsltjServerConfig loadZbsltjConfig(const std::string& config_path);
 
     static std::vector<std::string> splitStringByCsharp(const std::string& str);
 

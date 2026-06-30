@@ -1,0 +1,17 @@
+server:
+  service_name: "zbsltj"
+  host: "127.0.0.1"
+  port: 7903
+
+models:
+  billet_det_model: "models/zbsltj/piliao_dingwei.onnx"
+  char_seg_model: "models/zbsltj/penma_best_zifu.onnx"
+  ocr_model: "models/zbsltj/rec.onnx"
+  ocr_label: "models/zbsltj/rec.yaml"
+
+inference:
+  device: "cpu"
+
+output:
+  result_dir: "D:\\ZbsltjResult"
+  log_dir: "D:\\ZbsltjLog"

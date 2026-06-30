@@ -473,14 +473,17 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
     } else if (result.branch == config_.gangbiao_class_name &&
                !result.tiebiao_annotated.empty() && result.chosen_bbox.area() > 0) {
         // 第 0 层 (gangbiao)：把 tiebiao 标注好的 crop (其标注图顶部 crop 大小区域)
-        // 贴回原图 chosen_bbox 位置，使结果展示在输入原图上 (与 zifu 分支一致)
+        // 贴回原图 chosen_bbox 位置，使结果展示在输入原图上 (与 zifu 分支一致)。
+        // 贴回时整体压暗一档，让框内左上角炉号文字等标注显得更浅、不抢视觉。
         cv::Rect roi = result.chosen_bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
         if (roi.area() > 0 &&
             result.tiebiao_annotated.cols >= roi.width &&
             result.tiebiao_annotated.rows >= roi.height) {
             cv::Mat crop_ann = result.tiebiao_annotated(
-                cv::Rect(0, 0, roi.width, roi.height));
-            crop_ann.copyTo(annotated(roi));
+                cv::Rect(0, 0, roi.width, roi.height)).clone();
+            cv::Mat dimmed;
+            crop_ann.convertTo(dimmed, -1, 0.1, 20);  // 亮度×0.6、提一点底避免过黑
+            dimmed.copyTo(annotated(roi));
         }
     }
 
@@ -560,20 +563,20 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
                 }
                 if (!cur.empty()) items.push_back(cur);
             }
-            int y = 180;
+            int y = 200;
             for (const auto& it : items) {
                 if (it.empty()) continue;
                 std::string line = "ocr: " + it;
                 if (y > annotated.rows) break;
                 cv::putText(annotated, line, cv::Point(20, y),
-                            cv::FONT_HERSHEY_SIMPLEX, 3.2, cv::Scalar(0, 0, 255), 7);
-                y += 110;
+                            cv::FONT_HERSHEY_SIMPLEX, 4.5, cv::Scalar(0, 0, 255), 9);
+                y += 170;
             }
         } else if (!result.ocr_text.empty()) {
             // zifu 等其它分支：单行红色
             cv::putText(annotated, "ocr: " + result.ocr_text,
-                        cv::Point(20, 180),
-                        cv::FONT_HERSHEY_SIMPLEX, 2.8, cv::Scalar(0, 0, 255), 6);
+                        cv::Point(20, 200),
+                        cv::FONT_HERSHEY_SIMPLEX, 4.0, cv::Scalar(0, 0, 255), 8);
         }
     }
 
@@ -652,10 +655,12 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
             result.tiebiao_annotated.cols > 0) {
             cv::Mat strip = result.tiebiao_annotated(
                 cv::Rect(0, crop_h, result.tiebiao_annotated.cols,
-                         result.tiebiao_annotated.rows - crop_h));
-            float s = static_cast<float>(annotated.cols) / std::max(strip.cols, 1);
+                         result.tiebiao_annotated.rows - crop_h)).clone();
+            cv::Mat dimmed;
+            strip.convertTo(dimmed, -1, 0.6, 20);   // 与框内贴回一致的整体压暗
+            float s = static_cast<float>(annotated.cols) / std::max(dimmed.cols, 1);
             cv::Mat strip_r;
-            cv::resize(strip, strip_r, cv::Size(), s, s, cv::INTER_LINEAR);
+            cv::resize(dimmed, strip_r, cv::Size(), s, s, cv::INTER_LINEAR);
 
             const int margin = 20;
             int extra_h = strip_r.rows + 2 * margin;

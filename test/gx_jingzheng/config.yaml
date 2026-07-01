@@ -1,7 +1,7 @@
 server:
-  service_name: "gx_jingzheng"
+  service_name: "character_recognition"
   host: "127.0.0.1"
-  port: 8084
+  port: 8080
 
 models:
   # 第一阶段：定位模型 (object detection)
@@ -25,7 +25,7 @@ classes:
   gangbiao_class_name: "gangbiao"
 
 inference:
-  device: "cpu"
+  device: "gpu"
 
 output:
   result_dir: "D:\\GxJingzhengResult"

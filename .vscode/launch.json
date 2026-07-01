@@ -584,6 +584,46 @@
             "preLaunchTask": "build"
         },
         {
+            "name": "gx_jingzheng - HTTP server",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/gx_jingzheng.exe",
+            "args": [
+                "-c", "test/gx_jingzheng/config.yaml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "gx_jingzheng - local test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/gx_jingzheng.exe",
+            "args": [
+                "--test",
+                "-c", "test/gx_jingzheng/config.yaml",
+                "-i", "images/gx_pw_test/20260626084218997_1.jpg#images/gx_pw_test/20260626084218997_1.jpg#images/gx_pw_test/20260626101133960_1.jpg#images/gx_xm_test/20260623015022765_1.jpg#images/gx_pw_test/20260626084413567_1.jpg",
+                "-H", "26702502",
+                "-s", "1"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
             "name": "mac gx_jingzheng - HTTP server",
             "type": "cppdbg",
             "request": "launch",

@@ -19,6 +19,7 @@ struct BilletCharInfo {
     cv::Mat image_after_flip;    // 方向矫正后（实际送 OCR 的字符 crop）
     std::string ocr_text;
     float ocr_confidence = 0.f;  // 该字符 OCR 置信度（无 box 时为 0）
+    int direction_flag = 0;     // 该字符角度分类结果（0 或 180）
 };
 
 struct BilletResult {
@@ -47,7 +48,7 @@ public:
 private:
     void warmup();
 
-    int classifyDirection(const std::vector<cv::Mat>& char_images);
+    int classifyDirection(const cv::Mat& char_image);
 
     cv::Mat createAnnotatedImage(
         const cv::Mat& src_img,

@@ -220,23 +220,16 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                 char_crops.push_back(std::move(crop));
             }
 
-            // ===== Step 7: 方向分类(0/180)，坯料内投票决定角度 =====
-            std::vector<cv::Mat> crop_imgs;
-            for (auto& c : char_crops) crop_imgs.push_back(c.img_bgr);
-            int dir_flag = classifyDirection(crop_imgs);
-            billet_result.direction_flag = dir_flag;
-
-            if (verbose) {
-                std::cout << "[DEBUG]   billet[" << bi << "] direction: " << dir_flag << std::endl;
-            }
-
-            // ===== Step 8: 方向矫正(180°则翻转)后送 OCR 识别 =====
+            // ===== Step 7+8: 逐字符方向分类(0/180)，按各自结果翻转后送 OCR =====
+            bool any_flipped = false;
             for (auto& c : char_crops) {
                 cv::Mat ocr_in = c.img_bgr;
-                if (dir_flag == 180 && !ocr_in.empty()) {
+                int char_dir = classifyDirection(c.img_bgr);
+                if (char_dir == 180 && !ocr_in.empty()) {
                     cv::Mat flipped;
                     cv::flip(ocr_in, flipped, -1);
                     ocr_in = flipped;
+                    any_flipped = true;
                 }
 
                 std::vector<cv::Mat> ocr_imgs = {ocr_in};
@@ -253,7 +246,8 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
 
                 if (verbose) {
                     std::cout << "[DEBUG]     char text=\"" << char_text
-                         << "\" seg=" << c.confidence
+                         << "\" dir=" << char_dir
+                         << " seg=" << c.confidence
                          << " ocr=" << char_conf << std::endl;
                 }
 
@@ -269,7 +263,14 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                 char_info.image_after_flip = ocr_in.clone();
                 char_info.ocr_text = char_text;
                 char_info.ocr_confidence = char_conf;
+                char_info.direction_flag = char_dir;
                 billet_result.chars.push_back(char_info);
+            }
+
+            billet_result.direction_flag = any_flipped ? 180 : 0;
+            if (verbose) {
+                std::cout << "[DEBUG]   billet[" << bi << "] direction: " << billet_result.direction_flag
+                     << " (per-char, any flipped)" << std::endl;
             }
 
             // 拼接坯料内所有字符的 OCR 结果
@@ -342,7 +343,12 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
 
         for (auto& ch : billet.chars) {
             cv::rectangle(annotated, ch.bbox_on_src, cv::Scalar(0, 0, 255), 1);
-            // 字符框右侧标注该字符 OCR 置信度
+            // 字符框右上角标注角度分类结果，右下角标注 OCR 置信度
+            std::string dir_label = "d" + std::to_string(ch.direction_flag);
+            cv::putText(annotated, dir_label,
+                        cv::Point(ch.bbox_on_src.x + ch.bbox_on_src.width + 3,
+                                  ch.bbox_on_src.y + 12),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 200, 255), 1);
             std::string conf_label = cv::format("%.2f", ch.ocr_confidence);
             cv::putText(annotated, conf_label,
                         cv::Point(ch.bbox_on_src.x + ch.bbox_on_src.width + 3,
@@ -584,32 +590,24 @@ void ZbhcPipeline::warmup()
     std::cout << "[OK] Warmup complete." << std::endl;
 }
 
-int ZbhcPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
+int ZbhcPipeline::classifyDirection(const cv::Mat& char_image)
 {
-    if (char_images.empty()) return 0;
+    if (char_image.empty()) return 0;
 
-    int count_0 = 0, count_180 = 0;
-    for (auto& img : char_images) {
-        if (img.empty()) continue;
-        cv::Mat bgr;
-        if (img.channels() == 1)
-            cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
-        else
-            bgr = img;
+    cv::Mat bgr;
+    if (char_image.channels() == 1)
+        cv::cvtColor(char_image, bgr, cv::COLOR_GRAY2BGR);
+    else
+        bgr = char_image;
 
-        std::vector<cv::Mat> imgs = {bgr};
-        std::vector<ClassificationResult> results;
-        direction_cls_->process(imgs, results);
+    std::vector<cv::Mat> imgs = {bgr};
+    std::vector<ClassificationResult> results;
+    direction_cls_->process(imgs, results);
 
-        if (!results.empty()) {
-            if (results[0].class_id == 0)
-                count_0++;
-            else
-                count_180++;
-        }
+    if (!results.empty()) {
+        return (results[0].class_id == 0) ? 0 : 180;
     }
-
-    return (count_0 >= count_180) ? 0 : 180;
+    return 0;
 }
 
 } // namespace Pipeline

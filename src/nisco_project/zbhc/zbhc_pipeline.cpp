@@ -339,7 +339,7 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
         text_y += 150;
     }
 
-    // ===== 底部可视化：每个坯料一行 = 坯料缩略图 + 方向矫正前/后字符片段 =====
+    // ===== 底部可视化：每个坯料 = 一张卡片（缩略图 + 字符片段），卡片间横向排列、自动换行 =====
     // 参考 gx_jingzheng tiebiao branch 的可视化方式
     const int margin = 15;
     const int row_h = 60;
@@ -350,27 +350,9 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
     const int pad_bottom = 15;
     const double strip_font_scale = 0.7;
 
-    // 计算底部区域高度
-    int bottom_area_h = 0;
-    for (auto& billet : billets) {
-        int num_char_rows = (billet.direction_flag == 180) ? 2 : 1;
-        int strip_total_h = num_char_rows * (row_h + section_gap + 20);
-        int row_total = std::max(thumb_height, strip_total_h);
-        bottom_area_h += row_total + section_gap;
-    }
-
-    // 无坯料时不扩展画布
-    if (bottom_area_h == 0) {
-        return annotated;
-    }
-
-    // 扩展画布：原图标注置顶，下方追加可视化区域
-    int canvas_h = annotated.rows + bottom_area_h + pad_bottom;
-    cv::Mat result = cv::Mat::zeros(canvas_h, annotated.cols, annotated.type());
-    annotated.copyTo(result(cv::Rect(0, 0, annotated.cols, annotated.rows)));
-
-    // 把多张字符图水平拼接成统一高度 row_h 的长条
-    auto buildCharStrip = [&](const std::vector<cv::Mat>& imgs) -> cv::Mat {
+    // 把多张字符图缩放到统一高度 row_h，并按最大宽度自动折行拼成多行
+    // 返回每行 strip（宽度可能不同，高度均为 row_h），供调用方逐行粘贴
+    auto buildWrappedStrips = [&](const std::vector<cv::Mat>& imgs, int max_w) -> std::vector<cv::Mat> {
         std::vector<cv::Mat> resized;
         for (auto& img : imgs) {
             if (img.empty()) continue;
@@ -379,21 +361,117 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
             cv::resize(img, r, cv::Size(), s, s, cv::INTER_LINEAR);
             resized.push_back(r);
         }
-        if (resized.empty()) return cv::Mat();
-        int total_w = 0;
-        for (auto& r : resized) total_w += r.cols + char_margin;
-        total_w -= char_margin;
-        cv::Mat strip = cv::Mat::zeros(row_h, total_w, CV_8UC3);
-        int cx = 0;
+        std::vector<cv::Mat> lines;
+        if (resized.empty()) return lines;
+        std::vector<cv::Mat> cur; int cur_w = 0;
+        auto flush = [&]() {
+            if (cur.empty()) return;
+            int total_w = 0;
+            for (auto& r : cur) total_w += r.cols + char_margin;
+            total_w -= char_margin;
+            cv::Mat line = cv::Mat::zeros(row_h, total_w, CV_8UC3);
+            int cx = 0;
+            for (auto& r : cur) {
+                cv::Rect roi(cx, 0, r.cols, r.rows);
+                r.copyTo(line(roi));
+                cx += r.cols + char_margin;
+            }
+            lines.push_back(line);
+            cur.clear(); cur_w = 0;
+        };
         for (auto& r : resized) {
-            cv::Rect roi(cx, 0, r.cols, r.rows);
-            r.copyTo(strip(roi));
-            cx += r.cols + char_margin;
+            int add = r.cols + (cur.empty() ? 0 : char_margin);
+            if (!cur.empty() && cur_w + add > max_w) flush();
+            cur_w += add;
+            cur.push_back(r);
         }
-        return strip;
+        flush();
+        return lines;
     };
 
-    // 带越界裁剪的粘贴
+    const int label_h = 20;            // 每行 strip 上方文字标签高度
+    const int line_pitch = row_h + label_h;  // 单行字符（含标签）总高
+
+    // 每个坯料打包成一个卡片：缩略图（左）+ 字符 strip 多行（右，自动折行）
+    struct Card {
+        cv::Mat thumb;                 // 缩略图（已缩放到 thumb_height 高）
+        int thumb_w = 0;
+        std::vector<cv::Mat> strip_lines;  // 字符 strip 各行（0°：1+ 行；180°：before 段 + after 段）
+        int before_lines = 0;          // 180° 时 before 段行数，用于粘贴时区分标签
+        int strip_w = 0;               // strip 区域宽度（取各行最大宽度）
+        int strip_h = 0;               // strip 区域高度（含标签）
+        int card_w = 0, card_h = 0;    // 整卡尺寸
+    };
+
+    int avail_w = annotated.cols - 2 * margin;   // 卡片可用的水平空间
+    std::vector<Card> cards;
+    cards.reserve(billets.size());
+
+    for (auto& billet : billets) {
+        Card c;
+        if (!billet.billet_image.empty()) {
+            float thumb_scale = static_cast<float>(thumb_height) / billet.billet_image.rows;
+            cv::resize(billet.billet_image, c.thumb, cv::Size(), thumb_scale, thumb_scale, cv::INTER_LINEAR);
+            c.thumb_w = c.thumb.cols;
+        }
+        int strip_max_w = std::max(1, avail_w - c.thumb_w - gap);
+
+        std::vector<cv::Mat> imgs_before, imgs_after;
+        for (auto& ch : billet.chars) {
+            imgs_before.push_back(ch.image_before_flip);
+            imgs_after.push_back(ch.image_after_flip);
+        }
+
+        if (billet.direction_flag == 180) {
+            auto before = buildWrappedStrips(imgs_before, strip_max_w);
+            auto after = buildWrappedStrips(imgs_after, strip_max_w);
+            c.before_lines = (int)before.size();
+            // before 段
+            for (auto& l : before) { c.strip_lines.push_back(l); c.strip_w = std::max(c.strip_w, l.cols); }
+            c.strip_h += (int)before.size() * line_pitch;
+            // after 段（带额外段间距）
+            if (!after.empty()) c.strip_h += section_gap;
+            for (auto& l : after) { c.strip_lines.push_back(l); c.strip_w = std::max(c.strip_w, l.cols); }
+            c.strip_h += (int)after.size() * line_pitch;
+        } else {
+            auto lines = buildWrappedStrips(imgs_after, strip_max_w);
+            for (auto& l : lines) { c.strip_lines.push_back(l); c.strip_w = std::max(c.strip_w, l.cols); }
+            c.strip_h += (int)lines.size() * line_pitch;
+        }
+
+        c.card_w = c.thumb_w + (c.strip_lines.empty() ? 0 : gap + c.strip_w);
+        c.card_h = std::max(thumb_height, c.strip_h);
+        cards.push_back(std::move(c));
+    }
+
+    // 无有效卡片时不扩展画布
+    bool any_content = false;
+    for (auto& c : cards) if (c.card_w > 0) { any_content = true; break; }
+    if (!any_content) {
+        return annotated;
+    }
+
+    // 第一遍：流式排版（卡片间横向排列、放不下换行），只算总高度
+    int cur_x = margin, cur_y = 0, row_max_h = 0, total_h = 0;
+    for (auto& c : cards) {
+        if (c.card_w <= 0) continue;
+        if (cur_x + c.card_w > annotated.cols - margin && cur_x > margin) {
+            cur_y += row_max_h + section_gap;
+            cur_x = margin;
+            row_max_h = 0;
+        }
+        cur_x += c.card_w + gap;
+        row_max_h = std::max(row_max_h, c.card_h);
+        total_h = std::max(total_h, cur_y + row_max_h);
+    }
+    total_h += pad_bottom;
+
+    // 扩展画布：原图标注置顶，下方追加可视化区域
+    int canvas_h = annotated.rows + total_h;
+    cv::Mat result = cv::Mat::zeros(canvas_h, annotated.cols, annotated.type());
+    annotated.copyTo(result(cv::Rect(0, 0, annotated.cols, annotated.rows)));
+
+    // 带越界裁剪的粘贴（保证绝不出界）
     auto pasteAt = [&](const cv::Mat& img, int x, int y) {
         if (img.empty()) return;
         cv::Rect paste_rect(x, y, img.cols, img.rows);
@@ -403,58 +481,54 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
         img(src_roi).copyTo(result(clipped));
     };
 
-    int bottom_y = annotated.rows;
-
-    for (int bi = 0; bi < (int)billets.size(); bi++) {
-        auto& billet = billets[bi];
+    // 第二遍：在确定画布上重新流式排版并粘贴
+    cur_x = margin;
+    int row_top = annotated.rows;
+    row_max_h = 0;
+    for (int bi = 0; bi < (int)cards.size(); bi++) {
+        auto& c = cards[bi];
+        if (c.card_w <= 0) continue;
         std::string tag = "billet" + std::to_string(bi + 1);
 
-        // 坯料缩略图（左侧）—— zbhc 的检测对象是坯料，无"圆标"概念，以坯料 crop 作为展示对象
-        cv::Mat thumb;
-        if (!billet.billet_image.empty()) {
-            float thumb_scale = static_cast<float>(thumb_height) / billet.billet_image.rows;
-            cv::resize(billet.billet_image, thumb, cv::Size(), thumb_scale, thumb_scale, cv::INTER_LINEAR);
-        }
-        int thumb_w = thumb.empty() ? 0 : thumb.cols;
-        int strip_x = margin + thumb_w + gap;
-
-        // 收集字符片段（矫正前 / 矫正后）
-        std::vector<cv::Mat> imgs_before, imgs_after;
-        for (auto& ch : billet.chars) {
-            imgs_before.push_back(ch.image_before_flip);
-            imgs_after.push_back(ch.image_after_flip);
+        // 放不下则换行
+        if (cur_x + c.card_w > result.cols - margin && cur_x > margin) {
+            row_top += row_max_h + section_gap;
+            cur_x = margin;
+            row_max_h = 0;
         }
 
-        int cur_y = bottom_y;
-        if (!thumb.empty()) {
-            pasteAt(thumb, margin, cur_y);
+        int card_top = row_top;
+        int thumb_x = cur_x;
+        int strip_x = cur_x + c.thumb_w + (c.strip_lines.empty() ? 0 : gap);
+
+        // 缩略图竖直居中于卡片（标签由各 strip 行的 "billetN ..." 文字标识，不另画）
+        if (!c.thumb.empty()) {
+            int thumb_y = card_top + (c.card_h - c.thumb.rows) / 2;
+            pasteAt(c.thumb, thumb_x, thumb_y);
         }
 
-        if (billet.direction_flag == 180) {
-            // 180°：展示矫正前 + 矫正后两行，便于对比
-            cv::Mat strip_before = buildCharStrip(imgs_before);
-            cv::Mat strip_after = buildCharStrip(imgs_after);
-
-            int strip_y = cur_y + 20;
-            cv::putText(result, tag + " dir=180 Before flip:", cv::Point(strip_x, strip_y),
+        // 字符 strip 逐行粘贴
+        int ly = card_top;
+        for (int li = 0; li < (int)c.strip_lines.size(); li++) {
+            // 180° 的 after 段首行前补段间距，与 strip_h 计算一致
+            if (billets[bi].direction_flag == 180 && li == c.before_lines && c.before_lines > 0) {
+                ly += section_gap;
+            }
+            std::string lbl;
+            if (billets[bi].direction_flag == 180) {
+                lbl = (li < c.before_lines) ? (tag + " dir=180 Before flip:")
+                                            : (tag + " dir=180 After flip:");
+            } else {
+                lbl = tag + " Char crops:";
+            }
+            cv::putText(result, lbl, cv::Point(strip_x, ly + label_h - 5),
                         cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 2);
-            pasteAt(strip_before, strip_x, strip_y + 10);
-
-            int strip2_y = strip_y + row_h + section_gap + 10;
-            cv::putText(result, tag + " dir=180 After flip:", cv::Point(strip_x, strip2_y),
-                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 2);
-            pasteAt(strip_after, strip_x, strip2_y + 10);
-
-            bottom_y = cur_y + thumb_height + section_gap;
-        } else {
-            // 0°：仅展示字符片段（矫正前后一致）
-            cv::Mat strip_crops = buildCharStrip(imgs_after);
-            int strip_y = cur_y + (thumb_height - row_h) / 2;
-            cv::putText(result, tag + " Char crops:", cv::Point(strip_x, strip_y),
-                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 2);
-            pasteAt(strip_crops, strip_x, strip_y + 10);
-            bottom_y = cur_y + thumb_height + section_gap;
+            pasteAt(c.strip_lines[li], strip_x, ly + label_h);
+            ly += line_pitch;
         }
+
+        cur_x += c.card_w + gap;
+        row_max_h = std::max(row_max_h, c.card_h);
     }
 
     return result;

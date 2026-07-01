@@ -3,6 +3,7 @@
 #include "file_utils.h"
 #include "json.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <iostream>
@@ -14,6 +15,33 @@
 using json = nlohmann::json;
 
 namespace JHDeepCore {
+
+// 单图置信度 = 所有结果(坯料, ocr_text 非空)置信度的最小值；无结果返回 0
+static float computeImageConfidence(const Pipeline::ZbhcPipelineResult& r)
+{
+    float img_min = 1.0f;
+    bool any = false;
+    for (auto& billet : r.billets) {
+        if (billet.ocr_text.empty()) continue;
+        img_min = std::min(img_min, billet.ocr_confidence);
+        any = true;
+    }
+    return any ? img_min : 0.0f;
+}
+
+// 多图置信度过滤：严格丢弃，只保留置信度 > threshold 的图；即使全部丢弃（all_results 可能为空）
+static void applyConfidenceFilter(json& array_result,
+                                  const std::vector<float>& confs,
+                                  float threshold)
+{
+    if (threshold <= 0.0f) return;
+    if (confs.size() != array_result.size()) return;
+    json filtered = json::array();
+    for (size_t i = 0; i < confs.size(); i++) {
+        if (confs[i] > threshold) filtered.push_back(array_result[i]);
+    }
+    array_result = filtered;
+}
 
 class ZbhcServicePrivate {
 public:
@@ -58,6 +86,7 @@ public:
         std::vector<std::string> picture_path_array = FileHelper::splitStringByCsharp(picture_path);
 
         json array_result = json::array();
+        std::vector<float> img_confs;
         for (int pic_number = 0; pic_number < (int)picture_path_array.size(); pic_number++) {
             cv::Mat src_img = cv::imread(picture_path_array[pic_number]);
 
@@ -69,11 +98,13 @@ public:
                 item["rec_results"] = json::array();
                 item["picture_path"] = "";
                 array_result.push_back(item);
+                img_confs.push_back(0.0f);
                 fout << "detect failed! empty image" << std::endl;
                 continue;
             }
 
             Pipeline::ZbhcPipelineResult pipeline_result = pipeline_->process(src_img, false);
+            img_confs.push_back(computeImageConfidence(pipeline_result));
 
             time_t currtime = time(NULL);
             tm* t = localtime(&currtime);
@@ -115,6 +146,11 @@ public:
             array_result.push_back(item);
         }
 
+        applyConfidenceFilter(array_result, img_confs, config_.ocr_confidence_threshold);
+
+        std::cout << "[FILTER] threshold=" << config_.ocr_confidence_threshold
+                  << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
+
         json root_all;
         root_all["station_id"] = std::to_string(station_id);
         root_all["all_results"] = array_result;
@@ -140,6 +176,7 @@ public:
 
         auto start = std::chrono::high_resolution_clock::now();
         json array_result = json::array();
+        std::vector<float> img_confs;
 
         for (int pic_number = 0; pic_number < (int)picture_path_array.size(); pic_number++) {
             cv::Mat src_img = cv::imread(picture_path_array[pic_number]);
@@ -153,10 +190,12 @@ public:
                 item["rec_results"] = json::array();
                 item["picture_path"] = "";
                 array_result.push_back(item);
+                img_confs.push_back(0.0f);
                 continue;
             }
 
             Pipeline::ZbhcPipelineResult pipeline_result = pipeline_->process(src_img, true);
+            img_confs.push_back(computeImageConfidence(pipeline_result));
 
             json billets_ocr = json::array();
             for (auto& billet : pipeline_result.billets) {
@@ -185,6 +224,11 @@ public:
 
         auto end = std::chrono::high_resolution_clock::now();
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+        applyConfidenceFilter(array_result, img_confs, config_.ocr_confidence_threshold);
+
+        std::cout << "[FILTER] threshold=" << config_.ocr_confidence_threshold
+                  << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
 
         json root_all;
         root_all["station_id"] = std::to_string(station_id);

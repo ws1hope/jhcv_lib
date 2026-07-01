@@ -245,13 +245,16 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                 OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
 
                 std::string char_text;
+                float char_conf = 0.f;
                 if (!ocr_res.boxes.empty()) {
                     char_text = ocr_res.boxes[0].text;
+                    char_conf = ocr_res.boxes[0].confidence;
                 }
 
                 if (verbose) {
                     std::cout << "[DEBUG]     char text=\"" << char_text
-                         << "\" conf=" << c.confidence << std::endl;
+                         << "\" seg=" << c.confidence
+                         << " ocr=" << char_conf << std::endl;
                 }
 
                 BilletCharInfo char_info;
@@ -265,6 +268,7 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                 char_info.image_before_flip = c.img_bgr.clone();
                 char_info.image_after_flip = ocr_in.clone();
                 char_info.ocr_text = char_text;
+                char_info.ocr_confidence = char_conf;
                 billet_result.chars.push_back(char_info);
             }
 
@@ -275,8 +279,20 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
             }
             billet_result.ocr_text = billet_ocr;
 
+            // 坯料置信度 = 各已识别字符(ocr_text 非空)置信度的最小值
+            float bmin = 1.0f;
+            bool has_rec = false;
+            for (auto& ch : billet_result.chars) {
+                if (!ch.ocr_text.empty()) {
+                    bmin = std::min(bmin, ch.ocr_confidence);
+                    has_rec = true;
+                }
+            }
+            billet_result.ocr_confidence = has_rec ? bmin : 0.0f;
+
             if (verbose) {
-                std::cout << "[DEBUG]   billet[" << bi << "] ocr_text=\"" << billet_ocr << "\"" << std::endl;
+                std::cout << "[DEBUG]   billet[" << bi << "] ocr_text=\"" << billet_ocr
+                     << "\" ocr_conf=" << billet_result.ocr_confidence << std::endl;
             }
 
             result.billets.push_back(billet_result);
@@ -326,6 +342,12 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
 
         for (auto& ch : billet.chars) {
             cv::rectangle(annotated, ch.bbox_on_src, cv::Scalar(0, 0, 255), 1);
+            // 字符框右侧标注该字符 OCR 置信度
+            std::string conf_label = cv::format("%.2f", ch.ocr_confidence);
+            cv::putText(annotated, conf_label,
+                        cv::Point(ch.bbox_on_src.x + ch.bbox_on_src.width + 3,
+                                  ch.bbox_on_src.y + ch.bbox_on_src.height),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
         }
     }
 

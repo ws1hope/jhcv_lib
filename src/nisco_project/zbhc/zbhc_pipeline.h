@@ -18,6 +18,7 @@ struct BilletCharInfo {
     cv::Mat image_before_flip;   // 方向矫正前（原始字符 crop）
     cv::Mat image_after_flip;    // 方向矫正后（实际送 OCR 的字符 crop）
     std::string ocr_text;
+    float ocr_confidence = 0.f;  // 该字符 OCR 置信度（无 box 时为 0）
 };
 
 struct BilletResult {
@@ -28,6 +29,7 @@ struct BilletResult {
     cv::Mat billet_image;      // 坯料裁剪图（用于结果图可视化缩略图）
     std::vector<BilletCharInfo> chars;
     std::string ocr_text;
+    float ocr_confidence = 0.f;  // 该坯料各已识别字符 OCR 置信度的最小值
 };
 
 struct ZbhcPipelineResult {

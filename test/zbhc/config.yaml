@@ -11,6 +11,7 @@ models:
   direction_cls_model: "models/zbhc/zifu_fx_cls.onnx"
 inference:
   device: "cpu"
+  ocr_confidence_threshold: 0.95
 output:
   result_dir: "D:\\CharacterDetect"
   split_dir: "D:\\ZbhcSplit"

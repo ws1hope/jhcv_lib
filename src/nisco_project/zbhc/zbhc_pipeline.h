@@ -15,6 +15,8 @@ struct BilletCharInfo {
     cv::Rect bbox_on_billet;
     cv::Rect bbox_on_src;
     cv::Mat mask;
+    cv::Mat image_before_flip;   // 方向矫正前（原始字符 crop）
+    cv::Mat image_after_flip;    // 方向矫正后（实际送 OCR 的字符 crop）
     std::string ocr_text;
 };
 
@@ -23,6 +25,7 @@ struct BilletResult {
     std::string class_name;
     float confidence;
     int direction_flag = 0;   // 0 或 180
+    cv::Mat billet_image;      // 坯料裁剪图（用于结果图可视化缩略图）
     std::vector<BilletCharInfo> chars;
     std::string ocr_text;
 };

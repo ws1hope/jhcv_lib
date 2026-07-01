@@ -138,6 +138,7 @@ JHDeepCore::ZbhcServerConfig FileHelper::loadZbhcConfig(const std::string& confi
         cfg.seg_model = node["models"]["seg_model"].as<std::string>("");
         cfg.ocr_model = node["models"]["ocr_model"].as<std::string>("");
         cfg.ocr_label = node["models"]["ocr_label"].as<std::string>("");
+        cfg.direction_cls_model = node["models"]["direction_cls_model"].as<std::string>("");
     }
 
     if (node["inference"]) {

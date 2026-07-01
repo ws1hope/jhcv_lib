@@ -543,6 +543,50 @@
             "preLaunchTask": "build"
         },
         {
+            "name": "mac zbhc - local test",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/zbhc",
+            "args": [
+                "--test",
+                "-c", "test/zbhc/config.yaml",
+                "-i", "images/zbhc_test/20260701045247.jpg",
+                "-H", "26406731",
+                "-s", "1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "mac zbhc - HTTP server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/zbhc",
+            "args": [
+                "-c", "test/zbhc/config.yaml"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "zbsltj - HTTP server",
             "type": "cppvsdbg",
             "request": "launch",
@@ -651,8 +695,8 @@
             "args": [
                 "--test",
                 "-c", "test/gx_jingzheng/config.yaml",
-                "-i", "images/gx_pw_test/20260626084218997_1.jpg#images/gx_pw_test/20260626084218997_1.jpg#images/gx_pw_test/20260626101133960_1.jpg#images/gx_xm_test/20260623015022765_1.jpg#images/gx_pw_test/20260626084413567_1.jpg",
-                "-H", "26702502",
+                "-i", "images/gx_xm_test/20260701103649598_4.jpg",
+                "-H", "26704937",
                 "-s", "1"
             ],
             "stopAtEntry": false,

@@ -22,6 +22,7 @@ struct BilletResult {
     cv::Rect bbox_on_src;
     std::string class_name;
     float confidence;
+    int direction_flag = 0;   // 0 或 180
     std::vector<BilletCharInfo> chars;
     std::string ocr_text;
 };
@@ -41,6 +42,8 @@ public:
 private:
     void warmup();
 
+    int classifyDirection(const std::vector<cv::Mat>& char_images);
+
     cv::Mat createAnnotatedImage(
         const cv::Mat& src_img,
         const std::vector<Detection>& det1_dets,
@@ -50,6 +53,7 @@ private:
     std::unique_ptr<Detector> det2_;
     std::unique_ptr<InstanceSegmenter> seg_;
     std::unique_ptr<OCRRecognizer> ocr_;
+    std::unique_ptr<Classifier> direction_cls_;
     ZbhcServerConfig config_;
 };
 

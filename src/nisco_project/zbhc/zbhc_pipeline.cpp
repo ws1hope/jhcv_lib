@@ -28,6 +28,9 @@ ZbhcPipeline::ZbhcPipeline(const ZbhcServerConfig& config)
     ocr_ = std::make_unique<OCRRecognizer>(config_.ocr_model, config_.ocr_label, dev_id);
     std::cout << "[OK] OCR model loaded: " << config_.ocr_model << std::endl;
 
+    direction_cls_ = std::make_unique<Classifier>(config_.direction_cls_model, "", dev_id);
+    std::cout << "[OK] Direction cls model loaded: " << config_.direction_cls_model << std::endl;
+
     warmup();
 }
 
@@ -129,7 +132,15 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                 return seg_res.detections[a].bbox.x < seg_res.detections[b].bbox.x;
             });
 
-            // ===== Step 6: 遍历每个分割实例，裁剪字符送 OCR =====
+            // ===== Step 6: 遍历分割实例，收集字符裁剪框 (boundingRect 轴对齐=水平) =====
+            struct CharCrop {
+                cv::Rect bbox_local;
+                cv::Mat mask;
+                cv::Mat img_bgr;
+                float confidence;
+            };
+            std::vector<CharCrop> char_crops;
+
             for (int si : seg_indices) {
                 auto& char_det = seg_res.detections[si];
                 cv::Mat char_mask = seg_res.masks[si];
@@ -154,8 +165,34 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                     char_img_bgr = char_img;
                 }
 
-                // ===== Step 7: OCR 识别 =====
-                std::vector<cv::Mat> ocr_imgs = {char_img_bgr};
+                CharCrop crop;
+                crop.bbox_local = char_bbox_local;
+                crop.mask = char_mask;
+                crop.img_bgr = char_img_bgr;
+                crop.confidence = char_det.confidence;
+                char_crops.push_back(std::move(crop));
+            }
+
+            // ===== Step 7: 方向分类(0/180)，坯料内投票决定角度 =====
+            std::vector<cv::Mat> crop_imgs;
+            for (auto& c : char_crops) crop_imgs.push_back(c.img_bgr);
+            int dir_flag = classifyDirection(crop_imgs);
+            billet_result.direction_flag = dir_flag;
+
+            if (verbose) {
+                std::cout << "[DEBUG]   billet[" << bi << "] direction: " << dir_flag << std::endl;
+            }
+
+            // ===== Step 8: 方向矫正(180°则翻转)后送 OCR 识别 =====
+            for (auto& c : char_crops) {
+                cv::Mat ocr_in = c.img_bgr;
+                if (dir_flag == 180 && !ocr_in.empty()) {
+                    cv::Mat flipped;
+                    cv::flip(ocr_in, flipped, -1);
+                    ocr_in = flipped;
+                }
+
+                std::vector<cv::Mat> ocr_imgs = {ocr_in};
                 std::vector<OCRResult> ocr_results;
                 ocr_->process(ocr_imgs, ocr_results);
                 OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
@@ -166,18 +203,18 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                 }
 
                 if (verbose) {
-                    std::cout << "[DEBUG]     char[" << si << "] text=\"" << char_text
-                         << "\" conf=" << char_det.confidence << std::endl;
+                    std::cout << "[DEBUG]     char text=\"" << char_text
+                         << "\" conf=" << c.confidence << std::endl;
                 }
 
                 BilletCharInfo char_info;
-                char_info.bbox_on_billet = char_bbox_local;
+                char_info.bbox_on_billet = c.bbox_local;
                 char_info.bbox_on_src = cv::Rect(
-                    billet_roi_on_src.x + char_bbox_local.x,
-                    billet_roi_on_src.y + char_bbox_local.y,
-                    char_bbox_local.width,
-                    char_bbox_local.height);
-                char_info.mask = char_mask;
+                    billet_roi_on_src.x + c.bbox_local.x,
+                    billet_roi_on_src.y + c.bbox_local.y,
+                    c.bbox_local.width,
+                    c.bbox_local.height);
+                char_info.mask = c.mask;
                 char_info.ocr_text = char_text;
                 billet_result.chars.push_back(char_info);
             }
@@ -232,7 +269,8 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
         auto& billet = billets[bi];
         cv::rectangle(annotated, billet.bbox_on_src, cv::Scalar(255, 100, 0), 2);
         std::string billet_label = "billet" + std::to_string(bi + 1) + " " + billet.class_name
-                                    + " " + cv::format("%.2f", billet.confidence);
+                                    + " " + cv::format("%.2f", billet.confidence)
+                                    + " dir=" + std::to_string(billet.direction_flag);
         cv::putText(annotated, billet_label,
                     cv::Point(billet.bbox_on_src.x, billet.bbox_on_src.y - 5),
                     cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 100, 0), 2);
@@ -276,7 +314,39 @@ void ZbhcPipeline::warmup()
     ocr_->process(dummy_imgs, ocr_res);
     std::cout << "[OK] OCR warmed up" << std::endl;
 
+    std::vector<ClassificationResult> cls_res;
+    direction_cls_->process(dummy_imgs, cls_res);
+    std::cout << "[OK] Direction cls warmed up" << std::endl;
+
     std::cout << "[OK] Warmup complete." << std::endl;
+}
+
+int ZbhcPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
+{
+    if (char_images.empty()) return 0;
+
+    int count_0 = 0, count_180 = 0;
+    for (auto& img : char_images) {
+        if (img.empty()) continue;
+        cv::Mat bgr;
+        if (img.channels() == 1)
+            cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
+        else
+            bgr = img;
+
+        std::vector<cv::Mat> imgs = {bgr};
+        std::vector<ClassificationResult> results;
+        direction_cls_->process(imgs, results);
+
+        if (!results.empty()) {
+            if (results[0].class_id == 0)
+                count_0++;
+            else
+                count_180++;
+        }
+    }
+
+    return (count_0 >= count_180) ? 0 : 180;
 }
 
 } // namespace Pipeline

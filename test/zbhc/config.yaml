@@ -8,6 +8,7 @@ models:
   seg_model: "models/zbhc/penma_best_zifu.onnx"
   ocr_model: "models/zbhc/rec.onnx"
   ocr_label: "models/zbhc/rec.yaml"
+  direction_cls_model: "models/zbhc/zifu_fx_cls.onnx"
 inference:
   device: "cpu"
 output:

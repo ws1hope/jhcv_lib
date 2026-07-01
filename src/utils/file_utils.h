@@ -70,6 +70,7 @@ struct ZbhcServerConfig {
     std::string seg_model;
     std::string ocr_model;
     std::string ocr_label;
+    std::string direction_cls_model;
     std::string device = "cuda";
 };
 

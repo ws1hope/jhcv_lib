@@ -757,11 +757,20 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
             result.state_flag = "OK";
         }
     } else if (branch == config_.gangbiao_class_name) {
-        // ===== 4b) gangbiao 分支：转给 tiebiao =====
+        // ===== 4b) gangbiao 分支：复用 gx 已切好的 gangbiao bbox 作为 label ROI，转给 tiebiao =====
         if (!tiebiao_pipeline_) {
             std::cerr << "[ERROR] gangbiao branch but tiebiao_pipeline_ not initialized" << std::endl;
         } else {
-            TiebiaoResult tres = tiebiao_pipeline_->process(crop, station_id, heat_number, verbose);
+            std::vector<cv::Rect> gangbiao_bboxes;
+            for (auto& inst : result.seg_instances) {
+                if (inst.class_name == config_.gangbiao_class_name) {
+                    gangbiao_bboxes.push_back(inst.bbox);   // crop 坐标系，与 tiebiao 收到的 image 一致
+                }
+            }
+            if (verbose) std::cout << "[DEBUG] gangbiao bbox reused by tiebiao: "
+                                   << gangbiao_bboxes.size() << std::endl;
+            TiebiaoResult tres = tiebiao_pipeline_->process(
+                crop, station_id, heat_number, gangbiao_bboxes, verbose);
             result.ocr_text = tres.ocr_text;
             result.state_flag = tres.state_flag;
             result.tiebiao_annotated = tres.annotated_image;

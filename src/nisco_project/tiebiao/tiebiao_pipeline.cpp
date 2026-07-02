@@ -352,8 +352,6 @@ TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
                                          const std::string& heat_number,
                                          bool verbose)
 {
-    auto infer_start = std::chrono::high_resolution_clock::now();
-
     TiebiaoResult result;
     result.picture_id = 0;
 
@@ -365,6 +363,48 @@ TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
     }
 
     if (verbose) std::cout << "[DEBUG] Detected " << labels.size() << " labels" << std::endl;
+
+    return runLabels(image, labels, heat_number, verbose, result);
+}
+
+TiebiaoResult TiebiaoPipeline::process(const cv::Mat& image,
+                                         int station_id,
+                                         const std::string& heat_number,
+                                         const std::vector<cv::Rect>& gangbiao_bboxes,
+                                         bool verbose)
+{
+    TiebiaoResult result;
+    result.picture_id = 0;
+
+    // 复用 gx 已切好的 gangbiao bbox 作为 label ROI，跳过 label_seg_ 推理。
+    // 每个 bbox 当作一个 circle 标签牌 (class_id=0)。
+    std::vector<std::pair<cv::Mat, int>> labels;
+    for (const auto& bb : gangbiao_bboxes) {
+        cv::Rect safe = ImageHelper::safeClampROI(
+            bb.x, bb.y, bb.width, bb.height, image.cols, image.rows);
+        if (safe.area() <= 0) continue;
+        labels.emplace_back(image(safe).clone(), 0);
+    }
+
+    if (labels.empty()) {
+        result.state_flag = "NG";
+        if (verbose) std::cout << "[DEBUG] No gangbiao bbox reused as label" << std::endl;
+        return result;
+    }
+
+    if (verbose) std::cout << "[DEBUG] Reused " << labels.size()
+                          << " gangbiao bbox(es) as labels (label_seg_ skipped)" << std::endl;
+
+    return runLabels(image, labels, heat_number, verbose, result);
+}
+
+TiebiaoResult TiebiaoPipeline::runLabels(const cv::Mat& image,
+                                          const std::vector<std::pair<cv::Mat, int>>& labels,
+                                          const std::string& heat_number,
+                                          bool verbose,
+                                          TiebiaoResult& result)
+{
+    auto infer_start = std::chrono::high_resolution_clock::now();
 
     std::string ocr_combined;
     std::vector<LabelDisplayInfo> display_infos;

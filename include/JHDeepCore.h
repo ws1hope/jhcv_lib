@@ -117,7 +117,8 @@ class DetectorPrivate;
 class Detector {
   public:
     Detector(const std::string &model_path, const std::string &label_path = "",
-             int device_id = 0, const std::string &config_path = "");
+             int device_id = 0, const std::string &config_path = "",
+             float conf_threshold = 0.25f, float iou_threshold = 0.45f);
     ~Detector();
 
     Detector(const Detector &) = delete;

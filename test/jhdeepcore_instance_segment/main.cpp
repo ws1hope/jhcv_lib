@@ -111,7 +111,7 @@ static void drawInstanceSegmentation(cv::Mat& image, const JHDeepCore::InstanceS
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [label_path] [device_id]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [label_path] [device_id] [conf_threshold] [iou_threshold]" << std::endl;
         return 1;
     }
 
@@ -119,9 +119,11 @@ int main(int argc, char* argv[]) {
     std::string image_path = argv[2];
     std::string label_path = (argc > 3) ? argv[3] : "";
     int device_id = (argc > 4) ? std::stoi(argv[4]) : 0;
+    float conf_threshold = (argc > 5) ? std::stof(argv[5]) : 0.25f;
+    float iou_threshold = (argc > 6) ? std::stof(argv[6]) : 0.45f;
 
     try {
-        JHDeepCore::InstanceSegmenter segmenter(model_path, label_path, device_id);
+        JHDeepCore::InstanceSegmenter segmenter(model_path, label_path, device_id, "", conf_threshold, iou_threshold);
 
         cv::Mat image = cv::imread(image_path);
         if (image.empty()) {

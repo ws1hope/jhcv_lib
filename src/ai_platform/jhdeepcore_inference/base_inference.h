@@ -36,6 +36,7 @@ class BaseInference {
     std::string GetDevice() const { return device_; }
     std::string GetModelPath() const { return model_path_; }
     utils::ModelConfig GetConfig() const { return config_; }
+    void SetThresholds(float conf, float iou) { conf_threshold_ = conf; iou_threshold_ = iou; }
 
   protected:
     std::string model_path_;

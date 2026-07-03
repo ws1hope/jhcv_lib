@@ -8,12 +8,14 @@ namespace JHDeepCore {
 class InstanceSegmenterPrivate {
 public:
     InstanceSegmenterPrivate(const std::string &model_path, const std::string &label_path,
-                             int device_id, const std::string &config_path)
+                             int device_id, const std::string &config_path,
+                             float conf_threshold, float iou_threshold)
     {
         std::string device_str = device_id >= 0 ? "cuda" : "cpu";
         std::vector<std::string> names;
         if (!label_path.empty()) names.push_back(label_path);
         inference_ = inference::InferenceFactory::CreateInference(model_path, device_str, names);
+        inference_->SetThresholds(conf_threshold, iou_threshold);
     }
 
     void process(std::vector<cv::Mat> &images, std::vector<InstanceSegmentationResult> &results) {
@@ -49,8 +51,10 @@ private:
 };
 
 InstanceSegmenter::InstanceSegmenter(const std::string &model_path, const std::string &label_path,
-                                     int device_id, const std::string &config_path)
-    : m_pHandle(std::make_shared<InstanceSegmenterPrivate>(model_path, label_path, device_id, config_path)) {}
+                                     int device_id, const std::string &config_path,
+                                     float conf_threshold, float iou_threshold)
+    : m_pHandle(std::make_shared<InstanceSegmenterPrivate>(model_path, label_path, device_id, config_path,
+                                                            conf_threshold, iou_threshold)) {}
 
 InstanceSegmenter::~InstanceSegmenter() = default;
 

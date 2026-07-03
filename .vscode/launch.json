@@ -116,10 +116,10 @@
             "args": [
                 "${workspaceFolder}/models/instance_segment/best.onnx",
                 "${workspaceFolder}/images/test_isg.jpg",
-                "gpu",
+                "",
                 "0",
                 "0.25",
-                "0.9"
+                "0.45"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -140,10 +140,10 @@
             "args": [
                 "${workspaceFolder}/models/tiebiao/tiebiao_best_zifu.onnx",
                 "${workspaceFolder}/images/instance_debug.jpg",
-                "cpu",
-                "0",
+                "",
+                "-1",
                 "0.25",
-                "0.9"
+                "0.45"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

@@ -120,7 +120,8 @@ GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
 
     // 注意：InstanceSegmenter 的第二个参数被实现当作 "class_names 列表" 使用，
     // 不是 yaml 路径。这里传空，让 OnnxInference 自动从 <model>.yaml 读 class_names。
-    seg_ = std::make_unique<InstanceSegmenter>(config_.seg_model, "", dev_id);
+    seg_ = std::make_unique<InstanceSegmenter>(config_.seg_model, "", dev_id, "",
+                                                 0.25f, 0.9f);
     std::cout << "[OK] Instance seg model loaded: " << config_.seg_model << std::endl;
 
     direction_cls_ = std::make_unique<Classifier>(config_.direction_cls_model, "", dev_id);

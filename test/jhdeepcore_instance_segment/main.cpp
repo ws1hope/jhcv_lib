@@ -97,25 +97,13 @@ static void drawInstanceSegmentation(cv::Mat& image, const JHDeepCore::InstanceS
                    cv::FONT_HERSHEY_SIMPLEX, 0.6,
                    cv::Scalar(255, 255, 255), 2);
 
-        // 如果有对应的掩码且数据类型正确，绘制掩码
+        // 如果有对应的掩码，按像素直接叠加颜色
         if (i < result.masks.size()) {
             const auto& mask = result.masks[i];
-            if (!mask.empty() && mask.type() == CV_32S) {
-                // 尝试绘制掩码
-                try {
-                    cv::Mat maskMat = mask;
-                    std::vector<std::vector<cv::Point>> contours;
-                    cv::findContours(maskMat, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-                    if (!contours.empty()) {
-                        cv::Mat maskOverlay = image.clone();
-                        cv::fillPoly(maskOverlay, contours, color);
-                        cv::addWeighted(maskOverlay, 0.5, image, 0.5, 0, image);
-                    }
-                } catch (...) {
-                    // 如果掩码绘制失败，跳过
-                    continue;
-                }
+            if (!mask.empty() && mask.type() == CV_8U) {
+                cv::Mat maskOverlay = image.clone();
+                maskOverlay.setTo(color, mask);
+                cv::addWeighted(maskOverlay, 0.5, image, 0.5, 0, image);
             }
         }
     }

@@ -130,6 +130,28 @@
             "preLaunchTask": "build"
         },
         {
+            "name": "mac jhdeepcore_instance_segment",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_iseg_test",
+            "args": [
+                "${workspaceFolder}/models/tiebiao/tiebiao_best_zifu.onnx",
+                "${workspaceFolder}/images/instance_debug.jpg",
+                "cpu"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "JHDeepCore OCR",
             "type": "cppvsdbg",
             "request": "launch",

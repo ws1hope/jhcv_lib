@@ -29,18 +29,18 @@ static float computeImageConfidence(const Pipeline::ZbhcPipelineResult& r)
     return any ? img_min : 0.0f;
 }
 
-// 多图置信度过滤：严格丢弃，只保留置信度 > threshold 的图；即使全部丢弃（all_results 可能为空）
-static void applyConfidenceFilter(json& array_result,
-                                  const std::vector<float>& confs,
-                                  float threshold)
+// 多图择优：只保留图置信度最大的那张图（confs 非空且与 array_result 等长时调用）
+static size_t keepBestImageConfidence(json& array_result,
+                                      const std::vector<float>& confs)
 {
-    if (threshold <= 0.0f) return;
-    if (confs.size() != array_result.size()) return;
-    json filtered = json::array();
-    for (size_t i = 0; i < confs.size(); i++) {
-        if (confs[i] > threshold) filtered.push_back(array_result[i]);
+    size_t best = 0;
+    for (size_t i = 1; i < confs.size(); i++) {
+        if (confs[i] > confs[best]) best = i;
     }
-    array_result = filtered;
+    json best_item = array_result[best];
+    array_result = json::array();
+    array_result.push_back(std::move(best_item));
+    return best;
 }
 
 class ZbhcServicePrivate {
@@ -146,10 +146,12 @@ public:
             array_result.push_back(item);
         }
 
-        applyConfidenceFilter(array_result, img_confs, config_.ocr_confidence_threshold);
-
-        std::cout << "[FILTER] threshold=" << config_.ocr_confidence_threshold
-                  << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
+        if (!img_confs.empty()) {
+            size_t best_idx = keepBestImageConfidence(array_result, img_confs);
+            std::cout << "[BEST] idx=" << best_idx
+                      << " conf=" << img_confs[best_idx]
+                      << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
+        }
 
         json root_all;
         root_all["station_id"] = std::to_string(station_id);
@@ -225,10 +227,12 @@ public:
         auto end = std::chrono::high_resolution_clock::now();
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-        applyConfidenceFilter(array_result, img_confs, config_.ocr_confidence_threshold);
-
-        std::cout << "[FILTER] threshold=" << config_.ocr_confidence_threshold
-                  << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
+        if (!img_confs.empty()) {
+            size_t best_idx = keepBestImageConfidence(array_result, img_confs);
+            std::cout << "[BEST] idx=" << best_idx
+                      << " conf=" << img_confs[best_idx]
+                      << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
+        }
 
         json root_all;
         root_all["station_id"] = std::to_string(station_id);

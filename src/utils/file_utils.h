@@ -72,7 +72,6 @@ struct ZbhcServerConfig {
     std::string ocr_label;
     std::string direction_cls_model;
     std::string device = "cuda";
-    float ocr_confidence_threshold = 0.0f;  // 多图按 OCR 置信度过滤的阈值，0=不过滤
 };
 
 struct ZbsltjServerConfig {

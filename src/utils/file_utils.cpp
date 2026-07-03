@@ -143,7 +143,6 @@ JHDeepCore::ZbhcServerConfig FileHelper::loadZbhcConfig(const std::string& confi
 
     if (node["inference"]) {
         cfg.device = node["inference"]["device"].as<std::string>("cuda");
-        cfg.ocr_confidence_threshold = node["inference"]["ocr_confidence_threshold"].as<float>(0.0f);
     }
 
     return cfg;

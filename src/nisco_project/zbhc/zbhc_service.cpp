@@ -127,6 +127,8 @@ public:
                 cv::imwrite(save_picture_name, src_img);
             }
 
+            saveCharCrops(pipeline_result, pic_number, t);
+
             json billets_ocr = json::array();
             for (auto& billet : pipeline_result.billets) {
                 if (!billet.ocr_text.empty()) {
@@ -222,6 +224,10 @@ public:
                 cv::imwrite(save_path, pipeline_result.annotated_image);
                 std::cout << "[INFO] Annotated image saved: " << save_path << std::endl;
             }
+
+            time_t currtime = time(NULL);
+            tm* t = localtime(&currtime);
+            saveCharCrops(pipeline_result, pic_number, t);
         }
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -244,6 +250,29 @@ public:
         std::cout << "total time: " << total_ms << " ms" << std::endl;
 
         return 0;
+    }
+
+    // 保存每个字符的方向矫正后裁剪图（OCR 输入）到 char_crop_dir，扁平命名：
+    // <char_crop_dir>\YYYYMMDDHHMMSS_p<pic>_b<billet>_c<char>.jpg
+    // char_crop_dir 为空时跳过
+    void saveCharCrops(const Pipeline::ZbhcPipelineResult& result,
+                       int pic_number, const tm* t)
+    {
+        if (config_.char_crop_dir.empty()) return;
+        FileHelper::ensureDirectoryExists(config_.char_crop_dir);
+        for (int bi = 0; bi < (int)result.billets.size(); bi++) {
+            const auto& billet = result.billets[bi];
+            for (int ci = 0; ci < (int)billet.chars.size(); ci++) {
+                const cv::Mat& crop = billet.chars[ci].image_after_flip;
+                if (crop.empty()) continue;
+                std::string save_name = cv::format("%s\\%d%02d%02d%02d%02d%02d_p%d_b%d_c%d.jpg",
+                    config_.char_crop_dir.c_str(),
+                    t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                    t->tm_hour, t->tm_min, t->tm_sec,
+                    pic_number, bi + 1, ci + 1);
+                cv::imwrite(save_name, crop);
+            }
+        }
     }
 
     ZbhcServerConfig config_;

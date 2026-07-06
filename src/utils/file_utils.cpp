@@ -130,6 +130,7 @@ JHDeepCore::ZbhcServerConfig FileHelper::loadZbhcConfig(const std::string& confi
         cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
         cfg.split_dir = node["output"]["split_dir"].as<std::string>(cfg.split_dir);
         cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+        cfg.char_crop_dir = node["output"]["char_crop_dir"].as<std::string>(cfg.char_crop_dir);
     }
 
     if (node["models"]) {

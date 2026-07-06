@@ -65,6 +65,7 @@ struct ZbhcServerConfig {
     std::string result_dir = "D:\\ZbhcResult";
     std::string split_dir = "D:\\ZbhcSplit";
     std::string log_dir = "D:\\ZbhcLog";
+    std::string char_crop_dir;   // 为空时不保存字符裁剪图
     std::string det1_model;
     std::string det2_model;
     std::string seg_model;

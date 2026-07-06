@@ -15,5 +15,6 @@ output:
   result_dir: "D:\\CharacterDetect"
   split_dir: "D:\\ZbhcSplit"
   log_dir: "D:\\ZbhcLog"
+  char_crop_dir: "D:\\ZbhcCharCrop"
    
    

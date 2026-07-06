@@ -1,0 +1,28 @@
+# 依赖镜像：基于已 commit 的容器快照(jhcv_lib-base:cudnn)，把 3rd_party 烤进 /app/3rd_party
+# 构建上下文必须设为 /data1/3rd_party：
+#   docker build -f deploy/Dockerfile.deps -t jhcv_lib:deps /data1/3rd_party
+# 前置：先在宿主机执行 docker commit jhcv_lib jhcv_lib-base:cudnn
+
+FROM jhcv_lib-base:cudnn
+
+# 3rd_party 从构建上下文(= /data1/3rd_party)烤进镜像
+# 放 /app 避免将来运行时被 -v /data1:/data1 挂载遮盖
+COPY . /app/3rd_party
+
+# 修正 onnxruntime_tensorrt/env.sh 里写死的 /data1/3rd_party 路径
+RUN sed -i 's#/data1/3rd_party#/app/3rd_party#g' /app/3rd_party/onnxruntime_tensorrt/env.sh
+
+# 环境变量：让烤进去的库可用（保留容器原有的 cuda lib64）
+ENV TENSORRT_ROOT=/app/3rd_party/onnxruntime_tensorrt \
+    LD_LIBRARY_PATH=/app/3rd_party/opencv/lib:/app/3rd_party/onnxruntime/lib:/app/3rd_party/onnxruntime_tensorrt/lib:/app/3rd_party/yaml-cpp/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
+    PKG_CONFIG_PATH=/app/3rd_party/opencv/lib/pkgconfig:/app/3rd_party/yaml-cpp/lib/pkgconfig:${PKG_CONFIG_PATH} \
+    PATH=/app/3rd_party/onnxruntime_tensorrt/bin:${PATH}
+
+# 让动态链接器能找到这些库
+RUN echo "/app/3rd_party/opencv/lib"      > /etc/ld.so.conf.d/3rd_party.conf && \
+    echo "/app/3rd_party/onnxruntime/lib" >> /etc/ld.so.conf.d/3rd_party.conf && \
+    echo "/app/3rd_party/onnxruntime_tensorrt/lib" >> /etc/ld.so.conf.d/3rd_party.conf && \
+    echo "/app/3rd_party/yaml-cpp/lib"    >> /etc/ld.so.conf.d/3rd_party.conf && \
+    ldconfig
+
+CMD ["/bin/bash"]

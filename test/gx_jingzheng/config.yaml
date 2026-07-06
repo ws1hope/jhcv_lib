@@ -31,3 +31,4 @@ output:
   result_dir: "D:\\GxJingzhengResult"
   split_dir: "D:\\GxJingzhengSplit"
   log_dir: "D:\\GxJingzhengLog"
+  char_crop_dir: "D:\\GxJingzhengCharCrop"

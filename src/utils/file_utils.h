@@ -103,6 +103,7 @@ struct GxJingzhengServerConfig {
     std::string result_dir = "D:\\GxJingzhengResult";
     std::string split_dir = "D:\\GxJingzhengSplit";
     std::string log_dir = "D:\\GxJingzhengLog";
+    std::string char_crop_dir;   // 为空时不保存字符裁剪图（仅 zifu 分支）
     // 定位模型 (object detection)
     std::string dingwei_model;
     std::string dingwei_label;

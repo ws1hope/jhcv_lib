@@ -100,6 +100,8 @@ public:
                 cv::imwrite(save_picture_name, src_img);
             }
 
+            saveCharCrops(pres, pic_number, t);
+
             item["state_flag"] = pres.state_flag;
             item["zifu_type"] = pres.zifu_type;
             item["penma_version"] = pres.penma_version;
@@ -169,6 +171,10 @@ public:
                 cv::imwrite(save_path, pres.annotated_image);
                 std::cout << "[INFO] Annotated image saved: " << save_path << std::endl;
             }
+
+            time_t currtime = time(NULL);
+            tm* t = localtime(&currtime);
+            saveCharCrops(pres, pic_number, t);
         }
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -184,6 +190,27 @@ public:
         std::cout << "total time: " << total_ms << " ms" << std::endl;
 
         return 0;
+    }
+
+    // zifu 分支：保存每个字符的方向矫正后裁剪图（OCR 输入）到 char_crop_dir，扁平命名：
+    // <char_crop_dir>\YYYYMMDDHHMMSS_p<pic>_c<char>.jpg
+    // char_crop_dir 为空或非 zifu 分支时跳过（gangbiao 分支无 chars）
+    void saveCharCrops(const Pipeline::GxJingzhengPipelineResult& result,
+                       int pic_number, const tm* t)
+    {
+        if (config_.char_crop_dir.empty()) return;
+        if (result.branch != config_.zifu_class_name) return;
+        FileHelper::ensureDirectoryExists(config_.char_crop_dir);
+        for (int ci = 0; ci < (int)result.chars.size(); ci++) {
+            const cv::Mat& crop = result.chars[ci].image_after_flip;
+            if (crop.empty()) continue;
+            std::string save_name = cv::format("%s\\%d%02d%02d%02d%02d%02d_p%d_c%d.jpg",
+                config_.char_crop_dir.c_str(),
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                t->tm_hour, t->tm_min, t->tm_sec,
+                pic_number, ci + 1);
+            cv::imwrite(save_name, crop);
+        }
     }
 
     GxJingzhengServerConfig config_;

@@ -87,7 +87,7 @@ cmake --build build --config Release
 
 | 服务 | 可执行 | API 类 | 说明 |
 |---|---|---|---|
-| 钢芯精整 | `gx_jingzheng` | `GxJingzhengService` | 钢芯精整场景，`zifu`(字符) / `gangbiao`(钢标) 双分支；gangbiao 复用 tiebiao 子 pipeline |
+| 高线精整 | `gx_jingzheng` | `GxJingzhengService` | 高线精整场景，`zifu`(字符) / `gangbiao`(钢标) 双分支；gangbiao 复用 tiebiao 子 pipeline |
 | 贴标识别 | `tiebiao` | `TiebiaoService` | 标签分割→字符分割→方向分类→OCR→炉号匹配 |
 | 大棒激光 OCR | `dabang_jiguang` | `OCRService` | 大棒激光刻号 OCR（标签检测→字符检测→OCR） |
 | 钢坯号识别 | `zbhc` | `ZbhcService` | 钢坯字符识别与方向矫正 |

@@ -152,6 +152,8 @@ GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
         pcfg.ocr_label = tcfg.ocr_label;
         pcfg.direction_cls_model = tcfg.direction_cls_model;
         pcfg.device = config_.device.empty() ? tcfg.device : config_.device;
+        // gangbiao: 方向分类判为翻转时，置信度低于该值不翻转(独立 tiebiao/dispatch 不受影响)
+        pcfg.dir_flip_conf_threshold = 0.95f;
         tiebiao_pipeline_ = std::make_unique<TiebiaoPipeline>(pcfg);
         std::cout << "[OK] Tiebiao sub-pipeline loaded from: " << config_.tiebiao_config << std::endl;
     } else {
@@ -254,7 +256,10 @@ std::string GxJingzhengPipeline::decideBranch(const cv::Mat& crop,
 int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
 {
     if (char_images.empty()) return 0;
+    // 判为"翻转(180)"时，置信度低于该阈值则不翻转(返回0)。仅对翻转类生效。
+    constexpr float kFlipConfThreshold = 0.95f;
     int count_0 = 0, count_180 = 0;
+    float conf_180_sum = 0.f;   // 投"180/翻转"票的置信度之和
     for (auto& img : char_images) {
         if (img.empty()) continue;
         cv::Mat bgr;
@@ -266,10 +271,15 @@ int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_imag
         direction_cls_->process(imgs, results);
         if (!results.empty()) {
             if (results[0].class_id == 0) count_0++;
-            else count_180++;
+            else { count_180++; conf_180_sum += results[0].confidence; }
         }
     }
-    return (count_0 >= count_180) ? 0 : 180;
+    // 多数票为"翻转(180)"时，再校验置信度：低于阈值则不翻转
+    if (count_180 > count_0) {
+        float avg_conf = conf_180_sum / count_180;
+        return (avg_conf >= kFlipConfThreshold) ? 180 : 0;
+    }
+    return 0;
 }
 
 bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,

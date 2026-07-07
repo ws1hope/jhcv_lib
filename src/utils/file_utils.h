@@ -41,6 +41,8 @@ struct TiebiaoConfig {
     std::string ocr_label;
     std::string direction_cls_model;
     std::string device;
+    // 方向分类判为"翻转(180)"时的置信度阈值；>0 时低于该值不翻转。0=不过滤(默认,保持原行为)
+    float dir_flip_conf_threshold = 0.0f;
 };
 
 struct DispatchServerConfig {

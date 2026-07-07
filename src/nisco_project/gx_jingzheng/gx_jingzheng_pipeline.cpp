@@ -381,13 +381,16 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         std::vector<cv::Mat> ocr_imgs = {bgr};
         std::vector<OCRResult> ocr_results;
         ocr_->process(ocr_imgs, ocr_results);
+        float conf = 0.0f;
         if (!ocr_results.empty() && !ocr_results[0].boxes.empty()) {
             p.text = ocr_results[0].boxes[0].text;
+            conf = ocr_results[0].boxes[0].confidence;
         }
 
         if (verbose) {
             std::cout << "[DEBUG]   zifu piece[" << i << "] (x-order) dir=" << p.dir_flag
-                      << " text=\"" << p.text << "\"" << std::endl;
+                      << " text=\"" << p.text << "\""
+                      << " conf=" << conf << std::endl;
         }
     }
 

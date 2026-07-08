@@ -224,7 +224,9 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
             bool any_flipped = false;
             for (auto& c : char_crops) {
                 cv::Mat ocr_in = c.img_bgr;
-                int char_dir = classifyDirection(c.img_bgr);
+                int dir_pred = -1;
+                float dir_conf = 0.f;
+                int char_dir = classifyDirection(c.img_bgr, &dir_pred, &dir_conf);
                 if (char_dir == 180 && !ocr_in.empty()) {
                     cv::Mat flipped;
                     cv::flip(ocr_in, flipped, -1);
@@ -246,7 +248,9 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
 
                 if (verbose) {
                     std::cout << "[DEBUG]     char text=\"" << char_text
-                         << "\" dir=" << char_dir
+                         << "\" dir_pred=" << dir_pred
+                         << " dir_conf=" << dir_conf
+                         << " dir_final=" << char_dir
                          << " seg=" << c.confidence
                          << " ocr=" << char_conf << std::endl;
                 }
@@ -590,7 +594,8 @@ void ZbhcPipeline::warmup()
     std::cout << "[OK] Warmup complete." << std::endl;
 }
 
-int ZbhcPipeline::classifyDirection(const cv::Mat& char_image)
+int ZbhcPipeline::classifyDirection(const cv::Mat& char_image,
+                                    int* pred_out, float* conf_out)
 {
     if (char_image.empty()) return 0;
 
@@ -604,10 +609,20 @@ int ZbhcPipeline::classifyDirection(const cv::Mat& char_image)
     std::vector<ClassificationResult> results;
     direction_cls_->process(imgs, results);
 
-    if (!results.empty()) {
-        return (results[0].class_id == 0) ? 0 : 180;
+    if (results.empty()) return 0;
+
+    // 方向分类置信度阈值（对称处理，低置信度一律反向）：
+    //   判为翻转(180)且置信度 < 阈值 -> 不翻转(0)
+    //   判为正向(0)且置信度  < 阈值 -> 反向翻转(180)
+    constexpr float kFlipConfThreshold = 0.90f;
+    int cls = (results[0].class_id == 0) ? 0 : 180;
+    float conf = results[0].confidence;
+    if (pred_out) *pred_out = cls;
+    if (conf_out) *conf_out = conf;
+    if (cls == 180) {
+        return (conf >= kFlipConfThreshold) ? 180 : 0;
     }
-    return 0;
+    return (conf < kFlipConfThreshold) ? 180 : 0;
 }
 
 } // namespace Pipeline

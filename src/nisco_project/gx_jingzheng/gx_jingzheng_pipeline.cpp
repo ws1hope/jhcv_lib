@@ -253,12 +253,16 @@ std::string GxJingzhengPipeline::decideBranch(const cv::Mat& crop,
                                             : config_.gangbiao_class_name;
 }
 
-int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
+int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_images,
+                                            int* cls_out, float* conf_out)
 {
     if (char_images.empty()) return 0;
-    // 判为"翻转(180)"时，置信度低于该阈值则不翻转(返回0)。仅对翻转类生效。
+    // 方向分类置信度阈值（对称处理，低置信度一律反向）：
+    //   判为翻转(180)且平均置信度 < 阈值 -> 不翻转(0)
+    //   判为正向(0)且平均置信度  < 阈值 -> 反向翻转(180)
     constexpr float kFlipConfThreshold = 0.95f;
     int count_0 = 0, count_180 = 0;
+    float conf_0_sum = 0.f;     // 投"0/正向"票的置信度之和
     float conf_180_sum = 0.f;   // 投"180/翻转"票的置信度之和
     for (auto& img : char_images) {
         if (img.empty()) continue;
@@ -270,15 +274,26 @@ int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_imag
         std::vector<ClassificationResult> results;
         direction_cls_->process(imgs, results);
         if (!results.empty()) {
-            if (results[0].class_id == 0) count_0++;
+            if (results[0].class_id == 0) { count_0++; conf_0_sum += results[0].confidence; }
             else { count_180++; conf_180_sum += results[0].confidence; }
         }
     }
-    // 多数票为"翻转(180)"时，再校验置信度：低于阈值则不翻转
+    // 多数票为"翻转(180)"时，平均置信度 >= 阈值才翻转
     if (count_180 > count_0) {
         float avg_conf = conf_180_sum / count_180;
+        if (cls_out) *cls_out = 180;
+        if (conf_out) *conf_out = avg_conf;
         return (avg_conf >= kFlipConfThreshold) ? 180 : 0;
     }
+    // 多数票为"正向(0)"时，平均置信度 < 阈值则反向翻转(180)
+    if (count_0 > count_180) {
+        float avg_conf = conf_0_sum / count_0;
+        if (cls_out) *cls_out = 0;
+        if (conf_out) *conf_out = avg_conf;
+        return (avg_conf < kFlipConfThreshold) ? 180 : 0;
+    }
+    if (cls_out) *cls_out = -1;
+    if (conf_out) *conf_out = 0.f;
     return 0;
 }
 
@@ -376,7 +391,9 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
     // 第一遍：逐块方向分类 + OCR，先拿到每块的文本
     for (size_t i = 0; i < pieces.size(); i++) {
         auto& p = pieces[i];
-        p.dir_flag = classifyDirection({p.warped_before});
+        int dir_cls = -1;
+        float dir_conf = 0.f;
+        p.dir_flag = classifyDirection({p.warped_before}, &dir_cls, &dir_conf);
         if (p.dir_flag == 180) {
             cv::flip(p.warped_before, p.warped_after, -1);
         } else {
@@ -399,8 +416,9 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
 
         if (verbose) {
             std::cout << "[DEBUG]   zifu piece[" << i << "] (x-order) dir=" << p.dir_flag
+                      << " dir_cls=" << dir_cls << " dir_conf=" << dir_conf
                       << " text=\"" << p.text << "\""
-                      << " conf=" << conf << std::endl;
+                      << " ocr_conf=" << conf << std::endl;
         }
     }
 

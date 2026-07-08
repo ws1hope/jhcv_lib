@@ -81,7 +81,10 @@ private:
                           bool verbose);
 
     // 方向分类（按字符片段多数投票）
-    int classifyDirection(const std::vector<cv::Mat>& char_images);
+    // cls_out/conf_out: 输出多数票的原始类别(0/180)及平均置信度，供调试打印
+    int classifyDirection(const std::vector<cv::Mat>& char_images,
+                          int* cls_out = nullptr,
+                          float* conf_out = nullptr);
 
     cv::Mat createAnnotatedImage(const cv::Mat& src_img,
                                   const GxJingzhengPipelineResult& result);

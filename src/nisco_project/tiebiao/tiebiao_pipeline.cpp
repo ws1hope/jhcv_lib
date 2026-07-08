@@ -154,6 +154,7 @@ int TiebiaoPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
     if (char_images.empty()) return 0;
 
     int count_0 = 0, count_180 = 0;
+    float conf_0_sum = 0.f;     // 投"0/正向"票的置信度之和
     float conf_180_sum = 0.f;   // 投"180/翻转"票的置信度之和
     for (auto& img : char_images) {
         if (img.empty()) continue;
@@ -168,8 +169,10 @@ int TiebiaoPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
         direction_cls_->process(imgs, results);
 
         if (!results.empty()) {
-            if (results[0].class_id == 0)
+            if (results[0].class_id == 0) {
                 count_0++;
+                conf_0_sum += results[0].confidence;
+            }
             else {
                 count_180++;
                 conf_180_sum += results[0].confidence;
@@ -177,12 +180,18 @@ int TiebiaoPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
         }
     }
 
-    // 多数票为"翻转(180)"时，再校验置信度：低于阈值(config_.dir_flip_conf_threshold)则不翻转。
-    // dir_flip_conf_threshold 默认 0 = 不过滤，保持原有行为（独立 tiebiao / dispatch 不受影响）。
+    // 阈值过滤仅当 dir_flip_conf_threshold > 0 时生效；
+    // 默认 0 = 不过滤，保持原有行为（独立 tiebiao / dispatch 不受影响）。
+    //   多数票为翻转(180)：平均置信度 < 阈值 -> 不翻转
+    //   多数票为正向(0)：平均置信度  < 阈值 -> 反向翻转(180)
+    float thr = config_.dir_flip_conf_threshold;
     if (count_180 > count_0) {
-        float thr = config_.dir_flip_conf_threshold;
         if (thr > 0.f && (conf_180_sum / count_180) < thr) return 0;
         return 180;
+    }
+    if (count_0 > count_180) {
+        if (thr > 0.f && (conf_0_sum / count_0) < thr) return 180;
+        return 0;
     }
     return 0;
 }

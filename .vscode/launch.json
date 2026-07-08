@@ -729,7 +729,7 @@
             "args": [
                 "--test",
                 "-c", "test/gx_jingzheng/config.yaml",
-                "-i", "images/gx_xm_test/20260702155320608_1.jpg",
+                "-i", "images/gx_xm_test/20260707212509656_1.jpg",
                 "-H", "26704952",
                 "-s", "1"
             ],

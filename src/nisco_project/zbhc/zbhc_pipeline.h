@@ -43,7 +43,8 @@ class ZbhcPipeline {
 public:
     explicit ZbhcPipeline(const ZbhcServerConfig& config);
 
-    ZbhcPipelineResult process(const cv::Mat& image, bool verbose = false);
+    ZbhcPipelineResult process(const cv::Mat& image, bool verbose = false,
+                               const std::string& heat_number = "");
 
 private:
     void warmup();

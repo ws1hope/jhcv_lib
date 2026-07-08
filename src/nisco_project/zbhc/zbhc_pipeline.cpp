@@ -11,6 +11,55 @@
 namespace JHDeepCore {
 namespace Pipeline {
 
+namespace {
+
+// 计算字符串 a、b 的公共前缀长度
+size_t commonPrefixLen(const std::string& a, const std::string& b)
+{
+    size_t m = std::min(a.size(), b.size());
+    size_t i = 0;
+    while (i < m && a[i] == b[i]) i++;
+    return i;
+}
+
+// 给定各片段文本（按 x 顺序），依据 heat_number 找出一种排列，
+// 使拼接结果与 heat_number 的公共前缀最长（让 heat_number 尽量成为结果开头）。
+// heat_number 为空 / 片段过多(>8) / 无更优解时，退化为原始 x 顺序。
+std::vector<int> bestOrderByHeat(const std::vector<std::string>& texts,
+                                  const std::string& heat_number)
+{
+    int n = static_cast<int>(texts.size());
+    std::vector<int> identity(n);
+    std::iota(identity.begin(), identity.end(), 0);
+
+    if (n <= 1 || heat_number.empty() || n > 8) {
+        return identity;
+    }
+
+    auto concat = [&](const std::vector<int>& order) {
+        std::string s;
+        for (int i : order) s += texts[i];
+        return s;
+    };
+
+    std::vector<int> best = identity;
+    size_t best_prefix = commonPrefixLen(concat(best), heat_number);
+
+    std::vector<int> cur = identity;
+    std::sort(cur.begin(), cur.end());
+    do {
+        size_t p = commonPrefixLen(concat(cur), heat_number);
+        if (p > best_prefix) {
+            best_prefix = p;
+            best = cur;
+        }
+    } while (std::next_permutation(cur.begin(), cur.end()));
+
+    return best;
+}
+
+} // namespace
+
 ZbhcPipeline::ZbhcPipeline(const ZbhcServerConfig& config)
     : config_(config)
 {
@@ -34,7 +83,8 @@ ZbhcPipeline::ZbhcPipeline(const ZbhcServerConfig& config)
     warmup();
 }
 
-ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
+ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
+                                         const std::string& heat_number)
 {
     auto infer_start = std::chrono::high_resolution_clock::now();
 
@@ -277,12 +327,32 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose)
                      << " (per-char, any flipped)" << std::endl;
             }
 
-            // 拼接坯料内所有字符的 OCR 结果
-            std::string billet_ocr;
+            // 依据 heat_number 重排字符片段顺序，使拼接结果前缀尽量匹配炉号；
+            // heat_number 为空时 bestOrderByHeat 退化为原始 x 顺序（与原行为一致）
+            std::vector<std::string> seg_texts;
+            seg_texts.reserve(billet_result.chars.size());
+            std::string xorder;
             for (auto& ch : billet_result.chars) {
-                billet_ocr += ch.ocr_text;
+                seg_texts.push_back(ch.ocr_text);
+                xorder += ch.ocr_text;
             }
+            std::vector<int> best_order = bestOrderByHeat(seg_texts, heat_number);
+
+            std::vector<BilletCharInfo> reordered;
+            reordered.reserve(best_order.size());
+            std::string billet_ocr;
+            for (int idx : best_order) {
+                reordered.push_back(std::move(billet_result.chars[idx]));
+                billet_ocr += seg_texts[idx];
+            }
+            billet_result.chars = std::move(reordered);
             billet_result.ocr_text = billet_ocr;
+
+            if (verbose && !heat_number.empty() && billet_ocr != xorder) {
+                std::cout << "[DEBUG]   billet[" << bi << "] x-order=\"" << xorder
+                     << "\" -> heat-ordered=\"" << billet_ocr
+                     << "\" (heat=\"" << heat_number << "\")" << std::endl;
+            }
 
             // 坯料置信度 = 各已识别字符(ocr_text 非空)置信度的最小值
             float bmin = 1.0f;

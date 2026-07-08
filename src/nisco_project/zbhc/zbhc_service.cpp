@@ -103,7 +103,7 @@ public:
                 continue;
             }
 
-            Pipeline::ZbhcPipelineResult pipeline_result = pipeline_->process(src_img, false);
+            Pipeline::ZbhcPipelineResult pipeline_result = pipeline_->process(src_img, false, heat_number);
             img_confs.push_back(computeImageConfidence(pipeline_result));
 
             time_t currtime = time(NULL);
@@ -198,7 +198,7 @@ public:
                 continue;
             }
 
-            Pipeline::ZbhcPipelineResult pipeline_result = pipeline_->process(src_img, true);
+            Pipeline::ZbhcPipelineResult pipeline_result = pipeline_->process(src_img, true, heat_number);
             img_confs.push_back(computeImageConfidence(pipeline_result));
 
             json billets_ocr = json::array();

@@ -49,11 +49,6 @@ public:
 private:
     void warmup();
 
-    // pred_out/conf_out: 输出模型原始预测类别(0/180)及置信度，供调试打印
-    int classifyDirection(const cv::Mat& char_image,
-                          int* pred_out = nullptr,
-                          float* conf_out = nullptr);
-
     cv::Mat createAnnotatedImage(
         const cv::Mat& src_img,
         const std::vector<Detection>& det1_dets,

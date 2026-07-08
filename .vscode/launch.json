@@ -584,8 +584,8 @@
             "args": [
                 "--test",
                 "-c", "test/zbhc/config.yaml",
-                "-i", "images/zbhc_test/20260708111958.jpg#images/zbhc_test/20260708111958.jpg#images/zbhc_test/20260708111958.jpg#images/zbhc_test/20260708111958.jpg#images/zbhc_test/20260708111958.jpg",
-                "-H", "26606771",
+                "-i", "images/zbhc_test/1/20260703142917.jpg",
+                "-H", "26507164",
                 "-s", "1"
             ],
             "stopAtEntry": false,

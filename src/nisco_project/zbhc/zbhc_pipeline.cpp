@@ -58,6 +58,43 @@ std::vector<int> bestOrderByHeat(const std::vector<std::string>& texts,
     return best;
 }
 
+// 片段对应炉号的哪个部位
+enum HeatTarget : int { kHead = 0, kTail = 1 };
+
+// 逐位匹配计数（按位置字符相等计数，非公共前缀）：head=`266067`、t=`2X6067` -> 5
+int matchCount(const std::string& a, const std::string& b)
+{
+    int n = static_cast<int>(std::min(a.size(), b.size()));
+    int c = 0;
+    for (int i = 0; i < n; i++) if (a[i] == b[i]) c++;
+    return c;
+}
+
+struct HeatMatch { HeatTarget target; int score; int max; };
+
+// 判定片段更像 head(前6) 还是 tail(后2，作为片段前缀)：
+// 取两者匹配数较大者；tail 为空时只算 head。
+HeatMatch matchSegmentToHeat(const std::string& text,
+                              const std::string& head, const std::string& tail)
+{
+    int sh = matchCount(head, text);
+    int st = tail.empty() ? -1 : matchCount(tail, text);
+    if (sh >= st) return {kHead, sh, static_cast<int>(head.size())};
+    return {kTail, st, static_cast<int>(tail.size())};
+}
+
+// 用炉号部位覆盖片段文本：
+//   HEAD -> 整段替换为 head（6位）
+//   TAIL -> 前 tail.size() 位替换为 tail，保留其余后缀为 OCR 结果
+std::string overrideWithHeat(const std::string& text, const HeatMatch& m,
+                              const std::string& head, const std::string& tail)
+{
+    if (m.target == kHead) return head;
+    if (static_cast<int>(text.size()) > static_cast<int>(tail.size()))
+        return tail + text.substr(tail.size());
+    return tail;
+}
+
 } // namespace
 
 ZbhcPipeline::ZbhcPipeline(const ZbhcServerConfig& config)
@@ -89,6 +126,31 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
     auto infer_start = std::chrono::high_resolution_clock::now();
 
     ZbhcPipelineResult result;
+
+    // 炉号拆分：前 6 位 head + 后 2 位 tail。仅当炉号 >=8 位时启用炉号路径
+    // （用炉号匹配定朝向 + 覆盖纠错，替代不准的方向分类器）；否则不做朝向处理。
+    const bool use_heat = (heat_number.size() >= 8);
+    const std::string head = use_heat ? heat_number.substr(0, 6) : std::string{};
+    const std::string tail = use_heat ? heat_number.substr(6) : std::string{};
+    if (verbose && use_heat) {
+        std::cout << "[DEBUG] heat split: head=\"" << head
+             << "\" tail=\"" << tail << "\"" << std::endl;
+    }
+
+    // 单图 OCR 封装：输出识别文本与置信度
+    auto runOcr = [&](const cv::Mat& img, std::string& text, float& conf) {
+        text.clear();
+        conf = 0.f;
+        if (img.empty()) return;
+        std::vector<cv::Mat> ocr_imgs = {img};
+        std::vector<OCRResult> ocr_results;
+        ocr_->process(ocr_imgs, ocr_results);
+        OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
+        if (!ocr_res.boxes.empty()) {
+            text = ocr_res.boxes[0].text;
+            conf = ocr_res.boxes[0].confidence;
+        }
+    };
 
     // ===== Step 1: det1 整体范围检测 =====
     std::vector<cv::Mat> det1_imgs = {image};
@@ -270,37 +332,73 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                 char_crops.push_back(std::move(crop));
             }
 
-            // ===== Step 7+8: 逐字符方向分类(0/180)，按各自结果翻转后送 OCR =====
+            // ===== Step 7+8: 逐片段用炉号匹配定朝向(0/180) + 覆盖纠错，再送 OCR =====
+            // 炉号路径：原向 OCR+匹配 head/tail；不达阈值则翻转再 OCR+匹配；
+            //   命中阈值(HEAD>=4, TAIL=tail.size()) -> 用炉号部位覆盖文本。
+            //   两方向均不达标 -> 取匹配数较高者(并列选原向)，不覆盖。
+            // 无炉号路径：不做朝向处理，原向 OCR。
             bool any_flipped = false;
             for (auto& c : char_crops) {
-                cv::Mat ocr_in = c.img_bgr;
-                int dir_pred = -1;
-                float dir_conf = 0.f;
-                int char_dir = classifyDirection(c.img_bgr, &dir_pred, &dir_conf);
-                if (char_dir == 180 && !ocr_in.empty()) {
-                    cv::Mat flipped;
-                    cv::flip(ocr_in, flipped, -1);
-                    ocr_in = flipped;
-                    any_flipped = true;
-                }
-
-                std::vector<cv::Mat> ocr_imgs = {ocr_in};
-                std::vector<OCRResult> ocr_results;
-                ocr_->process(ocr_imgs, ocr_results);
-                OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
-
+                int char_dir = 0;
                 std::string char_text;
                 float char_conf = 0.f;
-                if (!ocr_res.boxes.empty()) {
-                    char_text = ocr_res.boxes[0].text;
-                    char_conf = ocr_res.boxes[0].confidence;
+                bool overridden = false;
+                int target = -1, score = 0, score_max = 0, thr = 0;
+                cv::Mat ocr_in = c.img_bgr;   // 最终采纳朝向的图（供 after_flip 可视化）
+
+                if (use_heat) {
+                    // 原向 OCR
+                    std::string t0; float conf0 = 0.f;
+                    runOcr(c.img_bgr, t0, conf0);
+                    HeatMatch m0 = matchSegmentToHeat(t0, head, tail);
+                    int thr0 = (m0.target == kHead) ? 4 : static_cast<int>(tail.size());
+
+                    if (m0.score >= thr0 && thr0 > 0) {
+                        char_dir = 0;
+                        char_text = overrideWithHeat(t0, m0, head, tail);
+                        char_conf = conf0; overridden = true;
+                        target = m0.target; score = m0.score; score_max = m0.max; thr = thr0;
+                    } else {
+                        // 翻转 180° 再 OCR
+                        cv::Mat flipped;
+                        cv::flip(c.img_bgr, flipped, -1);
+                        std::string t1; float conf1 = 0.f;
+                        runOcr(flipped, t1, conf1);
+                        HeatMatch m1 = matchSegmentToHeat(t1, head, tail);
+                        int thr1 = (m1.target == kHead) ? 4 : static_cast<int>(tail.size());
+
+                        if (m1.score >= thr1 && thr1 > 0) {
+                            char_dir = 180;
+                            char_text = overrideWithHeat(t1, m1, head, tail);
+                            char_conf = conf1; overridden = true;
+                            ocr_in = flipped; any_flipped = true;
+                            target = m1.target; score = m1.score; score_max = m1.max; thr = thr1;
+                        } else {
+                            // 两方向均不达标：取匹配数较高者（并列选原向）
+                            if (m1.score > m0.score) {
+                                char_dir = 180; char_text = t1; char_conf = conf1;
+                                ocr_in = flipped; any_flipped = true;
+                                target = m1.target; score = m1.score; score_max = m1.max; thr = thr1;
+                            } else {
+                                char_dir = 0; char_text = t0; char_conf = conf0;
+                                target = m0.target; score = m0.score; score_max = m0.max; thr = thr0;
+                            }
+                        }
+                    }
+                } else {
+                    // 无炉号：不做朝向处理
+                    runOcr(c.img_bgr, char_text, char_conf);
                 }
 
                 if (verbose) {
+                    const char* tgt = (target == kHead) ? "HEAD"
+                                    : (target == kTail) ? "TAIL" : "-";
                     std::cout << "[DEBUG]     char text=\"" << char_text
-                         << "\" dir_pred=" << dir_pred
-                         << " dir_conf=" << dir_conf
-                         << " dir_final=" << char_dir
+                         << "\" target=" << tgt
+                         << " match=" << score << "/" << score_max
+                         << " thr=" << thr
+                         << " flip=" << char_dir
+                         << (overridden ? " override=Y" : " override=N")
                          << " seg=" << c.confidence
                          << " ocr=" << char_conf << std::endl;
                 }
@@ -662,37 +760,6 @@ void ZbhcPipeline::warmup()
     std::cout << "[OK] Direction cls warmed up" << std::endl;
 
     std::cout << "[OK] Warmup complete." << std::endl;
-}
-
-int ZbhcPipeline::classifyDirection(const cv::Mat& char_image,
-                                    int* pred_out, float* conf_out)
-{
-    if (char_image.empty()) return 0;
-
-    cv::Mat bgr;
-    if (char_image.channels() == 1)
-        cv::cvtColor(char_image, bgr, cv::COLOR_GRAY2BGR);
-    else
-        bgr = char_image;
-
-    std::vector<cv::Mat> imgs = {bgr};
-    std::vector<ClassificationResult> results;
-    direction_cls_->process(imgs, results);
-
-    if (results.empty()) return 0;
-
-    // 方向分类置信度阈值（对称处理，低置信度一律反向）：
-    //   判为翻转(180)且置信度 < 阈值 -> 不翻转(0)
-    //   判为正向(0)且置信度  < 阈值 -> 反向翻转(180)
-    constexpr float kFlipConfThreshold = 0.90f;
-    int cls = (results[0].class_id == 0) ? 0 : 180;
-    float conf = results[0].confidence;
-    if (pred_out) *pred_out = cls;
-    if (conf_out) *conf_out = conf;
-    if (cls == 180) {
-        return (conf >= kFlipConfThreshold) ? 180 : 0;
-    }
-    return (conf < kFlipConfThreshold) ? 180 : 0;
 }
 
 } // namespace Pipeline

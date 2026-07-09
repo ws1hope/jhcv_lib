@@ -13,6 +13,39 @@
 namespace JHDeepCore {
 namespace Pipeline {
 
+namespace {
+
+// 几何判向：倾斜矫正后，字符框按从上到下(center_y)排序，
+// bbox.width 递减 -> 正向(0°)，递增 -> 反向(180°)。
+// 用相邻对的递减/递增计数取多数，抗噪；并列默认正向(0°)。
+int classifyDirectionByGeometry(const std::vector<CharCropInfo>& char_crops,
+                                 int* dec_out = nullptr, int* inc_out = nullptr)
+{
+    int n = static_cast<int>(char_crops.size());
+    if (n < 2) {
+        if (dec_out) *dec_out = 0;
+        if (inc_out) *inc_out = 0;
+        return 0;
+    }
+    std::vector<int> order(n);
+    for (int i = 0; i < n; i++) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        return char_crops[a].center_y < char_crops[b].center_y;   // 从上到下
+    });
+    int dec = 0, inc = 0;
+    for (int i = 1; i < n; i++) {
+        int w_prev = char_crops[order[i - 1]].bbox.width;
+        int w_cur  = char_crops[order[i]].bbox.width;
+        if (w_cur < w_prev) dec++;
+        else if (w_cur > w_prev) inc++;
+    }
+    if (dec_out) *dec_out = dec;
+    if (inc_out) *inc_out = inc;
+    return (inc > dec) ? 180 : 0;   // 递减->0°，递增->180°，并列->0°
+}
+
+} // namespace
+
 TiebiaoPipeline::TiebiaoPipeline(const TiebiaoConfig& config)
     : config_(config)
 {
@@ -445,13 +478,10 @@ TiebiaoResult TiebiaoPipeline::runLabels(const cv::Mat& image,
 
         if (verbose) std::cout << "[DEBUG] " << char_crops.size() << " chars detected" << std::endl;
 
-        std::vector<cv::Mat> char_images;
-        for (auto& crop : char_crops) {
-            char_images.push_back(crop.image);
-        }
-        int dir_flag = classifyDirection(char_images);
-
-        if (verbose) std::cout << "[DEBUG] Direction: " << dir_flag << std::endl;
+        int dec = 0, inc = 0;
+        int dir_flag = classifyDirectionByGeometry(char_crops, &dec, &inc);
+        if (verbose) std::cout << "[DEBUG] Direction: " << dir_flag
+                               << " (width dec=" << dec << " inc=" << inc << ")" << std::endl;
 
         std::vector<cv::Mat> char_images_before;
         std::vector<cv::Mat> char_images_after;

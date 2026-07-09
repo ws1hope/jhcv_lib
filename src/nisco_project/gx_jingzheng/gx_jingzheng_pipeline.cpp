@@ -108,6 +108,53 @@ std::vector<int> bestOrderByHeat(const std::vector<std::string>& texts,
     return best;
 }
 
+// 滑动对齐结果：offset=片段在炉号中的最佳对齐偏移，score=该位置逐位匹配数，overlap=重叠长度
+struct AlignResult { int offset; int score; int overlap; };
+
+// 把片段 OCR 文本在整段炉号 heat 上滑动，找逐位匹配数最大的对齐位置。
+// offset = heat_index - text_index：text[i] 对齐 heat[i+offset]
+//   offset>=0：text[0] 对齐 heat[offset]（片段起点落在炉号内部）
+//   offset<0 ：text[-offset] 对齐 heat[0]（片段带炉号前的噪声前缀）
+// 片段起点可在任意位置（含跨 head/tail 边界、带噪声前后缀），不要求对齐在炉号首位。
+AlignResult bestAlign(const std::string& text, const std::string& heat)
+{
+    int best_off = 0, best_score = -1, best_ov = 0;
+    int Lh = static_cast<int>(heat.size());
+    int Lt = static_cast<int>(text.size());
+    for (int off = -(Lt - 1); off < Lh; off++) {
+        int i0 = std::max(0, -off);
+        int i1 = std::min(Lt, Lh - off);
+        if (i1 <= i0) continue;
+        int c = 0;
+        for (int i = i0; i < i1; i++) if (text[i] == heat[i + off]) c++;
+        if (c > best_score) {
+            best_score = c;
+            best_off = off;
+            best_ov = i1 - i0;
+        }
+    }
+    return {best_off, std::max(best_score, 0), best_ov};
+}
+
+// 滑动对齐命中阈值：匹配数需 >= max(3, 60%*overlap)（强多数，且至少 3 位）
+int alignThreshold(int overlap)
+{
+    return std::max(3, (overlap * 3 + 4) / 5);   // ceil(overlap*0.6)
+}
+
+// 用炉号子串覆盖 OCR 文本中与炉号重叠的区域，保留重叠区前后的原始识别结果。
+// 仅把 text[i0 .. i0+overlap) 这段替换为 heat 子串；前缀 text[0..i0)、后缀 text[i0+overlap..] 原样保留。
+//   i0 = max(0,-offset)：重叠区在 text 中的起点（offset<0 时跳过噪声前缀）。
+//   全对(score==overlap)时重叠区内容不变，等价于只保留原始 OCR 的前后缀。
+std::string overrideAlign(const std::string& text, const AlignResult& a, const std::string& heat)
+{
+    int i0 = std::max(0, -a.offset);
+    int h_start = std::max(0, a.offset);
+    return text.substr(0, i0)
+         + heat.substr(h_start, a.overlap)
+         + text.substr(i0 + a.overlap);
+}
+
 } // namespace
 
 GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
@@ -308,6 +355,31 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         return false;
     }
 
+    // 炉号路径：把片段 OCR 在整段炉号上滑动对齐，按最佳对齐位置的逐位匹配数
+    // 定朝向(0/180) + 覆盖纠错（替代方向分类器）。仅当炉号 >=8 位时启用；否则原向 OCR。
+    const bool use_heat = (heat_number.size() >= 8);
+    if (verbose && use_heat) {
+        std::cout << "[DEBUG] heat=\"" << heat_number << "\" (sliding align)" << std::endl;
+    }
+
+    // 单图 OCR 封装：输出识别文本与置信度
+    auto runOcr = [&](const cv::Mat& img, std::string& text, float& conf) {
+        text.clear();
+        conf = 0.f;
+        if (img.empty()) return;
+        cv::Mat bgr;
+        if (img.channels() == 1) cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
+        else bgr = img;
+        std::vector<cv::Mat> ocr_imgs = {bgr};
+        std::vector<OCRResult> ocr_results;
+        ocr_->process(ocr_imgs, ocr_results);
+        OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
+        if (!ocr_res.boxes.empty()) {
+            text = ocr_res.boxes[0].text;
+            conf = ocr_res.boxes[0].confidence;
+        }
+    };
+
     struct Piece {
         cv::RotatedRect rrect;  // crop 坐标系
         cv::Mat warped_before;  // 透视裁剪后，未方向矫正
@@ -388,37 +460,83 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
     std::sort(pieces.begin(), pieces.end(),
         [](const Piece& a, const Piece& b) { return a.center_x < b.center_x; });
 
-    // 第一遍：逐块方向分类 + OCR，先拿到每块的文本
+    // 第一遍：逐片段用炉号滑动对齐定朝向(0/180) + 覆盖纠错，再送 OCR
+    // 炉号路径：原向 OCR+滑动对齐；不达阈值则翻转再 OCR+对齐；
+    //   命中阈值(匹配数 >= max(3, 60%*overlap)) -> 用对齐位置的炉号子串覆盖文本。
+    //   两方向均不达标 -> 取匹配数较高者(并列选原向)，不覆盖。
+    // 无炉号路径：不做朝向处理，原向 OCR。
+    bool any_flipped = false;
     for (size_t i = 0; i < pieces.size(); i++) {
         auto& p = pieces[i];
-        int dir_cls = -1;
-        float dir_conf = 0.f;
-        p.dir_flag = classifyDirection({p.warped_before}, &dir_cls, &dir_conf);
-        if (p.dir_flag == 180) {
-            cv::flip(p.warped_before, p.warped_after, -1);
+        int char_dir = 0;
+        std::string char_text;
+        std::string raw_text;          // 采纳朝向的原始 OCR（覆盖前）
+        float char_conf = 0.f;
+        bool overridden = false;
+        int offset = 0, score = 0, overlap = 0, thr = 0;
+        cv::Mat ocr_in = p.warped_before;   // 最终采纳朝向的图（供 after_flip 可视化）
+
+        if (use_heat) {
+            // 原向 OCR
+            std::string t0; float conf0 = 0.f;
+            runOcr(p.warped_before, t0, conf0);
+            AlignResult a0 = bestAlign(t0, heat_number);
+            int thr0 = alignThreshold(a0.overlap);
+
+            if (a0.score >= thr0 && thr0 > 0) {
+                char_dir = 0;
+                raw_text = t0;
+                char_text = overrideAlign(t0, a0, heat_number);
+                char_conf = conf0; overridden = true;
+                offset = a0.offset; score = a0.score; overlap = a0.overlap; thr = thr0;
+            } else {
+                // 翻转 180° 再 OCR
+                cv::Mat flipped;
+                cv::flip(p.warped_before, flipped, -1);
+                std::string t1; float conf1 = 0.f;
+                runOcr(flipped, t1, conf1);
+                AlignResult a1 = bestAlign(t1, heat_number);
+                int thr1 = alignThreshold(a1.overlap);
+
+                if (a1.score >= thr1 && thr1 > 0) {
+                    char_dir = 180;
+                    raw_text = t1;
+                    char_text = overrideAlign(t1, a1, heat_number);
+                    char_conf = conf1; overridden = true;
+                    ocr_in = flipped; any_flipped = true;
+                    offset = a1.offset; score = a1.score; overlap = a1.overlap; thr = thr1;
+                } else {
+                    // 两方向均不达标：取匹配数较高者（并列选原向）
+                    if (a1.score > a0.score) {
+                        char_dir = 180; raw_text = t1; char_text = t1; char_conf = conf1;
+                        ocr_in = flipped; any_flipped = true;
+                        offset = a1.offset; score = a1.score; overlap = a1.overlap; thr = thr1;
+                    } else {
+                        char_dir = 0; raw_text = t0; char_text = t0; char_conf = conf0;
+                        offset = a0.offset; score = a0.score; overlap = a0.overlap; thr = thr0;
+                    }
+                }
+            }
         } else {
-            p.warped_after = p.warped_before;
+            // 无炉号：不做朝向处理
+            runOcr(p.warped_before, char_text, char_conf);
+            raw_text = char_text;
         }
 
-        cv::Mat bgr;
-        if (p.warped_after.channels() == 1)
-            cv::cvtColor(p.warped_after, bgr, cv::COLOR_GRAY2BGR);
-        else
-            bgr = p.warped_after;
-        std::vector<cv::Mat> ocr_imgs = {bgr};
-        std::vector<OCRResult> ocr_results;
-        ocr_->process(ocr_imgs, ocr_results);
-        float conf = 0.0f;
-        if (!ocr_results.empty() && !ocr_results[0].boxes.empty()) {
-            p.text = ocr_results[0].boxes[0].text;
-            conf = ocr_results[0].boxes[0].confidence;
-        }
+        p.dir_flag = char_dir;
+        p.warped_after = ocr_in;
+        p.text = char_text;
 
         if (verbose) {
-            std::cout << "[DEBUG]   zifu piece[" << i << "] (x-order) dir=" << p.dir_flag
-                      << " dir_cls=" << dir_cls << " dir_conf=" << dir_conf
+            std::cout << "[DEBUG]   zifu piece[" << i << "] (x-order)"
+                      << " raw=\"" << raw_text << "\""
                       << " text=\"" << p.text << "\""
-                      << " ocr_conf=" << conf << std::endl;
+                      << " offset=" << offset
+                      << " match=" << score << "/" << overlap
+                      << " thr=" << thr
+                      << " flip=" << p.dir_flag
+                      << (overridden ? " override=Y" : " override=N")
+                      << " ocr=" << char_conf << std::endl;
         }
     }
 
@@ -456,10 +574,8 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         concatenated += p.text;
     }
 
-    // 整体 direction_flag 取多数 (仅用于可视化)
-    int n_180 = 0;
-    for (auto& p : pieces) if (p.dir_flag == 180) n_180++;
-    result.direction_flag = (n_180 > static_cast<int>(pieces.size()) / 2) ? 180 : 0;
+    // 整体 direction_flag：任一片段翻转即记 180（与 zbhc 一致，仅用于可视化）
+    result.direction_flag = any_flipped ? 180 : 0;
     result.ocr_text = concatenated;
     // 每个 piece 都独立矫正了，整张 rotated_crop 概念已不存在
     result.rotated_crop = cv::Mat();

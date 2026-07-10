@@ -132,11 +132,7 @@ public:
             json billets_ocr = json::array();
             for (auto& billet : pipeline_result.billets) {
                 if (!billet.ocr_text.empty()) {
-                    std::string text = billet.ocr_text;
-                    if (text.size() >= 3) {
-                        text.insert(text.size() - 3, "#");
-                    }
-                    billets_ocr.push_back(text);
+                    billets_ocr.push_back(billet.ocr_text);
                 }
             }
 
@@ -204,11 +200,7 @@ public:
             json billets_ocr = json::array();
             for (auto& billet : pipeline_result.billets) {
                 if (!billet.ocr_text.empty()) {
-                    std::string text = billet.ocr_text;
-                    if (text.size() >= 3) {
-                        text.insert(text.size() - 3, "#");
-                    }
-                    billets_ocr.push_back(text);
+                    billets_ocr.push_back(billet.ocr_text);
                 }
             }
 

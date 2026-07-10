@@ -472,6 +472,21 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                      << "\" (heat=\"" << heat_number << "\")" << std::endl;
             }
 
+            // 最终保障：强制 6 位片段在前、5 位片段在后(按 ocr_text 长度降序稳定排序，
+            // 并列时保留之前的 y/翻转/炉号顺序)，再在最终结果倒数第三位前插入 '#'
+            std::stable_sort(billet_result.chars.begin(), billet_result.chars.end(),
+                [](const BilletCharInfo& a, const BilletCharInfo& b) {
+                    return a.ocr_text.size() > b.ocr_text.size();
+                });
+            billet_ocr.clear();
+            for (auto& ch : billet_result.chars) {
+                billet_ocr += ch.ocr_text;
+            }
+            if (billet_ocr.size() >= 3) {
+                billet_ocr.insert(billet_ocr.size() - 3, "#");
+            }
+            billet_result.ocr_text = billet_ocr;
+
             // 坯料置信度 = 各已识别字符(ocr_text 非空)置信度的最小值
             float bmin = 1.0f;
             bool has_rec = false;

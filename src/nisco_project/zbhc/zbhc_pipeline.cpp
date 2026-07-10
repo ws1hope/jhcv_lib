@@ -22,9 +22,9 @@ size_t commonPrefixLen(const std::string& a, const std::string& b)
     return i;
 }
 
-// 给定各片段文本（按 x 顺序），依据 heat_number 找出一种排列，
+// 给定各片段文本（按 y 顺序），依据 heat_number 找出一种排列，
 // 使拼接结果与 heat_number 的公共前缀最长（让 heat_number 尽量成为结果开头）。
-// heat_number 为空 / 片段过多(>8) / 无更优解时，退化为原始 x 顺序。
+// heat_number 为空 / 片段过多(>8) / 无更优解时，退化为原始 y 顺序。
 std::vector<int> bestOrderByHeat(const std::vector<std::string>& texts,
                                   const std::string& heat_number)
 {
@@ -238,11 +238,11 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                      << seg_res.num_detections << std::endl;
             }
 
-            // 按 x 坐标排序分割实例
+            // 按 y 坐标排序分割实例（自上而下送入 OCR）
             std::vector<int> seg_indices(seg_res.num_detections);
             std::iota(seg_indices.begin(), seg_indices.end(), 0);
             std::sort(seg_indices.begin(), seg_indices.end(), [&](int a, int b) {
-                return seg_res.detections[a].bbox.x < seg_res.detections[b].bbox.x;
+                return seg_res.detections[a].bbox.y < seg_res.detections[b].bbox.y;
             });
 
             // ===== Step 6: 遍历分割实例，最小外接矩算倾角并水平化，收集字符裁剪框 =====
@@ -426,13 +426,13 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
             }
 
             // 依据 heat_number 重排字符片段顺序，使拼接结果前缀尽量匹配炉号；
-            // heat_number 为空时 bestOrderByHeat 退化为原始 x 顺序（与原行为一致）
+            // heat_number 为空时 bestOrderByHeat 退化为原始 y 顺序
             std::vector<std::string> seg_texts;
             seg_texts.reserve(billet_result.chars.size());
-            std::string xorder;
+            std::string yorder;
             for (auto& ch : billet_result.chars) {
                 seg_texts.push_back(ch.ocr_text);
-                xorder += ch.ocr_text;
+                yorder += ch.ocr_text;
             }
             std::vector<int> best_order = bestOrderByHeat(seg_texts, heat_number);
 
@@ -446,8 +446,8 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
             billet_result.chars = std::move(reordered);
             billet_result.ocr_text = billet_ocr;
 
-            if (verbose && !heat_number.empty() && billet_ocr != xorder) {
-                std::cout << "[DEBUG]   billet[" << bi << "] x-order=\"" << xorder
+            if (verbose && !heat_number.empty() && billet_ocr != yorder) {
+                std::cout << "[DEBUG]   billet[" << bi << "] y-order=\"" << yorder
                      << "\" -> heat-ordered=\"" << billet_ocr
                      << "\" (heat=\"" << heat_number << "\")" << std::endl;
             }

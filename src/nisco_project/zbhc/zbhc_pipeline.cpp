@@ -13,6 +13,9 @@ namespace Pipeline {
 
 namespace {
 
+// 无炉号路径下：OCR 置信度低于此阈值时怀疑字符方向颠倒，翻转 180° 再识别
+constexpr float kLowConfFlipThr = 0.96f;
+
 // 计算字符串 a、b 的公共前缀长度
 size_t commonPrefixLen(const std::string& a, const std::string& b)
 {
@@ -386,8 +389,19 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                         }
                     }
                 } else {
-                    // 无炉号：不做朝向处理
+                    // 无炉号：原向 OCR；置信度过低提示方向可能颠倒，
+                    // 翻转 180° 再识别，取置信度较高者（并列保留原向）
                     runOcr(c.img_bgr, char_text, char_conf);
+                    if (char_conf < kLowConfFlipThr) {
+                        cv::Mat flipped;
+                        cv::flip(c.img_bgr, flipped, -1);
+                        std::string t1; float conf1 = 0.f;
+                        runOcr(flipped, t1, conf1);
+                        if (conf1 > char_conf) {
+                            char_dir = 180; char_text = t1; char_conf = conf1;
+                            ocr_in = flipped; any_flipped = true;
+                        }
+                    }
                 }
 
                 if (verbose) {
@@ -423,6 +437,12 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
             if (verbose) {
                 std::cout << "[DEBUG]   billet[" << bi << "] direction: " << billet_result.direction_flag
                      << " (per-char, any flipped)" << std::endl;
+            }
+
+            // 坯料上下颠倒(any_flipped)时，图像中自上而下的 y 顺序与读取顺序相反：
+            // 原本顶部的行翻到了底部，故片段顺序需反向(y 降序)后再拼接/送炉号匹配
+            if (any_flipped) {
+                std::reverse(billet_result.chars.begin(), billet_result.chars.end());
             }
 
             // 依据 heat_number 重排字符片段顺序，使拼接结果前缀尽量匹配炉号；

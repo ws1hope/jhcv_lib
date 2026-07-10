@@ -584,7 +584,7 @@
             "args": [
                 "--test",
                 "-c", "test/zbhc/config.yaml",
-                "-i", "images/zbhc_test/debug/20260709152549.jpg",
+                "-i", "images/zbhc_test/debug/20260710093332.jpg",
                 "-H", "0",
                 "-s", "1"
             ],

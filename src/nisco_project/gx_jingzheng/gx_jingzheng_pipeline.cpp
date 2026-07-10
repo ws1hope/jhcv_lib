@@ -6,6 +6,7 @@
 #include <map>
 #include <numeric>
 
+#include <opencv2/dnn.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -167,6 +168,9 @@ GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
 
     // 注意：InstanceSegmenter 的第二个参数被实现当作 "class_names 列表" 使用，
     // 不是 yaml 路径。这里传空，让 OnnxInference 自动从 <model>.yaml 读 class_names。
+    // iou=0.9：seg 在分支判定前就跑完 NMS，无法按分支给不同阈值。故整体取宽松 0.9
+    // 保留全部候选框（gangbiao 分支直接用），zifu 分支在 decideBranch() 末尾再按 0.45
+    // 二次 NMS 去重叠框。
     seg_ = std::make_unique<InstanceSegmenter>(config_.seg_model, "", dev_id, "",
                                                  0.25f, 0.9f);
     std::cout << "[OK] Instance seg model loaded: " << config_.seg_model << std::endl;
@@ -296,8 +300,36 @@ std::string GxJingzhengPipeline::decideBranch(const cv::Mat& crop,
     }
 
     if (zifu_pixels <= 0 && gangbiao_pixels <= 0) return "";
-    return (zifu_pixels >= gangbiao_pixels) ? config_.zifu_class_name
-                                            : config_.gangbiao_class_name;
+    std::string branch = (zifu_pixels >= gangbiao_pixels) ? config_.zifu_class_name
+                                                           : config_.gangbiao_class_name;
+
+    // zifu 分支：对 zifu 类实例按 0.45 二次 NMS 去重叠框
+    // （seg 整体用 0.9 兼容 gangbiao，故在此补严；gangbiao 分支不进此块，保持 0.9）
+    if (branch == config_.zifu_class_name) {
+        std::vector<cv::Rect> zifu_boxes;
+        std::vector<float> zifu_confs;
+        std::vector<int> zifu_pos;  // instances_out 中 zifu 实例下标
+        for (int i = 0; i < (int)instances_out.size(); ++i) {
+            if (instances_out[i].class_name == config_.zifu_class_name) {
+                zifu_boxes.push_back(instances_out[i].bbox);
+                zifu_confs.push_back(instances_out[i].confidence);
+                zifu_pos.push_back(i);
+            }
+        }
+        std::vector<int> keep;
+        cv::dnn::NMSBoxes(zifu_boxes, zifu_confs, 0.f, 0.45f, keep);
+        std::vector<char> keep_mask(instances_out.size(), 0);
+        for (int k : keep) keep_mask[zifu_pos[k]] = 1;
+        std::vector<GxJingzhengSegInstance> filtered;
+        for (int i = 0; i < (int)instances_out.size(); ++i) {
+            if (instances_out[i].class_name != config_.zifu_class_name || keep_mask[i]) {
+                filtered.push_back(std::move(instances_out[i]));
+            }
+        }
+        instances_out = std::move(filtered);
+    }
+
+    return branch;
 }
 
 int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_images,

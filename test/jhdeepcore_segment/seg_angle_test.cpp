@@ -101,32 +101,128 @@ static void printItems(const std::vector<JHDeepCore::SectionAngleItem>& items, i
               << ", ALERT: " << (items.size() - ok_count) << std::endl;
 }
 
+static cv::Point clampPutTextOrigin(const std::string& text,
+                                    cv::Point origin,
+                                    double font_scale,
+                                    int thickness,
+                                    const cv::Size& image_size,
+                                    int margin = 4)
+{
+    int baseline = 0;
+    const cv::Size text_size = cv::getTextSize(
+        text, cv::FONT_HERSHEY_SIMPLEX, font_scale, thickness, &baseline);
+
+    int x = origin.x;
+    int y = origin.y;
+
+    const int left = x;
+    const int top = y - text_size.height;
+    const int right = x + text_size.width;
+    const int bottom = y + baseline;
+
+    if (left < margin) {
+        x += margin - left;
+    }
+    if (top < margin) {
+        y += margin - top;
+    }
+    if (right > image_size.width - margin) {
+        x -= right - (image_size.width - margin);
+    }
+    if (bottom > image_size.height - margin) {
+        y -= bottom - (image_size.height - margin);
+    }
+
+    return cv::Point(x, y);
+}
+
+static cv::Point cornerTextOrigin(const cv::Point2f& corner,
+                                  const cv::Point2f& center,
+                                  const std::string& text,
+                                  double font_scale,
+                                  int thickness,
+                                  const cv::Size& image_size)
+{
+    int baseline = 0;
+    const cv::Size text_size = cv::getTextSize(
+        text, cv::FONT_HERSHEY_SIMPLEX, font_scale, thickness, &baseline);
+
+    cv::Point2f dir = center - corner;
+    float norm = cv::norm(dir);
+    if (norm > 1.f) {
+        dir /= norm;
+    } else {
+        dir = cv::Point2f(1.f, 1.f);
+    }
+
+    // Bias text away from image borders when the corner sits near an edge.
+    if (corner.x < image_size.width * 0.3f) {
+        dir.x += 0.6f;
+    } else if (corner.x > image_size.width * 0.7f) {
+        dir.x -= 0.6f;
+    }
+    if (corner.y < image_size.height * 0.3f) {
+        dir.y += 0.6f;
+    } else if (corner.y > image_size.height * 0.7f) {
+        dir.y -= 0.6f;
+    }
+
+    norm = cv::norm(dir);
+    if (norm > 1e-3f) {
+        dir /= norm;
+    }
+
+    const float offset = 22.f;
+    return cv::Point(
+        static_cast<int>(corner.x + dir.x * offset),
+        static_cast<int>(corner.y + dir.y * offset + text_size.height * 0.5f));
+}
+
 static void drawItems(cv::Mat& image, const std::vector<JHDeepCore::SectionAngleItem>& items)
 {
+    const cv::Size image_size = image.size();
+    constexpr double kAngleFontScale = 0.5;
+    constexpr int kAngleThickness = 1;
+    constexpr double kIdFontScale = 0.6;
+    constexpr int kIdThickness = 2;
+
     for (const auto& item : items) {
         const cv::Scalar color = item.has_alert ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0);
         cv::Point2f center(0.f, 0.f);
 
         for (int i = 0; i < 4; ++i) {
             center += item.corners[i];
+        }
+        center *= 0.25f;
+
+        for (int i = 0; i < 4; ++i) {
             cv::line(image, item.corners[i], item.corners[(i + 1) % 4], color, 2, cv::LINE_AA);
             cv::circle(image, item.corners[i], 5, color, -1, cv::LINE_AA);
 
             std::ostringstream oss;
             oss << std::fixed << std::setprecision(1) << item.angles[i] << " deg";
-            cv::putText(image, oss.str(),
-                        cv::Point(static_cast<int>(item.corners[i].x + 8),
-                                  static_cast<int>(item.corners[i].y - 8)),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv::LINE_AA);
+            const std::string angle_text = oss.str();
+            const cv::Point angle_origin = clampPutTextOrigin(
+                angle_text,
+                cornerTextOrigin(item.corners[i], center, angle_text,
+                                 kAngleFontScale, kAngleThickness, image_size),
+                kAngleFontScale, kAngleThickness, image_size, 6);
+            cv::putText(image, angle_text, angle_origin,
+                        cv::FONT_HERSHEY_SIMPLEX, kAngleFontScale, color,
+                        kAngleThickness, cv::LINE_AA);
         }
 
-        center *= 0.25f;
         std::ostringstream id_oss;
         id_oss << "#" << item.instance_id << (item.has_alert ? " ALERT" : " OK");
-        cv::putText(image, id_oss.str(),
-                    cv::Point(static_cast<int>(center.x - 20.f),
-                              static_cast<int>(center.y)),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv::LINE_AA);
+        const std::string id_text = id_oss.str();
+        const cv::Point id_origin = clampPutTextOrigin(
+            id_text,
+            cv::Point(static_cast<int>(center.x - 20.f),
+                      static_cast<int>(center.y + 5.f)),
+            kIdFontScale, kIdThickness, image_size, 6);
+        cv::putText(image, id_text, id_origin,
+                    cv::FONT_HERSHEY_SIMPLEX, kIdFontScale, color,
+                    kIdThickness, cv::LINE_AA);
     }
 }
 

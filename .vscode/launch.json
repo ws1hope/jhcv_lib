@@ -387,6 +387,30 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "mac jhdeepcore_segment_angle",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_seg_angle_test",
+            "args": [
+                "${workspaceFolder}/models/seg/fullmodel_best.onnx",
+                "${workspaceFolder}/images/1.jpg",
+                "",
+                "-1",
+                "1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "mac jhdeepcore_tracker",
             "type": "cppdbg",
             "request": "launch",

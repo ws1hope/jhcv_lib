@@ -10,6 +10,7 @@ add_executable(penma_rec_dll_test ${CMAKE_CURRENT_SOURCE_DIR}/penma_rec_dll/main
 add_executable(jhdeepcore_cls_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_classify/main.cpp)
 add_executable(jhdeepcore_det_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_detect/main.cpp)
 add_executable(jhdeepcore_seg_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_segment/main.cpp)
+add_executable(jhdeepcore_seg_angle_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_segment/seg_angle_test.cpp)
 add_executable(jhdeepcore_iseg_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_instance_segment/main.cpp)
 add_executable(jhdeepcore_ocr_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_ocr/main.cpp)
 add_executable(jhdeepcore_tracker_test ${CMAKE_CURRENT_SOURCE_DIR}/jhdeepcore_tracker/main.cpp)
@@ -49,6 +50,7 @@ set(TEST_TARGETS
     jhdeepcore_cls_test
     jhdeepcore_det_test
     jhdeepcore_seg_test
+    jhdeepcore_seg_angle_test
     jhdeepcore_iseg_test
     jhdeepcore_ocr_test
     jhdeepcore_tracker_test

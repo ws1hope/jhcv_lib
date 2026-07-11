@@ -268,6 +268,33 @@ class ZbhcService {
     std::shared_ptr<ZbhcServicePrivate> m_pHandle;
 };
 
+struct SectionAngleItem {
+    int instance_id = 0;
+    cv::Point2f corners[4];
+    float angles[4] = {0.f, 0.f, 0.f, 0.f};
+    bool has_alert = false;
+};
+
+class SectionAngleCheckerPrivate;
+class SectionAngleChecker {
+  public:
+    SectionAngleChecker(const std::string &model_path,
+                        int target_class_id = 1,
+                        float angle_tolerance_deg = 8.0f,
+                        const std::string &label_path = "",
+                        int device_id = 0,
+                        const std::string &config_path = "");
+    ~SectionAngleChecker();
+
+    SectionAngleChecker(const SectionAngleChecker &) = delete;
+    SectionAngleChecker &operator=(const SectionAngleChecker &) = delete;
+
+    void process(const cv::Mat &image, std::vector<SectionAngleItem> &results);
+
+  private:
+    std::shared_ptr<SectionAngleCheckerPrivate> m_pHandle;
+};
+
 class ZbsltjServicePrivate;
 class ZbsltjService {
   public:

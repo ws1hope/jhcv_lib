@@ -1,4 +1,5 @@
 #include <iostream>
+#include <filesystem>
 #include <opencv2/opencv.hpp>
 #include "JHDeepCore.h"
 
@@ -122,6 +123,12 @@ static void drawSegmentation(cv::Mat& image, const JHDeepCore::SegmentationResul
     }
 }
 
+static std::string makeOutputPathFromInput(const std::string& image_path)
+{
+    std::string filename = std::filesystem::path(image_path).filename().string();
+    return "result/" + filename;
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <model_path> <image_path> [label_path] [device_id]" << std::endl;
@@ -163,8 +170,8 @@ int main(int argc, char* argv[]) {
             drawSegmentation(result_image, r);
         }
 
-        // 保存结果
-        std::string output_path = "result/seg.png";
+        // 保存结果（按输入图片文件名保存到 result/ 目录）
+        std::string output_path = makeOutputPathFromInput(image_path);
         if (cv::imwrite(output_path, result_image)) {
             std::cout << "Result saved to: " << output_path << std::endl;
         } else {

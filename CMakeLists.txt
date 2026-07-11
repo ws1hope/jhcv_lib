@@ -32,7 +32,12 @@ if(WIN32)
     option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" ON)
 
 elseif(APPLE)
-    set(3RDPARTY_ROOT     "/usr/local")
+    # Apple Silicon Homebrew 默认在 /opt/homebrew，Intel 在 /usr/local
+    if(EXISTS "/opt/homebrew/include/opencv4/opencv2/opencv.hpp")
+        set(3RDPARTY_ROOT "/opt/homebrew")
+    else()
+        set(3RDPARTY_ROOT "/usr/local")
+    endif()
     set(OPENCV_ROOT       "${3RDPARTY_ROOT}")
     set(ONNXRUNTIME_ROOT  "${3RDPARTY_ROOT}")
     set(YAML_CPP_ROOT     "${3RDPARTY_ROOT}")

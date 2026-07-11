@@ -170,6 +170,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/Circular_Code
     ${CMAKE_CURRENT_SOURCE_DIR}/mtracker/thirdparty_ini
     ${CMAKE_CURRENT_SOURCE_DIR}/mtracker
+    ${INCLUDE_DIRS}
 )
 
 target_compile_definitions(jhcv_lib PRIVATE

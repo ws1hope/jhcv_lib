@@ -364,6 +364,29 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "mac jhdeepcore_segment",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/jhdeepcore_seg_test",
+            "args": [
+                "${workspaceFolder}/models/seg/fullmodel_best.onnx",
+                "${workspaceFolder}/images/2.jpg",
+                "",
+                "-1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "mac jhdeepcore_tracker",
             "type": "cppdbg",
             "request": "launch",

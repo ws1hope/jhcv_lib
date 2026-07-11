@@ -393,7 +393,7 @@
             "program": "${workspaceFolder}/build/bin/jhdeepcore_seg_angle_test",
             "args": [
                 "${workspaceFolder}/models/seg/fullmodel_best.onnx",
-                "${workspaceFolder}/images/1.jpg",
+                "${workspaceFolder}/images",
                 "",
                 "-1",
                 "1"

@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <sstream>
 #include <iomanip>
@@ -28,6 +30,42 @@ static bool ensureDirectoryExists(const std::string& path)
     }
     return true;
 #endif
+}
+
+static bool isImageFile(const std::filesystem::path& path)
+{
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    static const char* kImageExts[] = {
+        ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"
+    };
+    for (const char* image_ext : kImageExts) {
+        if (ext == image_ext) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::vector<std::string> collectImagePaths(const std::string& input_path)
+{
+    std::vector<std::string> paths;
+    const std::filesystem::path input(input_path);
+
+    if (std::filesystem::is_directory(input)) {
+        for (const auto& entry : std::filesystem::directory_iterator(input)) {
+            if (entry.is_regular_file() && isImageFile(entry.path())) {
+                paths.push_back(entry.path().string());
+            }
+        }
+        std::sort(paths.begin(), paths.end());
+    } else if (std::filesystem::is_regular_file(input)) {
+        paths.push_back(input_path);
+    }
+
+    return paths;
 }
 
 static void printItems(const std::vector<JHDeepCore::SectionAngleItem>& items, int class_id)
@@ -92,53 +130,78 @@ static void drawItems(cv::Mat& image, const std::vector<JHDeepCore::SectionAngle
     }
 }
 
+static bool processOneImage(JHDeepCore::SectionAngleChecker& checker,
+                            const std::string& image_path,
+                            int target_class_id)
+{
+    cv::Mat image = cv::imread(image_path);
+    if (image.empty()) {
+        std::cerr << "Failed to read image: " << image_path << std::endl;
+        return false;
+    }
+
+    std::cout << "\n========== " << image_path << " ==========" << std::endl;
+
+    std::vector<JHDeepCore::SectionAngleItem> items;
+    checker.process(image, items);
+    printItems(items, target_class_id);
+
+    cv::Mat result_image = image.clone();
+    drawItems(result_image, items);
+
+    const std::string output_path =
+        "result/" + std::filesystem::path(image_path).filename().string();
+    if (cv::imwrite(output_path, result_image)) {
+        std::cout << "Result saved to: " << output_path << std::endl;
+        return true;
+    }
+
+    std::cerr << "Failed to save result to: " << output_path << std::endl;
+    return false;
+}
+
 int main(int argc, char* argv[])
 {
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0]
-                  << " <model_path> <image_path> [label_path] [device_id] [class_id]"
+                  << " <model_path> <image_path_or_dir> [label_path] [device_id] [class_id]"
                   << std::endl;
         return 1;
     }
 
     const std::string model_path = argv[1];
-    const std::string image_path = argv[2];
+    const std::string input_path = argv[2];
     const std::string label_path = (argc > 3) ? argv[3] : "";
     const int device_id = (argc > 4) ? std::stoi(argv[4]) : 0;
     const int target_class_id = (argc > 5) ? std::stoi(argv[5]) : 1;
 
     try {
-        cv::Mat image = cv::imread(image_path);
-        if (image.empty()) {
-            std::cerr << "Failed to read image: " << image_path << std::endl;
+        const std::vector<std::string> image_paths = collectImagePaths(input_path);
+        if (image_paths.empty()) {
+            std::cerr << "No image files found in: " << input_path << std::endl;
             return 1;
         }
-
-        JHDeepCore::SectionAngleChecker checker(
-            model_path, target_class_id, kAngleToleranceDeg, label_path, device_id);
-
-        std::vector<JHDeepCore::SectionAngleItem> items;
-        checker.process(image, items);
-        printItems(items, target_class_id);
 
         if (!ensureDirectoryExists("result")) {
             std::cerr << "Warning: Failed to create result directory" << std::endl;
         }
 
-        cv::Mat result_image = image.clone();
-        drawItems(result_image, items);
+        JHDeepCore::SectionAngleChecker checker(
+            model_path, target_class_id, kAngleToleranceDeg, label_path, device_id);
 
-        const std::string output_path =
-            "result/" + std::filesystem::path(image_path).filename().string();
-        if (cv::imwrite(output_path, result_image)) {
-            std::cout << "Result saved to: " << output_path << std::endl;
-        } else {
-            std::cerr << "Failed to save result to: " << output_path << std::endl;
+        int success_count = 0;
+        for (const auto& image_path : image_paths) {
+            if (processOneImage(checker, image_path, target_class_id)) {
+                ++success_count;
+            }
         }
+
+        std::cout << "\nProcessed " << success_count << "/" << image_paths.size()
+                  << " image(s)." << std::endl;
+
+        return success_count == static_cast<int>(image_paths.size()) ? 0 : 1;
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
-
-    return 0;
 }

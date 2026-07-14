@@ -166,6 +166,7 @@ GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
     det_ = std::make_unique<Detector>(config_.dingwei_model, config_.dingwei_label, dev_id);
     std::cout << "[OK] Dingwei det model loaded: " << config_.dingwei_model << std::endl;
 
+    
     // 注意：InstanceSegmenter 的第二个参数被实现当作 "class_names 列表" 使用，
     // 不是 yaml 路径。这里传空，让 OnnxInference 自动从 <model>.yaml 读 class_names。
     // iou=0.9：seg 在分支判定前就跑完 NMS，无法按分支给不同阈值。故整体取宽松 0.9

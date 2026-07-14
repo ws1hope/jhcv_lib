@@ -1,0 +1,17 @@
+server:
+  service_name: "luqian"
+  host: "127.0.0.1"
+  port: 8085
+models:
+  det_model: "models/luqian/piliao_best_location.onnx"
+  seg_model: "models/luqian/penma_best_zifu.onnx"
+  ocr_model: "models/luqian/rec.onnx"
+  ocr_label: "models/luqian/rec.yaml"
+  direction_cls_model: "models/zbhc/zifu_fx_cls.onnx"
+inference:
+  device: "cpu"
+output:
+  result_dir: "D:\\CharacterDetect"
+  split_dir: "D:\\LuqianSplit"
+  log_dir: "D:\\LuqianLog"
+  char_crop_dir: "D:\\LuqianCharCrop"

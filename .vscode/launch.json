@@ -668,6 +668,50 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "mac luqian - local test",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/luqian",
+            "args": [
+                "--test",
+                "-c", "test/luqian/config.yaml",
+                "-i", "images/td/20260713150306605_1.jpg",
+                "-H", "0",
+                "-s", "1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
+            "name": "mac luqian - HTTP server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/luqian",
+            "args": [
+                "-c", "test/luqian/config.yaml"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "zbsltj - HTTP server",
             "type": "cppvsdbg",
             "request": "launch",

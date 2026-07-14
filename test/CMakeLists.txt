@@ -32,6 +32,9 @@ add_executable(dispatch ${CMAKE_CURRENT_SOURCE_DIR}/dispatch/main.cpp)
 # ========== ZBHC 服务 ==========
 add_executable(zbhc ${CMAKE_CURRENT_SOURCE_DIR}/zbhc/main.cpp)
 
+# ========== Luqian 字符识别服务 ==========
+add_executable(luqian ${CMAKE_CURRENT_SOURCE_DIR}/luqian/main.cpp)
+
 # ========== ZBSLTJ 喷码识别服务 ==========
 add_executable(zbsltj ${CMAKE_CURRENT_SOURCE_DIR}/zbsltj/main.cpp)
 
@@ -63,6 +66,7 @@ set(TEST_TARGETS
     tiebiao
     dispatch
     zbhc
+    luqian
     zbsltj
     gx_jingzheng
     homography_test
@@ -108,6 +112,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/zbhc/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== Luqian 字符识别服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/luqian/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

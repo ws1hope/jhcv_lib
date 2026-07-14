@@ -77,6 +77,22 @@ struct ZbhcServerConfig {
     std::string device = "cuda";
 };
 
+struct LuqianServerConfig {
+    std::string service_name = "luqian";
+    std::string host = "0.0.0.0";
+    int port = 8085;
+    std::string result_dir = "D:\\LuqianResult";
+    std::string split_dir = "D:\\LuqianSplit";
+    std::string log_dir = "D:\\LuqianLog";
+    std::string char_crop_dir;   // 为空时不保存字符裁剪图
+    std::string det_model;       // 目标检测(单级)
+    std::string seg_model;       // 实例分割
+    std::string ocr_model;
+    std::string ocr_label;
+    std::string direction_cls_model;
+    std::string device = "cuda";
+};
+
 struct ZbsltjServerConfig {
     std::string service_name = "zbsltj";
     std::string host = "127.0.0.1";
@@ -138,6 +154,8 @@ public:
     static JHDeepCore::DispatchServerConfig loadDispatchConfig(const std::string& config_path);
 
     static JHDeepCore::ZbhcServerConfig loadZbhcConfig(const std::string& config_path);
+
+    static JHDeepCore::LuqianServerConfig loadLuqianConfig(const std::string& config_path);
 
     static JHDeepCore::ZbsltjServerConfig loadZbsltjConfig(const std::string& config_path);
 

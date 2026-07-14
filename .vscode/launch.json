@@ -864,6 +864,51 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "JHDeepCore Jiuyang",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/jiuyang.exe",
+            "args": [
+                "${workspaceFolder}/models/seg/best.onnx",
+                "${workspaceFolder}/images/test_seg.png",
+                "",
+                "0"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime/lib;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "mac jiuyang",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/jiuyang",
+            "args": [
+                "${workspaceFolder}/models/jiuyang/wangang/fullmodel_best.onnx",
+                "${workspaceFolder}/images/jiuyang/wangang.png",
+                "",
+                "-1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "biaoding calibration tool",
             "type": "debugpy",
             "request": "launch",

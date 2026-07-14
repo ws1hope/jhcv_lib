@@ -96,6 +96,11 @@ set(NISCO_PROJECT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/section_angle/section_angle_checker.cpp
 )
 
+# jiuyang 模块 - 语义分割业务封装
+set(JIUYANG_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/jiuyang/jiuyang_pipeline.cpp
+)
+
 # utils 模块
 set(UTILS_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/utils/file_utils.cpp
@@ -139,6 +144,7 @@ set(ALL_SOURCES
     ${AI_PLATFORM_TRACKER_SOURCES}
     ${AI_PLATFORM_MAIN_SOURCES}
     ${NISCO_PROJECT_SOURCES}
+    ${JIUYANG_SOURCES}
     ${UTILS_SOURCES}
     ${CV_HOMOGRAPHY_SOURCES}
     ${MTRACKER_SOURCES}
@@ -168,6 +174,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/zbsltj
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/gx_jingzheng
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/section_angle
+    ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/cv_homography
@@ -203,6 +210,7 @@ if(MSVC)
         ${AI_PLATFORM_OCR_SOURCES}
         ${AI_PLATFORM_MAIN_SOURCES}
         ${NISCO_PROJECT_SOURCES}
+        ${JIUYANG_SOURCES}
         ${UTILS_SOURCES}
         ${CV_HOMOGRAPHY_SOURCES}
         PROPERTIES COMPILE_FLAGS "/utf-8"

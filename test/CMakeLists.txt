@@ -44,6 +44,9 @@ add_executable(gx_jingzheng ${CMAKE_CURRENT_SOURCE_DIR}/gx_jingzheng/main.cpp)
 # ========== 单应矩阵测试 ==========
 add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
 
+# ========== 九阳语义分割测试 ==========
+add_executable(jiuyang ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/main.cpp)
+
 # ========== 统一设置 ==========
 set(TEST_TARGETS
     yolo_inference
@@ -70,6 +73,7 @@ set(TEST_TARGETS
     zbsltj
     gx_jingzheng
     homography_test
+    jiuyang
 )
 
 foreach(TARGET ${TEST_TARGETS})
@@ -136,6 +140,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/gx_jingzheng/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== jiuyang 语义分割测试 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

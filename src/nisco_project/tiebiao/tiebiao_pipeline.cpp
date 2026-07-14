@@ -54,7 +54,10 @@ TiebiaoPipeline::TiebiaoPipeline(const TiebiaoConfig& config)
     label_seg_ = std::make_unique<InstanceSegmenter>(config.label_seg_model, "", dev_id);
     std::cout << "[OK] Label seg model loaded: " << config.label_seg_model << std::endl;
 
-    char_seg_ = std::make_unique<InstanceSegmenter>(config.char_seg_model, "", dev_id);
+    // iou=0.9：与 gx_jingzheng 的 seg_ 一致，宽松保留全部字符候选框，
+    // 避免密集字符在 NMS 阶段被误去重。
+    char_seg_ = std::make_unique<InstanceSegmenter>(config.char_seg_model, "", dev_id, "",
+                                                     0.25f, 0.9f);
     std::cout << "[OK] Char seg model loaded: " << config.char_seg_model << std::endl;
 
     ocr_ = std::make_unique<OCRRecognizer>(config.ocr_model, config.ocr_label, dev_id);

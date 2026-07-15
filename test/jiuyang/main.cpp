@@ -53,6 +53,24 @@ int main(int argc, char *argv[])
 
         cv::Mat result_image = pipeline.process(image);
 
+        const auto &bend_results = pipeline.lastBendResults();
+        std::cout << "Billet bend results: " << bend_results.size() << std::endl;
+        for (const auto &result : bend_results) {
+            std::cout << "  id=" << result.id
+                      << ", valid=" << (result.valid ? "true" : "false");
+            if (result.valid) {
+                std::cout << ", bent=" << (result.bent ? "true" : "false")
+                          << ", bend95=" << result.bend95
+                          << ", bendRms=" << result.bendRms
+                          << ", bendMax=" << result.bendMax
+                          << ", medianWidth=" << result.medianWidth
+                          << ", validLengthRatio=" << result.validLengthRatio
+                          << ", stoppedAtMerge="
+                          << (result.stoppedAtMerge ? "true" : "false");
+            }
+            std::cout << std::endl;
+        }
+
         // 创建 result 文件夹（如果不存在）
         if (!ensureDirectoryExists("result")) {
             std::cerr << "Warning: Failed to create result directory" << std::endl;

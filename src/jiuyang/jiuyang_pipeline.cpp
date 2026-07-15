@@ -1,5 +1,7 @@
 #include "jiuyang_pipeline.h"
 
+#include <opencv2/ximgproc.hpp>
+
 #include <stdexcept>
 
 namespace JHDeepCore {
@@ -17,11 +19,34 @@ cv::Mat JiuyangPipeline::process(const cv::Mat &image) {
     std::vector<SegmentationResult> results;
     segmenter_->process(images, results);
 
+    last_bend_results_.clear();
+    cv::Mat bend_overlay = image.clone();
     cv::Mat result_image = image.clone();
     for (const auto &r : results) {
+        if (!r.segmentation_mask.empty()) {
+            cv::Mat binary_mask;
+            cv::compare(r.segmentation_mask, 0, binary_mask, cv::CMP_GT);
+            if (binary_mask.size() != image.size()) {
+                cv::resize(binary_mask, binary_mask, image.size(), 0, 0, cv::INTER_NEAREST);
+            }
+            last_bend_results_ = bend_detector_.detect(binary_mask);
+            BilletBendDetector::draw(bend_overlay, last_bend_results_);
+        }
         drawSegmentation(result_image, r);
     }
+
+    // drawSegmentation currently returns a side-by-side image. Put bend analysis on
+    // its left (original-image) panel while retaining the binary-mask panel.
+    if (result_image.cols >= image.cols && result_image.rows >= image.rows) {
+        bend_overlay.copyTo(result_image(cv::Rect(0, 0, image.cols, image.rows)));
+    } else {
+        result_image = bend_overlay;
+    }
     return result_image;
+}
+
+const std::vector<BilletBendResult> &JiuyangPipeline::lastBendResults() const noexcept {
+    return last_bend_results_;
 }
 
 static cv::Scalar getColorForClass(int classId) {
@@ -48,6 +73,43 @@ static cv::Scalar getColorForClass(int classId) {
         return colors[classId];
     }
     return cv::Scalar((classId * 50) % 256, (classId * 100) % 256, (classId * 150) % 256);
+}
+
+/// 基于距离变换提取二值掩码的中心线（单像素宽）
+static cv::Mat extractCenterline(const cv::Mat &inputMask) {
+    cv::Mat binary;
+    if (inputMask.channels() == 3) {
+        cv::cvtColor(inputMask, binary, cv::COLOR_BGR2GRAY);
+    } else {
+        binary = inputMask.clone();
+    }
+    cv::threshold(binary, binary, 127, 255, cv::THRESH_BINARY);
+
+    // 1. 距离变换
+    cv::Mat dist;
+    cv::distanceTransform(binary, dist, cv::DIST_L2, cv::DIST_MASK_5);
+
+    // 2. 3x3 邻域最大值
+    cv::Mat dilated;
+    cv::dilate(dist, dilated, cv::Mat());
+
+    // 3. 提取局部最大值（脊线）
+    cv::Mat ridgeMask;
+    cv::compare(dist, dilated, ridgeMask, cv::CMP_GE);
+
+    // 4. 限制在原始前景内部
+    cv::bitwise_and(ridgeMask, binary, ridgeMask);
+
+    // 5. 去掉过于靠近边缘的点
+    cv::Mat validDistanceMask;
+    cv::compare(dist, 1.5f, validDistanceMask, cv::CMP_GT);
+    cv::bitwise_and(ridgeMask, validDistanceMask, ridgeMask);
+
+    // 6. 细化成单像素线
+    cv::Mat centerline;
+    cv::ximgproc::thinning(ridgeMask, centerline, cv::ximgproc::THINNING_ZHANGSUEN);
+
+    return centerline;
 }
 
 void JiuyangPipeline::drawSegmentation(cv::Mat &image, const SegmentationResult &result) {
@@ -116,6 +178,12 @@ void JiuyangPipeline::drawSegmentation(cv::Mat &image, const SegmentationResult 
     cv::cvtColor(binaryMask, binaryColor, cv::COLOR_GRAY2BGR);
     if (binaryColor.size() != image.size()) {
         cv::resize(binaryColor, binaryColor, image.size());
+    }
+
+    // 提取中心线并叠加到二值图上（红色）
+    cv::Mat centerline = extractCenterline(binaryMask);
+    if (centerline.size() == binaryColor.size()) {
+        binaryColor.setTo(cv::Scalar(0, 0, 255), centerline);
     }
 
     // 添加标题

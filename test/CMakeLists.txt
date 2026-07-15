@@ -46,6 +46,7 @@ add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
 
 # ========== 九阳语义分割测试 ==========
 add_executable(jiuyang ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/main.cpp)
+add_executable(jiuyang_bend_test ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/bend_detector_test.cpp)
 
 # ========== 统一设置 ==========
 set(TEST_TARGETS
@@ -74,6 +75,7 @@ set(TEST_TARGETS
     gx_jingzheng
     homography_test
     jiuyang
+    jiuyang_bend_test
 )
 
 foreach(TARGET ${TEST_TARGETS})

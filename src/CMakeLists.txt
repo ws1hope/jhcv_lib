@@ -98,6 +98,7 @@ set(NISCO_PROJECT_SOURCES
 
 # jiuyang 模块 - 语义分割业务封装
 set(JIUYANG_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/jiuyang/billet_bend_detector.cpp
     ${CMAKE_CURRENT_LIST_DIR}/jiuyang/jiuyang_pipeline.cpp
 )
 

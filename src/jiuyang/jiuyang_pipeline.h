@@ -7,6 +7,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "JHDeepCore.h"
+#include "billet_bend_detector.h"
 
 namespace JHDeepCore {
 
@@ -27,11 +28,16 @@ class JiuyangPipeline {
     /// 对单张图像执行语义分割，返回叠加了彩色 mask 的结果图
     cv::Mat process(const cv::Mat &image);
 
+    /// 最近一次 process() 得到的逐根钢坯弯曲检测结果。
+    const std::vector<BilletBendResult> &lastBendResults() const noexcept;
+
     /// 将分割结果（彩色掩码 + 轮廓 + 图例）绘制到 image 上
     static void drawSegmentation(cv::Mat &image, const SegmentationResult &result);
 
   private:
     std::unique_ptr<Segmenter> segmenter_;
+    BilletBendDetector bend_detector_;
+    std::vector<BilletBendResult> last_bend_results_;
 };
 
 } // namespace JHDeepCore

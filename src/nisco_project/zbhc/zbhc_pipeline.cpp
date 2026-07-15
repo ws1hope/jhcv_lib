@@ -286,6 +286,21 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                 }
                 angle = -angle;       // 水平化：旋转抵消倾角
 
+                if (verbose) {
+                    float raw = min_rect.angle;
+                    bool vertical = min_rect.size.width < min_rect.size.height;
+                    float mid = vertical ? raw + 90.0f : raw;
+                    std::cout << "[DEBUG]     billet[" << bi << "] seg[" << si
+                         << "] center=(" << min_rect.center.x << "," << min_rect.center.y << ")"
+                         << " size=" << min_rect.size.width << "x" << min_rect.size.height
+                         << " raw_angle=" << raw
+                         << " vertical=" << (vertical ? 1 : 0)
+                         << " after_norm=" << mid
+                         << " final_angle=" << angle
+                         << " area=" << max_area
+                         << std::endl;
+                }
+
                 // 裁剪字符图像、mask 并转 BGR
                 cv::Mat char_img = billet_img(char_bbox_local).clone();
                 cv::Mat char_mask_crop = char_mask(char_bbox_local).clone();

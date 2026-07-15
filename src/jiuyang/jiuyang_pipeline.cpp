@@ -1,7 +1,5 @@
 #include "jiuyang_pipeline.h"
 
-#include <opencv2/ximgproc.hpp>
-
 #include <stdexcept>
 
 namespace JHDeepCore {
@@ -75,6 +73,75 @@ static cv::Scalar getColorForClass(int classId) {
     return cv::Scalar((classId * 50) % 256, (classId * 100) % 256, (classId * 150) % 256);
 }
 
+static cv::Mat zhangSuenThinning(const cv::Mat &binaryIn) {
+    cv::Mat src;
+    cv::threshold(binaryIn, src, 0, 255, cv::THRESH_BINARY);
+    src.convertTo(src, CV_8UC1);
+
+    cv::Mat cur = src.clone();
+    const int maxIter = 1000;
+
+    for (int iter = 0; iter < maxIter; ++iter) {
+        bool changed = false;
+
+        for (int sub = 0; sub < 2; ++sub) {
+            cv::Mat marker = cv::Mat::zeros(cur.size(), CV_8UC1);
+
+            for (int y = 1; y < cur.rows - 1; ++y) {
+                const uchar *row = cur.ptr<uchar>(y);
+                uchar *mk = marker.ptr<uchar>(y);
+                for (int x = 1; x < cur.cols - 1; ++x) {
+                    if (row[x] == 0) continue;
+
+                    const int p2 = cur.at<uchar>(y - 1, x) > 0 ? 1 : 0;
+                    const int p3 = cur.at<uchar>(y - 1, x + 1) > 0 ? 1 : 0;
+                    const int p4 = cur.at<uchar>(y, x + 1) > 0 ? 1 : 0;
+                    const int p5 = cur.at<uchar>(y + 1, x + 1) > 0 ? 1 : 0;
+                    const int p6 = cur.at<uchar>(y + 1, x) > 0 ? 1 : 0;
+                    const int p7 = cur.at<uchar>(y + 1, x - 1) > 0 ? 1 : 0;
+                    const int p8 = cur.at<uchar>(y, x - 1) > 0 ? 1 : 0;
+                    const int p9 = cur.at<uchar>(y - 1, x - 1) > 0 ? 1 : 0;
+
+                    const int B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+                    if (B < 2 || B > 6) continue;
+
+                    const int seq[9] = {p2, p3, p4, p5, p6, p7, p8, p9, p2};
+                    int A = 0;
+                    for (int k = 0; k < 8; ++k) {
+                        if (seq[k] == 0 && seq[k + 1] == 1) ++A;
+                    }
+                    if (A != 1) continue;
+
+                    if (sub == 0) {
+                        if (p2 * p4 * p6 != 0) continue;
+                        if (p4 * p6 * p8 != 0) continue;
+                    } else {
+                        if (p2 * p4 * p8 != 0) continue;
+                        if (p2 * p6 * p8 != 0) continue;
+                    }
+
+                    mk[x] = 1;
+                }
+            }
+
+            for (int y = 1; y < cur.rows - 1; ++y) {
+                uchar *c = cur.ptr<uchar>(y);
+                const uchar *mk = marker.ptr<uchar>(y);
+                for (int x = 1; x < cur.cols - 1; ++x) {
+                    if (mk[x]) {
+                        c[x] = 0;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if (!changed) break;
+    }
+
+    return cur;
+}
+
 /// 基于距离变换提取二值掩码的中心线（单像素宽）
 static cv::Mat extractCenterline(const cv::Mat &inputMask) {
     cv::Mat binary;
@@ -106,8 +173,7 @@ static cv::Mat extractCenterline(const cv::Mat &inputMask) {
     cv::bitwise_and(ridgeMask, validDistanceMask, ridgeMask);
 
     // 6. 细化成单像素线
-    cv::Mat centerline;
-    cv::ximgproc::thinning(ridgeMask, centerline, cv::ximgproc::THINNING_ZHANGSUEN);
+    cv::Mat centerline = zhangSuenThinning(ridgeMask);
 
     return centerline;
 }

@@ -108,7 +108,7 @@ LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     det_ = std::make_unique<Detector>(config_.det_model, "", dev_id);
     std::cout << "[OK] Det model loaded: " << config_.det_model << std::endl;
 
-    seg_ = std::make_unique<InstanceSegmenter>(config_.seg_model, "", dev_id);
+    seg_ = std::make_unique<InstanceSegmenter>(config_.seg_model, "", dev_id, "", 0.9f);
     std::cout << "[OK] Seg model loaded: " << config_.seg_model << std::endl;
 
     ocr_ = std::make_unique<OCRRecognizer>(config_.ocr_model, config_.ocr_label, dev_id);
@@ -204,12 +204,33 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                  << seg_res.num_detections << std::endl;
         }
 
-        // 按 y 坐标排序分割实例（自上而下送入 OCR）
+        // 按 y 坐标升序建立原始顺序（自上而下）
         std::vector<int> seg_indices(seg_res.num_detections);
         std::iota(seg_indices.begin(), seg_indices.end(), 0);
         std::sort(seg_indices.begin(), seg_indices.end(), [&](int a, int b) {
             return seg_res.detections[a].bbox.y < seg_res.detections[b].bbox.y;
         });
+
+        // 重排为"最宽 -> 最窄 -> 其他(原 y 顺序)"，再送入 OCR
+        if (seg_indices.size() > 1) {
+            int widest = 0, narrowest = 0;
+            for (int i = 1; i < (int)seg_indices.size(); ++i) {
+                int wi = seg_res.detections[seg_indices[i]].bbox.width;
+                int ww = seg_res.detections[seg_indices[widest]].bbox.width;
+                int wn = seg_res.detections[seg_indices[narrowest]].bbox.width;
+                if (wi > ww) widest = i;
+                if (wi < wn) narrowest = i;
+            }
+            std::vector<int> reordered;
+            reordered.push_back(seg_indices[widest]);
+            if (narrowest != widest)
+                reordered.push_back(seg_indices[narrowest]);
+            for (int i = 0; i < (int)seg_indices.size(); ++i) {
+                if (i != widest && i != narrowest)
+                    reordered.push_back(seg_indices[i]);
+            }
+            seg_indices = std::move(reordered);
+        }
 
         // ===== Step 4: 遍历分割实例，最小外接矩算倾角并水平化，收集字符裁剪框 =====
         struct CharCrop {
@@ -435,12 +456,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                  << "\" (heat=\"" << heat_number << "\")" << std::endl;
         }
 
-        // 最终保障：强制 6 位片段在前、5 位片段在后(按 ocr_text 长度降序稳定排序，
-        // 并列时保留之前的 y/翻转/炉号顺序)，再在最终结果倒数第三位前插入 '#'
-        std::stable_sort(target_result.chars.begin(), target_result.chars.end(),
-            [](const LuqianCharInfo& a, const LuqianCharInfo& b) {
-                return a.ocr_text.size() > b.ocr_text.size();
-            });
+        // 在最终结果倒数第三位前插入 '#'
         target_ocr.clear();
         for (auto& ch : target_result.chars) {
             target_ocr += ch.ocr_text;

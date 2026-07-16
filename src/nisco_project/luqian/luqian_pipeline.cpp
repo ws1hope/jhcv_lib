@@ -11,94 +11,6 @@
 namespace JHDeepCore {
 namespace Pipeline {
 
-namespace {
-
-// 无炉号路径下：OCR 置信度低于此阈值时怀疑字符方向颠倒，翻转 180° 再识别
-constexpr float kLowConfFlipThr = 0.96f;
-
-// 计算字符串 a、b 的公共前缀长度
-size_t commonPrefixLen(const std::string& a, const std::string& b)
-{
-    size_t m = std::min(a.size(), b.size());
-    size_t i = 0;
-    while (i < m && a[i] == b[i]) i++;
-    return i;
-}
-
-// 给定各片段文本（按 y 顺序），依据 heat_number 找出一种排列，
-// 使拼接结果与 heat_number 的公共前缀最长（让 heat_number 尽量成为结果开头）。
-// heat_number 为空 / 片段过多(>8) / 无更优解时，退化为原始 y 顺序。
-std::vector<int> bestOrderByHeat(const std::vector<std::string>& texts,
-                                  const std::string& heat_number)
-{
-    int n = static_cast<int>(texts.size());
-    std::vector<int> identity(n);
-    std::iota(identity.begin(), identity.end(), 0);
-
-    if (n <= 1 || heat_number.empty() || n > 8) {
-        return identity;
-    }
-
-    auto concat = [&](const std::vector<int>& order) {
-        std::string s;
-        for (int i : order) s += texts[i];
-        return s;
-    };
-
-    std::vector<int> best = identity;
-    size_t best_prefix = commonPrefixLen(concat(best), heat_number);
-
-    std::vector<int> cur = identity;
-    std::sort(cur.begin(), cur.end());
-    do {
-        size_t p = commonPrefixLen(concat(cur), heat_number);
-        if (p > best_prefix) {
-            best_prefix = p;
-            best = cur;
-        }
-    } while (std::next_permutation(cur.begin(), cur.end()));
-
-    return best;
-}
-
-// 片段对应炉号的哪个部位
-enum HeatTarget : int { kHead = 0, kTail = 1 };
-
-// 逐位匹配计数（按位置字符相等计数，非公共前缀）：head=`266067`、t=`2X6067` -> 5
-int matchCount(const std::string& a, const std::string& b)
-{
-    int n = static_cast<int>(std::min(a.size(), b.size()));
-    int c = 0;
-    for (int i = 0; i < n; i++) if (a[i] == b[i]) c++;
-    return c;
-}
-
-struct HeatMatch { HeatTarget target; int score; int max; };
-
-// 判定片段更像 head(前6) 还是 tail(后2，作为片段前缀)：
-// 取两者匹配数较大者；tail 为空时只算 head。
-HeatMatch matchSegmentToHeat(const std::string& text,
-                              const std::string& head, const std::string& tail)
-{
-    int sh = matchCount(head, text);
-    int st = tail.empty() ? -1 : matchCount(tail, text);
-    if (sh >= st) return {kHead, sh, static_cast<int>(head.size())};
-    return {kTail, st, static_cast<int>(tail.size())};
-}
-
-// 用炉号部位覆盖片段文本：
-//   HEAD -> 整段替换为 head（6位）
-//   TAIL -> 前 tail.size() 位替换为 tail，保留其余后缀为 OCR 结果
-std::string overrideWithHeat(const std::string& text, const HeatMatch& m,
-                              const std::string& head, const std::string& tail)
-{
-    if (m.target == kHead) return head;
-    if (static_cast<int>(text.size()) > static_cast<int>(tail.size()))
-        return tail + text.substr(tail.size());
-    return tail;
-}
-
-} // namespace
 
 LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     : config_(config)
@@ -127,15 +39,8 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
 
     LuqianPipelineResult result;
 
-    // 炉号拆分：前 6 位 head + 后 2 位 tail。仅当炉号 >=8 位时启用炉号路径
-    // （用炉号匹配定朝向 + 覆盖纠错，替代不准的方向分类器）；否则不做朝向处理。
-    const bool use_heat = (heat_number.size() >= 8);
-    const std::string head = use_heat ? heat_number.substr(0, 6) : std::string{};
-    const std::string tail = use_heat ? heat_number.substr(6) : std::string{};
-    if (verbose && use_heat) {
-        std::cout << "[DEBUG] heat split: head=\"" << head
-             << "\" tail=\"" << tail << "\"" << std::endl;
-    }
+    // 方向判断改用几何法（不使用方向分类模型/炉号匹配）；heat_number 仅保留接口
+    (void)heat_number;
 
     // 单图 OCR 封装：输出识别文本与置信度
     auto runOcr = [&](const cv::Mat& img, std::string& text, float& conf) {
@@ -319,84 +224,49 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             char_crops.push_back(std::move(crop));
         }
 
-        // ===== Step 5+6: 逐片段用炉号匹配定朝向(0/180) + 覆盖纠错，再送 OCR =====
-        // 炉号路径：原向 OCR+匹配 head/tail；不达阈值则翻转再 OCR+匹配；
-        //   命中阈值(HEAD>=4, TAIL=tail.size()) -> 用炉号部位覆盖文本。
-        //   两方向均不达标 -> 取匹配数较高者(并列选原向)，不覆盖。
-        // 无炉号路径：不做朝向处理，原向 OCR。
+        // ===== Step 5: 几何法判定整体朝向（不使用方向分类模型/炉号匹配） =====
+        // 字符已各自水平化，但片段间相对位置不变。最宽(最长)字符片段若位于
+        // 其余片段上方(y 更小)，则整体为正向；否则为倒置，整体翻转 180°。
         bool any_flipped = false;
+        if (char_crops.size() >= 2) {
+            int widest = 0;
+            for (int i = 1; i < (int)char_crops.size(); ++i) {
+                if (char_crops[i].bbox_local.width > char_crops[widest].bbox_local.width)
+                    widest = i;
+            }
+            int widest_y = char_crops[widest].bbox_local.y;
+            bool upright = true;  // 最宽片段是否严格位于所有其余片段上方
+            for (int i = 0; i < (int)char_crops.size(); ++i) {
+                if (i == widest) continue;
+                if (widest_y >= char_crops[i].bbox_local.y) { upright = false; break; }
+            }
+            any_flipped = !upright;
+        }
+        const int target_dir = any_flipped ? 180 : 0;
+        if (verbose) {
+            std::cout << "[DEBUG]   target[" << di << "] direction: " << target_dir
+                 << " (geometric, per-target)" << std::endl;
+        }
+
+        // ===== Step 6: 逐片段 OCR（朝向已由几何法确定，整体翻转） =====
         for (auto& c : char_crops) {
-            int char_dir = 0;
             std::string char_text;
             float char_conf = 0.f;
-            bool overridden = false;
-            int target = -1, score = 0, score_max = 0, thr = 0;
-            cv::Mat ocr_in = c.img_bgr;   // 最终采纳朝向的图（供 after_flip 可视化）
+            cv::Mat ocr_in = c.img_bgr;   // 送 OCR 的图（供 after_flip 可视化）
 
-            if (use_heat) {
-                // 原向 OCR
-                std::string t0; float conf0 = 0.f;
-                runOcr(c.img_bgr, t0, conf0);
-                HeatMatch m0 = matchSegmentToHeat(t0, head, tail);
-                int thr0 = (m0.target == kHead) ? 4 : static_cast<int>(tail.size());
-
-                if (m0.score >= thr0 && thr0 > 0) {
-                    char_dir = 0;
-                    char_text = overrideWithHeat(t0, m0, head, tail);
-                    char_conf = conf0; overridden = true;
-                    target = m0.target; score = m0.score; score_max = m0.max; thr = thr0;
-                } else {
-                    // 翻转 180° 再 OCR
-                    cv::Mat flipped;
-                    cv::flip(c.img_bgr, flipped, -1);
-                    std::string t1; float conf1 = 0.f;
-                    runOcr(flipped, t1, conf1);
-                    HeatMatch m1 = matchSegmentToHeat(t1, head, tail);
-                    int thr1 = (m1.target == kHead) ? 4 : static_cast<int>(tail.size());
-
-                    if (m1.score >= thr1 && thr1 > 0) {
-                        char_dir = 180;
-                        char_text = overrideWithHeat(t1, m1, head, tail);
-                        char_conf = conf1; overridden = true;
-                        ocr_in = flipped; any_flipped = true;
-                        target = m1.target; score = m1.score; score_max = m1.max; thr = thr1;
-                    } else {
-                        // 两方向均不达标：取匹配数较高者（并列选原向）
-                        if (m1.score > m0.score) {
-                            char_dir = 180; char_text = t1; char_conf = conf1;
-                            ocr_in = flipped; any_flipped = true;
-                            target = m1.target; score = m1.score; score_max = m1.max; thr = thr1;
-                        } else {
-                            char_dir = 0; char_text = t0; char_conf = conf0;
-                            target = m0.target; score = m0.score; score_max = m0.max; thr = thr0;
-                        }
-                    }
-                }
+            // 整体翻转 180° 后再 OCR；否则原向 OCR
+            if (any_flipped) {
+                cv::Mat flipped;
+                cv::flip(c.img_bgr, flipped, -1);
+                ocr_in = flipped;
+                runOcr(flipped, char_text, char_conf);
             } else {
-                // 无炉号：原向 OCR；置信度过低提示方向可能颠倒，
-                // 翻转 180° 再识别，取置信度较高者（并列保留原向）
                 runOcr(c.img_bgr, char_text, char_conf);
-                if (char_conf < kLowConfFlipThr) {
-                    cv::Mat flipped;
-                    cv::flip(c.img_bgr, flipped, -1);
-                    std::string t1; float conf1 = 0.f;
-                    runOcr(flipped, t1, conf1);
-                    if (conf1 > char_conf) {
-                        char_dir = 180; char_text = t1; char_conf = conf1;
-                        ocr_in = flipped; any_flipped = true;
-                    }
-                }
             }
 
             if (verbose) {
-                const char* tgt = (target == kHead) ? "HEAD"
-                                : (target == kTail) ? "TAIL" : "-";
                 std::cout << "[DEBUG]     char text=\"" << char_text
-                     << "\" target=" << tgt
-                     << " match=" << score << "/" << score_max
-                     << " thr=" << thr
-                     << " flip=" << char_dir
-                     << (overridden ? " override=Y" : " override=N")
+                     << "\" flip=" << target_dir
                      << " seg=" << c.confidence
                      << " ocr=" << char_conf << std::endl;
             }
@@ -413,51 +283,20 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             char_info.image_after_flip = ocr_in.clone();
             char_info.ocr_text = char_text;
             char_info.ocr_confidence = char_conf;
-            char_info.direction_flag = char_dir;
+            char_info.direction_flag = target_dir;
             target_result.chars.push_back(char_info);
         }
 
-        target_result.direction_flag = any_flipped ? 180 : 0;
-        if (verbose) {
-            std::cout << "[DEBUG]   target[" << di << "] direction: " << target_result.direction_flag
-                 << " (per-char, any flipped)" << std::endl;
-        }
+        target_result.direction_flag = target_dir;
 
         // 目标上下颠倒(any_flipped)时，图像中自上而下的 y 顺序与读取顺序相反：
-        // 原本顶部的行翻到了底部，故片段顺序需反向(y 降序)后再拼接/送炉号匹配
+        // 原本顶部的行翻到了底部，故片段顺序需反向(y 降序)后再拼接
         if (any_flipped) {
             std::reverse(target_result.chars.begin(), target_result.chars.end());
         }
 
-        // 依据 heat_number 重排字符片段顺序，使拼接结果前缀尽量匹配炉号；
-        // heat_number 为空时 bestOrderByHeat 退化为原始 y 顺序
-        std::vector<std::string> seg_texts;
-        seg_texts.reserve(target_result.chars.size());
-        std::string yorder;
-        for (auto& ch : target_result.chars) {
-            seg_texts.push_back(ch.ocr_text);
-            yorder += ch.ocr_text;
-        }
-        std::vector<int> best_order = bestOrderByHeat(seg_texts, heat_number);
-
-        std::vector<LuqianCharInfo> reordered;
-        reordered.reserve(best_order.size());
+        // 按当前片段顺序拼接 OCR 文本，并在倒数第三位前插入 '#'
         std::string target_ocr;
-        for (int idx : best_order) {
-            reordered.push_back(std::move(target_result.chars[idx]));
-            target_ocr += seg_texts[idx];
-        }
-        target_result.chars = std::move(reordered);
-        target_result.ocr_text = target_ocr;
-
-        if (verbose && !heat_number.empty() && target_ocr != yorder) {
-            std::cout << "[DEBUG]   target[" << di << "] y-order=\"" << yorder
-                 << "\" -> heat-ordered=\"" << target_ocr
-                 << "\" (heat=\"" << heat_number << "\")" << std::endl;
-        }
-
-        // 在最终结果倒数第三位前插入 '#'
-        target_ocr.clear();
         for (auto& ch : target_result.chars) {
             target_ocr += ch.ocr_text;
         }

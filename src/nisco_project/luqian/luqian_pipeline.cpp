@@ -315,59 +315,45 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         }
 
         // ===== Step 7: 二次识别（传入炉号且第二 OCR 模型可用时） =====
-        // 取拼接前缀(#+之前)与炉号逐位比对；若有 1~2 位不符，将对应字符片段送第二
-        // OCR 模型重识别，逐片段保留使整体与炉号匹配数更多者。
+        // ocr1_text = 模型1 完整拼接；若与炉号有 1~2 位不符，则用模型2 对全部片段
+        // 重识别得 ocr2_text，并逐片段保留使整体与炉号匹配数更多者作为最终结果。
+        for (auto& ch : target_result.chars) target_result.ocr1_text += ch.ocr_text;
+
         if (ocr2_ && !heat_number.empty()) {
-            std::string prefix;
-            std::vector<int> seg_off;
-            int off = 0;
-            for (auto& ch : target_result.chars) {
-                seg_off.push_back(off);
-                prefix += ch.ocr_text;
-                off += (int)ch.ocr_text.size();
-            }
             int hlen = (int)heat_number.size();
-            int n = (int)std::min(prefix.size(), (size_t)hlen);
+            int n = (int)std::min(target_result.ocr1_text.size(), (size_t)hlen);
             int matched = 0;
             for (int i = 0; i < n; ++i)
-                if (prefix[i] == heat_number[i]) ++matched;
+                if (target_result.ocr1_text[i] == heat_number[i]) ++matched;
             int bad = hlen - matched;   // 不符或缺省位数
 
             if (bad >= 1 && bad <= 2) {
-                // 定位含不符位的片段
-                std::vector<int> bad_segs;
-                for (int i = 0; i < n; ++i) {
-                    if (prefix[i] == heat_number[i]) continue;
-                    for (int k = 0; k < (int)target_result.chars.size(); ++k) {
-                        int lo = seg_off[k];
-                        int hi = lo + (int)target_result.chars[k].ocr_text.size();
-                        if (i >= lo && i < hi) {
-                            if (std::find(bad_segs.begin(), bad_segs.end(), k) == bad_segs.end())
-                                bad_segs.push_back(k);
-                            break;
-                        }
-                    }
+                // 模型2 识别全部片段（完整第二次结果，供对比与选优）
+                std::vector<std::string> t2_list(target_result.chars.size());
+                std::vector<float> c2_list(target_result.chars.size(), 0.f);
+                for (int k = 0; k < (int)target_result.chars.size(); ++k) {
+                    runOcr2(target_result.chars[k].image_after_flip, t2_list[k], c2_list[k]);
+                    target_result.ocr2_text += t2_list[k];
                 }
-                // 逐片段用第二模型重识别，保留使整体匹配更多者
-                for (int k : bad_segs) {
-                    std::string t2; float c2 = 0.f;
-                    runOcr2(target_result.chars[k].image_after_flip, t2, c2);
-                    if (t2.empty()) continue;
+                // 逐片段比较模型1/模型2，保留使整体匹配更多者
+                int cur = matched;
+                for (int k = 0; k < (int)target_result.chars.size(); ++k) {
+                    if (t2_list[k].empty() || t2_list[k] == target_result.chars[k].ocr_text) continue;
                     std::string old_text = target_result.chars[k].ocr_text;
-                    target_result.chars[k].ocr_text = t2;
-                    std::string prefix2;
-                    for (auto& ch : target_result.chars) prefix2 += ch.ocr_text;
-                    int n2 = (int)std::min(prefix2.size(), (size_t)hlen);
-                    int match_new = 0;
-                    for (int i = 0; i < n2; ++i)
-                        if (prefix2[i] == heat_number[i]) ++match_new;
-                    if (match_new > matched) {
-                        target_result.chars[k].ocr_confidence = c2;
-                        matched = match_new;
+                    target_result.chars[k].ocr_text = t2_list[k];
+                    std::string p;
+                    for (auto& ch : target_result.chars) p += ch.ocr_text;
+                    int nn = (int)std::min(p.size(), (size_t)hlen);
+                    int m2 = 0;
+                    for (int i = 0; i < nn; ++i)
+                        if (p[i] == heat_number[i]) ++m2;
+                    if (m2 > cur) {
+                        target_result.chars[k].ocr_confidence = c2_list[k];
+                        cur = m2;
                         if (verbose) {
                             std::cout << "[DEBUG]     seg[" << k << "] re-ocr \""
-                                 << old_text << "\"->\"" << t2
-                                 << "\" (matched " << match_new << "/" << hlen << ")" << std::endl;
+                                 << old_text << "\"->\"" << t2_list[k]
+                                 << "\" (matched " << m2 << "/" << hlen << ")" << std::endl;
                         }
                     } else {
                         target_result.chars[k].ocr_text = old_text;
@@ -462,26 +448,54 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
         }
     }
 
-    // 层4: 左上角 OCR 结果文本 (红色)
-    int text_y = 120;
-    for (int ti = 0; ti < (int)targets.size(); ti++) {
-        if (text_y + 20 > annotated.rows) break;
-        std::string text = "target" + std::to_string(ti + 1) + ": " + targets[ti].ocr_text;
-        cv::putText(annotated, text, cv::Point(20, text_y),
-                    cv::FONT_HERSHEY_SIMPLEX, 3.6, cv::Scalar(0, 0, 255), 9);
-        text_y += 150;
+    // 层4: 左上角两次识别结果(ocr1/ocr2)与最终结果(final,绿色)，加大字号；超宽时加宽画布
+    {
+        const double fs = 4.5;     // 字号（加大）
+        const int thick = 11;
+        const int line_gap = 140;  // 行距
+        auto textW = [&](const std::string& s) {
+            return cv::getTextSize(s, cv::FONT_HERSHEY_SIMPLEX, fs, thick, nullptr).width;
+        };
+        int need_w = 0;
+        for (auto& t : targets) {
+            need_w = std::max(need_w, textW("ocr1: " + t.ocr1_text));
+            if (!t.ocr2_text.empty())
+                need_w = std::max(need_w, textW("ocr2: " + t.ocr2_text));
+            need_w = std::max(need_w, textW("final: " + t.ocr_text));
+        }
+        if (need_w + 40 > annotated.cols) {
+            cv::copyMakeBorder(annotated, annotated, 0, 0, 0,
+                               need_w + 40 - annotated.cols,
+                               cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+        }
+        int text_y = 120;
+        for (int ti = 0; ti < (int)targets.size(); ti++) {
+            auto& t = targets[ti];
+            if (text_y + line_gap > annotated.rows) break;
+            cv::putText(annotated, "ocr1: " + t.ocr1_text, cv::Point(20, text_y),
+                        cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 200, 255), thick);   // 黄
+            text_y += line_gap;
+            if (!t.ocr2_text.empty()) {
+                cv::putText(annotated, "ocr2: " + t.ocr2_text, cv::Point(20, text_y),
+                            cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(255, 100, 0), thick); // 蓝
+                text_y += line_gap;
+            }
+            cv::putText(annotated, "final: " + t.ocr_text, cv::Point(20, text_y),
+                        cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 255, 0), thick);   // 绿
+            text_y += line_gap + 30;
+        }
     }
 
     // ===== 底部可视化：每个目标 = 一张卡片（缩略图 + 字符片段），卡片间横向排列、自动换行 =====
     // 参考 zbhc 的可视化方式
-    const int margin = 15;
-    const int row_h = 60;
-    const int thumb_height = 200;
-    const int char_margin = 4;
-    const int gap = 15;
-    const int section_gap = 10;
-    const int pad_bottom = 15;
-    const double strip_font_scale = 0.7;
+    const int margin = 26;
+    const int row_h = 300;
+    const int thumb_height = 1000;
+    const int char_margin = 8;
+    const int gap = 26;
+    const int section_gap = 18;
+    const int pad_bottom = 26;
+    const double strip_font_scale = 1.2;
 
     // 把多张字符图缩放到统一高度 row_h，并按最大宽度自动折行拼成多行
     // 返回每行 strip（宽度可能不同，高度均为 row_h），供调用方逐行粘贴
@@ -522,7 +536,7 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
         return lines;
     };
 
-    const int label_h = 20;            // 每行 strip 上方文字标签高度
+    const int label_h = 34;            // 每行 strip 上方文字标签高度
     const int line_pitch = row_h + label_h;  // 单行字符（含标签）总高
 
     // 每个目标打包成一个卡片：缩略图（左）+ 字符 strip 多行（右，自动折行）
@@ -655,7 +669,7 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
                 lbl = tag + " Char crops:";
             }
             cv::putText(result, lbl, cv::Point(strip_x, ly + label_h - 5),
-                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 2);
+                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 3);
             pasteAt(c.strip_lines[li], strip_x, ly + label_h);
             ly += line_pitch;
         }

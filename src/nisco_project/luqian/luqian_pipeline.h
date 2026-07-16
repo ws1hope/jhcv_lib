@@ -30,6 +30,8 @@ struct LuqianTargetResult {
     cv::Mat target_image;     // 目标裁剪图（用于结果图可视化缩略图）
     std::vector<LuqianCharInfo> chars;
     std::string ocr_text;
+    std::string ocr1_text;   // 第一次识别(模型1)完整拼接结果
+    std::string ocr2_text;   // 第二次识别(模型2)完整拼接结果（触发二次识别时填充）
     float ocr_confidence = 0.f;  // 该目标各已识别字符 OCR 置信度的最小值
 };
 

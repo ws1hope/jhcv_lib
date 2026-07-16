@@ -19,7 +19,7 @@ Default task in `.vscode/tasks.json` runs configure then Release build.
 
 ## CMake options
 
-- `ENABLE_CUDA` (default `ON`) — links CUDA 11.8 + TensorRT + ONNX GPU provider libs and defines `USE_CUDA`. Pass `-DENABLE_CUDA=OFF` for CPU-only builds.
+- `ENABLE_CUDA` (default `ON`) — links CUDA 12.8 + TensorRT + ONNX GPU provider libs and defines `USE_CUDA`. Pass `-DENABLE_CUDA=OFF` for CPU-only builds.
 - `BUILD_TEST` (default `ON`) — builds all test executables under `test/`.
 
 ## Dependencies (hardcoded paths)
@@ -29,10 +29,10 @@ All third-party libs live under `G:/3thirdparty/`:
 | Dependency | Path |
 |---|---|
 | OpenCV 4.90 | `G:/3thirdparty/opencv/build` |
-| ONNX Runtime | `G:/3thirdparty/onnxruntime-1.18.0-cuda12.2-win-x64` |
+| ONNX Runtime | `G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64` |
 | TensorRT | `G:/3thirdparty/tensorrt` |
 | Paddle Inference | `G:/3thirdparty/paddle_inference` |
-| CUDA | `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8` |
+| CUDA | `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8` |
 
 Runtime DLLs from these dirs must be on `PATH` to run any executable. See `.vscode/launch.json` for the required PATH entries.
 

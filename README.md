@@ -46,11 +46,11 @@ jhcv_lib/
 | OpenCV ≥ 4.x | 图像处理（Windows 固定 `opencv_world490`） |
 | ONNX Runtime | 推理后端（编译期定义 `USE_ONNXRUNTIME`） |
 | yaml-cpp | 配置解析（静态链接，`YAML_CPP_STATIC_DEFINE`） |
-| CUDA 11.8 + TensorRT（可选） | 仅 Windows GPU 构建，开启 `ENABLE_CUDA` |
+| CUDA 12.8 + TensorRT（可选） | 仅 Windows GPU 构建，开启 `ENABLE_CUDA` |
 
 **macOS / Linux**：依赖安装到 `/usr/local`（OpenCV、ONNX Runtime、yaml-cpp），可用 brew / apt 安装。
 
-**Windows**：第三方库统一放在 `G:/3thirdparty/`（opencv / onnxruntime-1.18.0-cuda12.2-win-x64 / tensorrt / paddle_inference），CUDA 在 `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8`。运行时需把上述 DLL 加入 `PATH`（见 `.vscode/launch.json`）。
+**Windows**：第三方库统一放在 `G:/3thirdparty/`（opencv / onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64 / tensorrt / paddle_inference），CUDA 在 `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8`。运行时需把上述 DLL 加入 `PATH`（见 `.vscode/launch.json`）。
 
 ## 构建
 

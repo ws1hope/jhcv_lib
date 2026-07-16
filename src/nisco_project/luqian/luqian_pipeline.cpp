@@ -26,6 +26,11 @@ LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     ocr_ = std::make_unique<OCRRecognizer>(config_.ocr_model, config_.ocr_label, dev_id);
     std::cout << "[OK] OCR model loaded: " << config_.ocr_model << std::endl;
 
+    if (!config_.ocr_model2.empty()) {
+        ocr2_ = std::make_unique<OCRRecognizer>(config_.ocr_model2, config_.ocr_label, dev_id);
+        std::cout << "[OK] OCR2 model loaded: " << config_.ocr_model2 << std::endl;
+    }
+
     direction_cls_ = std::make_unique<Classifier>(config_.direction_cls_model, "", dev_id);
     std::cout << "[OK] Direction cls model loaded: " << config_.direction_cls_model << std::endl;
 
@@ -39,8 +44,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
 
     LuqianPipelineResult result;
 
-    // 方向判断改用几何法（不使用方向分类模型/炉号匹配）；heat_number 仅保留接口
-    (void)heat_number;
+    // 方向判断改用几何法（不使用方向分类模型/炉号匹配）；heat_number 用于二次识别纠错
 
     // 单图 OCR 封装：输出识别文本与置信度
     auto runOcr = [&](const cv::Mat& img, std::string& text, float& conf) {
@@ -50,6 +54,21 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         std::vector<cv::Mat> ocr_imgs = {img};
         std::vector<OCRResult> ocr_results;
         ocr_->process(ocr_imgs, ocr_results);
+        OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
+        if (!ocr_res.boxes.empty()) {
+            text = ocr_res.boxes[0].text;
+            conf = ocr_res.boxes[0].confidence;
+        }
+    };
+
+    // 第二 OCR 模型封装（用于二次识别；ocr2_ 为空时直接返回空）
+    auto runOcr2 = [&](const cv::Mat& img, std::string& text, float& conf) {
+        text.clear();
+        conf = 0.f;
+        if (img.empty() || !ocr2_) return;
+        std::vector<cv::Mat> ocr_imgs = {img};
+        std::vector<OCRResult> ocr_results;
+        ocr2_->process(ocr_imgs, ocr_results);
         OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
         if (!ocr_res.boxes.empty()) {
             text = ocr_res.boxes[0].text;
@@ -293,6 +312,68 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         // 原本顶部的行翻到了底部，故片段顺序需反向(y 降序)后再拼接
         if (any_flipped) {
             std::reverse(target_result.chars.begin(), target_result.chars.end());
+        }
+
+        // ===== Step 7: 二次识别（传入炉号且第二 OCR 模型可用时） =====
+        // 取拼接前缀(#+之前)与炉号逐位比对；若有 1~2 位不符，将对应字符片段送第二
+        // OCR 模型重识别，逐片段保留使整体与炉号匹配数更多者。
+        if (ocr2_ && !heat_number.empty()) {
+            std::string prefix;
+            std::vector<int> seg_off;
+            int off = 0;
+            for (auto& ch : target_result.chars) {
+                seg_off.push_back(off);
+                prefix += ch.ocr_text;
+                off += (int)ch.ocr_text.size();
+            }
+            int hlen = (int)heat_number.size();
+            int n = (int)std::min(prefix.size(), (size_t)hlen);
+            int matched = 0;
+            for (int i = 0; i < n; ++i)
+                if (prefix[i] == heat_number[i]) ++matched;
+            int bad = hlen - matched;   // 不符或缺省位数
+
+            if (bad >= 1 && bad <= 2) {
+                // 定位含不符位的片段
+                std::vector<int> bad_segs;
+                for (int i = 0; i < n; ++i) {
+                    if (prefix[i] == heat_number[i]) continue;
+                    for (int k = 0; k < (int)target_result.chars.size(); ++k) {
+                        int lo = seg_off[k];
+                        int hi = lo + (int)target_result.chars[k].ocr_text.size();
+                        if (i >= lo && i < hi) {
+                            if (std::find(bad_segs.begin(), bad_segs.end(), k) == bad_segs.end())
+                                bad_segs.push_back(k);
+                            break;
+                        }
+                    }
+                }
+                // 逐片段用第二模型重识别，保留使整体匹配更多者
+                for (int k : bad_segs) {
+                    std::string t2; float c2 = 0.f;
+                    runOcr2(target_result.chars[k].image_after_flip, t2, c2);
+                    if (t2.empty()) continue;
+                    std::string old_text = target_result.chars[k].ocr_text;
+                    target_result.chars[k].ocr_text = t2;
+                    std::string prefix2;
+                    for (auto& ch : target_result.chars) prefix2 += ch.ocr_text;
+                    int n2 = (int)std::min(prefix2.size(), (size_t)hlen);
+                    int match_new = 0;
+                    for (int i = 0; i < n2; ++i)
+                        if (prefix2[i] == heat_number[i]) ++match_new;
+                    if (match_new > matched) {
+                        target_result.chars[k].ocr_confidence = c2;
+                        matched = match_new;
+                        if (verbose) {
+                            std::cout << "[DEBUG]     seg[" << k << "] re-ocr \""
+                                 << old_text << "\"->\"" << t2
+                                 << "\" (matched " << match_new << "/" << hlen << ")" << std::endl;
+                        }
+                    } else {
+                        target_result.chars[k].ocr_text = old_text;
+                    }
+                }
+            }
         }
 
         // 按当前片段顺序拼接 OCR 文本，并在倒数第三位前插入 '#'
@@ -602,6 +683,12 @@ void LuqianPipeline::warmup()
     std::vector<OCRResult> ocr_res;
     ocr_->process(dummy_imgs, ocr_res);
     std::cout << "[OK] OCR warmed up" << std::endl;
+
+    if (ocr2_) {
+        std::vector<OCRResult> ocr2_res;
+        ocr2_->process(dummy_imgs, ocr2_res);
+        std::cout << "[OK] OCR2 warmed up" << std::endl;
+    }
 
     std::vector<ClassificationResult> cls_res;
     direction_cls_->process(dummy_imgs, cls_res);

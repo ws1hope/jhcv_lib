@@ -676,7 +676,7 @@
                 "--test",
                 "-c", "test/luqian/config.yaml",
                 "-i", "images/td/20260713150306605_1.jpg",
-                "-H", "0",
+                "-H", "26507568",
                 "-s", "1"
             ],
             "stopAtEntry": false,

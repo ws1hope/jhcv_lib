@@ -57,6 +57,7 @@ private:
     std::unique_ptr<Detector> det_;
     std::unique_ptr<InstanceSegmenter> seg_;
     std::unique_ptr<OCRRecognizer> ocr_;
+    std::unique_ptr<OCRRecognizer> ocr2_;   // 二次识别 OCR（可选，为空不启用）
     std::unique_ptr<Classifier> direction_cls_;
     LuqianServerConfig config_;
 };

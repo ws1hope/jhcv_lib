@@ -53,7 +53,7 @@
             "args": [
                 "${workspaceFolder}/models/cls/resnet18_cls3.onnx",
                 "${workspaceFolder}/images/test_cls.jpg",
-                "cpu"
+                "gpu"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -61,6 +61,10 @@
                 {
                     "name": "PATH",
                     "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.18.0-cuda12.2-win-x64/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                },
+                {
+                    "name": "JHDEEP_BENCH",
+                    "value": "1"
                 }
             ],
             "console": "integratedTerminal",
@@ -74,7 +78,7 @@
             "args": [
                 "${workspaceFolder}/models/det/best.onnx",
                 "${workspaceFolder}/images/test_det.png",
-                "",
+                "none",
                 "-1",
                 "0.25",
                 "0.45"
@@ -85,6 +89,10 @@
                 {
                     "name": "PATH",
                     "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.18.0-cuda12.2-win-x64/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                },
+                {
+                    "name": "JHDEEP_BENCH",
+                    "value": "1"
                 }
             ],
             "console": "integratedTerminal",

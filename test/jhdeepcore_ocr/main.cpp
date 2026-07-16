@@ -98,10 +98,7 @@ int main(int argc, char* argv[]) {
     std::string image_path = argv[3];
     std::string device = (argc > 4) ? argv[4] : "cpu";
 
-    int device_id = 0;
-    if (device == "gpu" || device == "cuda") {
-        device_id = 0;
-    }
+    int device_id = (device == "cpu") ? -1 : 0;
 
     try {
         JHDeepCore::OCRRecognizer ocr(model_path, label_path, device_id);

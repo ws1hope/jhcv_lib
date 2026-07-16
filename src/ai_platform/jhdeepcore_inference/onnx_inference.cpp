@@ -1,4 +1,6 @@
 #include "jhdeepcore_inference/onnx_inference.h"
+#include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
@@ -8,6 +10,27 @@
 
 namespace JHDeepCore {
 namespace inference {
+
+namespace {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+bool bench_enabled() {
+    static const bool enabled = []() {
+        const char *env = std::getenv("JHDEEP_BENCH");
+        return env && std::string(env) == "1";
+    }();
+    return enabled;
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+void log_pure_inference(double ms) {
+    std::cerr << "[BENCH] Pure inference (session->Run): " << ms << " ms" << std::endl;
+}
+} // namespace
 
 static auto to_model_path(const std::string &s) {
 #ifdef _WIN32
@@ -37,6 +60,7 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
 #endif
       ,
       model_loaded_(false), warmup_enabled_(warmup) {
+    std::cerr << "[DEBUG] OnnxInference body entered, device=" << device_ << std::endl;
 #ifdef ONNXRUNTIME_FOUND
     session_options_.SetIntraOpNumThreads(8);
     session_options_.SetInterOpNumThreads(8);
@@ -117,6 +141,11 @@ bool OnnxInference::LoadModel() {
             input_size *= static_cast<size_t>(dim);
         }
         input_buffer_.resize(input_size);
+        std::cerr << "[DEBUG] LoadModel: input_shape=[";
+        for (size_t i = 0; i < input_shape_.size(); ++i) {
+            std::cerr << input_shape_[i] << (i + 1 < input_shape_.size() ? "," : "");
+        }
+        std::cerr << "] input_buffer_size=" << input_size << std::endl;
 
         // 预构建 C 字符串指针（推理时不再重复构建）
         output_names_cstr_.clear();
@@ -126,6 +155,7 @@ bool OnnxInference::LoadModel() {
         input_names_cstr_ = {input_name_.c_str()};
 
         model_loaded_ = true;
+        std::cerr << "[DEBUG] LoadModel done" << std::endl;
 
         if (warmup_enabled_ && device_ == "cuda") {
             WarmupModel();
@@ -149,7 +179,10 @@ ClassificationResult OnnxInference::InferSingle(const cv::Mat &image) {
     }
 
     cv::Mat preprocessed = PreprocessImageCommon(image);
+    std::cerr << "[DEBUG] InferSingle: preprocessed " << preprocessed.cols << "x" << preprocessed.rows
+              << " channels=" << preprocessed.channels() << std::endl;
     PreprocessForOnnx(preprocessed);
+    std::cerr << "[DEBUG] InferSingle: PreprocessForOnnx done, input_buffer_ size=" << input_buffer_.size() << std::endl;
 
     std::vector<float> output = RunInference(input_buffer_);
 
@@ -181,8 +214,13 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
         Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
 
+    auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
+    auto _bench_t1 = std::chrono::high_resolution_clock::now();
+    if (bench_enabled()) {
+        log_pure_inference(std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count());
+    }
 
     if (output_tensors.empty()) {
         throw std::runtime_error("Inference output is empty");
@@ -225,8 +263,13 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
         Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
 
+    auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
+    auto _bench_t1 = std::chrono::high_resolution_clock::now();
+    if (bench_enabled()) {
+        log_pure_inference(std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count());
+    }
 
     if (output_tensors.empty()) {
         throw std::runtime_error("Inference output is empty");
@@ -269,8 +312,13 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
         Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
 
+    auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
+    auto _bench_t1 = std::chrono::high_resolution_clock::now();
+    if (bench_enabled()) {
+        log_pure_inference(std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count());
+    }
 
     if (output_tensors.empty() || output_tensors.size() < 2) {
         throw std::runtime_error("Instance segmentation model should have two outputs");
@@ -323,14 +371,24 @@ void OnnxInference::WarmupModel(int iterations) {
 }
 
 void OnnxInference::PreprocessForOnnx(const cv::Mat &image) {
-    int channels = image.channels();
-    int height = image.rows;
-    int width = image.cols;
+    const cv::Mat *img = &image;
+    cv::Mat resized;
+    if (input_shape_.size() >= 4) {
+        int expected_h = static_cast<int>(input_shape_[2]);
+        int expected_w = static_cast<int>(input_shape_[3]);
+        if (image.rows != expected_h || image.cols != expected_w) {
+            cv::resize(image, resized, cv::Size(expected_w, expected_h));
+            img = &resized;
+        }
+    }
+
+    int channels = img->channels();
+    int height = img->rows;
+    int width = img->cols;
     int hw = height * width;
 
-    // 按行遍历，每个像素一次访问写完所有通道
     for (int h = 0; h < height; ++h) {
-        const cv::Vec3f *row = image.ptr<cv::Vec3f>(h);
+        const cv::Vec3f *row = img->ptr<cv::Vec3f>(h);
         for (int w = 0; w < width; ++w) {
             const cv::Vec3f &pixel = row[w];
             int spatial = h * width + w;
@@ -351,8 +409,13 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
         Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
                                         input_shape_.data(), input_shape_.size());
 
+    auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
+    auto _bench_t1 = std::chrono::high_resolution_clock::now();
+    if (bench_enabled()) {
+        log_pure_inference(std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count());
+    }
 
     if (output_tensors.empty()) {
         throw std::runtime_error("Inference output is empty");

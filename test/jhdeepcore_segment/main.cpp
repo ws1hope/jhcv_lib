@@ -137,8 +137,22 @@ int main(int argc, char* argv[]) {
 
     std::string model_path = argv[1];
     std::string image_path = argv[2];
-    std::string label_path = (argc > 3) ? argv[3] : "";
-    int device_id = (argc > 4) ? std::stoi(argv[4]) : 0;
+    std::string label_path = "";
+    std::string device = "cpu";
+
+    if (argc > 3) {
+        std::string arg3 = argv[3];
+        if (arg3 == "cpu" || arg3 == "gpu" || arg3 == "cuda") {
+            device = arg3;
+        } else {
+            label_path = arg3;
+            if (argc > 4) {
+                device = argv[4];
+            }
+        }
+    }
+
+    int device_id = (device == "cpu") ? -1 : 0;
 
     try {
         JHDeepCore::Segmenter segmenter(model_path, label_path, device_id);

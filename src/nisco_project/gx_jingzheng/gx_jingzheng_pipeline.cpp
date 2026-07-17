@@ -42,28 +42,6 @@ int classIdByName(const std::vector<std::string>& names, const std::string& targ
     return -1;
 }
 
-// 每个 mask (连通域) 取一种颜色 — 与类别无关，按全局序号取色环；
-// 避开绿色 (det 框) 和黄色 (左上角文字) 这两个已用色。
-cv::Scalar colorForMaskIndex(int index)
-{
-    static const std::vector<cv::Scalar> palette = {
-        cv::Scalar(0, 0, 255),     // 红
-        cv::Scalar(255, 0, 255),   // 品红
-        cv::Scalar(255, 0, 0),     // 蓝
-        cv::Scalar(0, 165, 255),   // 橙
-        cv::Scalar(128, 0, 255),   // 紫
-        cv::Scalar(0, 255, 128),   // 薄荷绿
-        cv::Scalar(255, 128, 0),   // 浅蓝
-        cv::Scalar(0, 128, 255),   // 红橙
-        cv::Scalar(128, 255, 0),   // 黄绿
-        cv::Scalar(255, 255, 0),   // 青
-        cv::Scalar(180, 180, 255), // 浅粉
-        cv::Scalar(180, 255, 180), // 浅薄荷
-    };
-    int n = static_cast<int>(palette.size());
-    return palette[((index % n) + n) % n];
-}
-
 // 计算字符串 a、b 的公共前缀长度
 size_t commonPrefixLen(const std::string& a, const std::string& b)
 {
@@ -621,57 +599,9 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
 {
     cv::Mat annotated = src_img.clone();
 
-    std::vector<std::pair<cv::Scalar, std::string>> drawn_masks; // (color, label)
-
-    if (result.branch == config_.zifu_class_name &&
-        !result.seg_instances.empty() && result.chosen_bbox.area() > 0) {
-        // 第 0 层 (zifu)：把每个实例分割 mask 半透明叠加到 chosen_bbox 区域；
-        // 即使同类的多个 mask 也用不同颜色区分，方便人眼分辨独立实例。
-        cv::Rect roi = result.chosen_bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
-        if (roi.area() > 0) {
-            cv::Mat roi_view = annotated(roi);
-            cv::Mat overlay = roi_view.clone();
-
-            std::map<std::string, int> per_class_idx;
-            int global_idx = 0;
-            for (auto& inst : result.seg_instances) {
-                if (inst.mask.empty()) continue;
-                cv::Mat mask_resized;
-                if (inst.mask.size() != roi.size()) {
-                    cv::resize(inst.mask, mask_resized, roi.size(), 0, 0, cv::INTER_NEAREST);
-                } else {
-                    mask_resized = inst.mask;
-                }
-                cv::Scalar color = colorForMaskIndex(global_idx);
-                overlay.setTo(color, mask_resized);
-                int sub_idx = ++per_class_idx[inst.class_name];
-                drawn_masks.emplace_back(color, inst.class_name + "#" + std::to_string(sub_idx));
-                global_idx++;
-            }
-
-            cv::addWeighted(overlay, 0.45, roi_view, 0.55, 0, roi_view);
-        }
-    } else if (result.branch == config_.gangbiao_class_name &&
-               !result.tiebiao_annotated.empty() && result.chosen_bbox.area() > 0) {
-        // 第 0 层 (gangbiao)：把 tiebiao 标注好的 crop (其标注图顶部 crop 大小区域)
-        // 贴回原图 chosen_bbox 位置，使结果展示在输入原图上 (与 zifu 分支一致)。
-        // 贴回时整体压暗一档，让框内左上角炉号文字等标注显得更浅、不抢视觉。
-        cv::Rect roi = result.chosen_bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
-        if (roi.area() > 0 &&
-            result.tiebiao_annotated.cols >= roi.width &&
-            result.tiebiao_annotated.rows >= roi.height) {
-            cv::Mat crop_ann = result.tiebiao_annotated(
-                cv::Rect(0, 0, roi.width, roi.height)).clone();
-            cv::Mat dimmed;
-            crop_ann.convertTo(dimmed, -1, 0.1, 20);  // 亮度×0.6、提一点底避免过黑
-            dimmed.copyTo(annotated(roi));
-        }
-    }
-
     // 第 1 层：所有 det 框（最左被选中的高亮），不写框上方文字标签
-    // 颜色统一偏浅：选中框用浅薄荷绿描边 + 极低 alpha 同色填充；未选中框用浅灰
+    // 颜色统一偏浅：选中框用浅薄荷绿描边；未选中框用浅灰
     const cv::Scalar chosen_edge(180, 255, 200);   // 浅薄荷绿 (BGR)
-    const cv::Scalar chosen_fill(180, 255, 200);
     const cv::Scalar other_edge(190, 190, 190);    // 浅灰
     for (size_t i = 0; i < result.det_detections.size(); i++) {
         const auto& det = result.det_detections[i];
@@ -679,50 +609,9 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
         cv::Rect r = det.bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
         if (r.area() <= 0) continue;
         if (is_chosen) {
-            // 极低 alpha 半透明填充，避免盖住框内 tiebiao/mask 内容
-            cv::Mat roi_view = annotated(r);
-            cv::Mat overlay = roi_view.clone();
-            overlay.setTo(chosen_fill);
-            cv::addWeighted(overlay, 0.15, roi_view, 0.85, 0, roi_view);
             cv::rectangle(annotated, det.bbox, chosen_edge, 3, cv::LINE_AA);
         } else {
             cv::rectangle(annotated, det.bbox, other_edge, 2, cv::LINE_AA);
-        }
-    }
-
-    // 第 1.5 层：zifu 分支每个实例 mask 的最小外接矩 (旋转矩形)，画在原图坐标系上
-    if (result.branch == config_.zifu_class_name &&
-        !result.seg_instances.empty() &&
-        result.chosen_bbox.area() > 0) {
-        cv::Rect roi = result.chosen_bbox & cv::Rect(0, 0, annotated.cols, annotated.rows);
-        if (roi.area() > 0) {
-            for (const auto& inst : result.seg_instances) {
-                if (inst.class_name != config_.zifu_class_name || inst.mask.empty()) continue;
-                cv::Mat mask_resized;
-                if (inst.mask.size() != roi.size()) {
-                    cv::resize(inst.mask, mask_resized, roi.size(), 0, 0, cv::INTER_NEAREST);
-                } else {
-                    mask_resized = inst.mask;
-                }
-                std::vector<std::vector<cv::Point>> contours;
-                cv::findContours(mask_resized, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-                if (contours.empty()) continue;
-                auto biggest = std::max_element(contours.begin(), contours.end(),
-                    [](const std::vector<cv::Point>& a, const std::vector<cv::Point>& b) {
-                        return cv::contourArea(a) < cv::contourArea(b);
-                    });
-                cv::RotatedRect rr = cv::minAreaRect(*biggest);
-                cv::Point2f pts[4];
-                rr.points(pts);
-                for (int j = 0; j < 4; j++) {
-                    pts[j].x += roi.x;
-                    pts[j].y += roi.y;
-                }
-                for (int j = 0; j < 4; j++) {
-                    cv::line(annotated, pts[j], pts[(j + 1) % 4],
-                             cv::Scalar(255, 255, 255), 3, cv::LINE_AA);
-                }
-            }
         }
     }
 
@@ -758,26 +647,6 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
             cv::putText(annotated, "ocr: " + result.ocr_text,
                         cv::Point(20, 200),
                         cv::FONT_HERSHEY_SIMPLEX, 4.0, cv::Scalar(0, 0, 255), 8);
-        }
-    }
-
-    // 第 3 层：mask legend（每行：色块 + 标签），位于 ocr 行下方
-    if (!drawn_masks.empty()) {
-        const int legend_x = 20;
-        int legend_y = 240;
-        const int box = 50;
-        const int row_gap = 70;
-        for (auto& kv : drawn_masks) {
-            cv::Rect color_box(legend_x, legend_y, box, box);
-            color_box &= cv::Rect(0, 0, annotated.cols, annotated.rows);
-            if (color_box.area() > 0) {
-                cv::rectangle(annotated, color_box, kv.first, -1);
-                cv::rectangle(annotated, color_box, cv::Scalar(255, 255, 255), 2);
-            }
-            cv::putText(annotated, kv.second,
-                        cv::Point(legend_x + box + 15, legend_y + box - 10),
-                        cv::FONT_HERSHEY_SIMPLEX, 1.4, cv::Scalar(255, 255, 255), 3);
-            legend_y += row_gap;
         }
     }
 

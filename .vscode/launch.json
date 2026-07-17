@@ -871,8 +871,8 @@
             "args": [
                 "--test",
                 "-c", "test/gx_jingzheng/config.yaml",
-                "-i", "images/gx_xm_test/20260710081014191_1.jpg",
-                "-H", "26705279",
+                "-i", "images/gx_pw_test/20260708082546820_3.jpg",
+                "-H", "26912075",
                 "-s", "1"
             ],
             "stopAtEntry": false,

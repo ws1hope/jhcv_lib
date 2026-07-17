@@ -310,6 +310,9 @@ cv::Mat TiebiaoPipeline::createAnnotatedImage(
             resized.push_back(r);
         }
         if (resized.empty()) return cv::Mat();
+        // 按显示宽度从大到小排列字符片段
+        std::sort(resized.begin(), resized.end(),
+            [](const cv::Mat& a, const cv::Mat& b) { return a.cols > b.cols; });
         int total_w = 0;
         for (auto& r : resized) total_w += r.cols + char_margin;
         total_w -= char_margin;

@@ -94,6 +94,18 @@ struct LuqianServerConfig {
     std::string device = "cuda";
 };
 
+struct XintiangangServerConfig {
+    std::string service_name = "xintiangang";
+    std::string host = "0.0.0.0";
+    int port = 8086;
+    std::string result_dir = "D:\\CharacterDetect\\result";
+    std::string log_dir = "D:\\CharacterDetect\\log";
+    std::string det_model;       // 目标检测模型
+    std::string ocr_model;       // OCR 识别模型
+    std::string ocr_label;       // OCR 字典
+    std::string device = "cuda";
+};
+
 struct ZbsltjServerConfig {
     std::string service_name = "zbsltj";
     std::string host = "127.0.0.1";
@@ -157,6 +169,8 @@ public:
     static JHDeepCore::ZbhcServerConfig loadZbhcConfig(const std::string& config_path);
 
     static JHDeepCore::LuqianServerConfig loadLuqianConfig(const std::string& config_path);
+
+    static JHDeepCore::XintiangangServerConfig loadXintiangangConfig(const std::string& config_path);
 
     static JHDeepCore::ZbsltjServerConfig loadZbsltjConfig(const std::string& config_path);
 

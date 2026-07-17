@@ -1,0 +1,13 @@
+server:
+  service_name: "xintiangang"
+  host: "127.0.0.1"
+  port: 8086
+models:
+  det_model: "models/xintiangang/best.onnx"
+  ocr_model: "models/xintiangang/rec.onnx"
+  ocr_label: "models/xintiangang/rec.yaml"
+inference:
+  device: "cpu"
+output:
+  result_dir: "D:\\CharacterDetect\\result"
+  log_dir: "D:\\CharacterDetect\\log"

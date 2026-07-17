@@ -183,6 +183,35 @@ JHDeepCore::LuqianServerConfig FileHelper::loadLuqianConfig(const std::string& c
     return cfg;
 }
 
+JHDeepCore::XintiangangServerConfig FileHelper::loadXintiangangConfig(const std::string& config_path)
+{
+    JHDeepCore::XintiangangServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+    }
+
+    if (node["output"]) {
+        cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+    }
+
+    if (node["models"]) {
+        cfg.det_model = node["models"]["det_model"].as<std::string>("");
+        cfg.ocr_model = node["models"]["ocr_model"].as<std::string>("");
+        cfg.ocr_label = node["models"]["ocr_label"].as<std::string>("");
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    return cfg;
+}
+
 JHDeepCore::ZbsltjServerConfig FileHelper::loadZbsltjConfig(const std::string& config_path)
 {
     JHDeepCore::ZbsltjServerConfig cfg;

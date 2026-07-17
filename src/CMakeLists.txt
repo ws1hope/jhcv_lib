@@ -102,6 +102,12 @@ set(JIUYANG_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/jiuyang/jiuyang_pipeline.cpp
 )
 
+# xintiangang 模块 - 目标检测+OCR 识别服务
+set(XINTIANGANG_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/xintiangang_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/xintiangang_service.cpp
+)
+
 # utils 模块
 set(UTILS_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/utils/file_utils.cpp
@@ -146,6 +152,7 @@ set(ALL_SOURCES
     ${AI_PLATFORM_MAIN_SOURCES}
     ${NISCO_PROJECT_SOURCES}
     ${JIUYANG_SOURCES}
+    ${XINTIANGANG_SOURCES}
     ${UTILS_SOURCES}
     ${CV_HOMOGRAPHY_SOURCES}
     ${MTRACKER_SOURCES}
@@ -176,6 +183,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/gx_jingzheng
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/section_angle
     ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang
+    ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/cv_homography
@@ -212,6 +220,7 @@ if(MSVC)
         ${AI_PLATFORM_MAIN_SOURCES}
         ${NISCO_PROJECT_SOURCES}
         ${JIUYANG_SOURCES}
+        ${XINTIANGANG_SOURCES}
         ${UTILS_SOURCES}
         ${CV_HOMOGRAPHY_SOURCES}
         PROPERTIES COMPILE_FLAGS "/utf-8"

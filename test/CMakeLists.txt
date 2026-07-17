@@ -35,6 +35,9 @@ add_executable(zbhc ${CMAKE_CURRENT_SOURCE_DIR}/zbhc/main.cpp)
 # ========== Luqian 字符识别服务 ==========
 add_executable(luqian ${CMAKE_CURRENT_SOURCE_DIR}/luqian/main.cpp)
 
+# ========== Xintiangang 目标检测+OCR 服务 ==========
+add_executable(xintiangang ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/main.cpp)
+
 # ========== ZBSLTJ 喷码识别服务 ==========
 add_executable(zbsltj ${CMAKE_CURRENT_SOURCE_DIR}/zbsltj/main.cpp)
 
@@ -71,6 +74,7 @@ set(TEST_TARGETS
     dispatch
     zbhc
     luqian
+    xintiangang
     zbsltj
     gx_jingzheng
     homography_test
@@ -126,6 +130,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/luqian/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== Xintiangang 目标检测+OCR 服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

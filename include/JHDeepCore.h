@@ -287,6 +287,25 @@ class LuqianService {
     std::shared_ptr<LuqianServicePrivate> m_pHandle;
 };
 
+class XintiangangServicePrivate;
+class XintiangangService {
+  public:
+    explicit XintiangangService(const std::string &config_path);
+    ~XintiangangService();
+
+    XintiangangService(const XintiangangService &) = delete;
+    XintiangangService &operator=(const XintiangangService &) = delete;
+
+    const struct XintiangangServerConfig &config() const;
+    std::string handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int station_id);
+
+  private:
+    std::shared_ptr<XintiangangServicePrivate> m_pHandle;
+};
+
 struct SectionAngleItem {
     int instance_id = 0;
     cv::Point2f corners[4];

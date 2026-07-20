@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
         resp.status = 200;
     });
 
-    server.Post(prefix + "/character_recognition",
+    server.Post(prefix,
         [&service](const httplib::Request& req, httplib::Response& res) {
             std::string result = service.handleRequest(req.body);
             res.set_content(result, "application/json");
@@ -120,7 +120,7 @@ int main(int argc, char* argv[])
 
     std::cout << "[INFO] HTTP server start: " << service.config().host
               << ":" << service.config().port << std::endl;
-    std::cout << "[INFO] POST " << prefix << "/character_recognition" << std::endl;
+    std::cout << "[INFO] POST " << prefix << std::endl;
     std::cout << "[INFO] GET  " << prefix << "/hello" << std::endl;
     std::cout << "[INFO] GET  " << prefix << "/stop" << std::endl;
 

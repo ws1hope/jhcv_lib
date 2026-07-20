@@ -15,9 +15,8 @@ namespace Pipeline {
 
 namespace {
 
-// 几何判向：倾斜矫正后，字符框按从上到下(center_y)排序，
-// bbox.width 递减 -> 正向(0°)，递增 -> 反向(180°)。
-// 用相邻对的递减/递增计数取多数，抗噪；并列默认正向(0°)。
+// 几何判向：找宽度最大和最小的字符框，比较中心 y 坐标，
+// 最大宽度框在上方 -> 正向(0°)，反之 -> 反向(180°)。
 int classifyDirectionByGeometry(const std::vector<CharCropInfo>& char_crops,
                                  int* dec_out = nullptr, int* inc_out = nullptr)
 {
@@ -27,21 +26,17 @@ int classifyDirectionByGeometry(const std::vector<CharCropInfo>& char_crops,
         if (inc_out) *inc_out = 0;
         return 0;
     }
-    std::vector<int> order(n);
-    for (int i = 0; i < n; i++) order[i] = i;
-    std::sort(order.begin(), order.end(), [&](int a, int b) {
-        return char_crops[a].center_y < char_crops[b].center_y;   // 从上到下
-    });
-    int dec = 0, inc = 0;
-    for (int i = 1; i < n; i++) {
-        int w_prev = char_crops[order[i - 1]].bbox.width;
-        int w_cur  = char_crops[order[i]].bbox.width;
-        if (w_cur < w_prev) dec++;
-        else if (w_cur > w_prev) inc++;
-    }
-    if (dec_out) *dec_out = dec;
-    if (inc_out) *inc_out = inc;
-    return (inc > dec) ? 180 : 0;   // 递减->0°，递增->180°，并列->0°
+    auto max_it = std::max_element(char_crops.begin(), char_crops.end(),
+        [](const CharCropInfo& a, const CharCropInfo& b) {
+            return a.bbox.width < b.bbox.width;
+        });
+    auto min_it = std::min_element(char_crops.begin(), char_crops.end(),
+        [](const CharCropInfo& a, const CharCropInfo& b) {
+            return a.bbox.width < b.bbox.width;
+        });
+    if (dec_out) *dec_out = 0;
+    if (inc_out) *inc_out = 0;
+    return (max_it->center_y < min_it->center_y) ? 0 : 180;
 }
 
 } // namespace

@@ -2,6 +2,7 @@
 
 #include <opencv2/core.hpp>
 
+#include <string>
 #include <vector>
 
 namespace JHDeepCore {
@@ -29,6 +30,10 @@ struct BilletBendConfig {
     // The positive scan direction goes from the near end to the far end.
     // For the usual camera layout this is upwards in the image.
     cv::Point2f preferredDirection = cv::Point2f(0.0f, -1.0f);
+
+    /// If non-empty, per-component debug PNGs (mask, distance, axes,
+    /// slices+peaks, tracks, result, overview) are written to this directory.
+    std::string debugDir;
 };
 
 struct BilletBendResult {
@@ -51,8 +56,9 @@ class BilletBendDetector {
   public:
     explicit BilletBendDetector(BilletBendConfig config = {});
 
-    /// Detect bending directly from a combined binary mask. Foreground may contain
-    /// several billets and may be connected at the far end.
+    /// Detect bending from a binary mask. Each disconnected foreground component
+    /// is analyzed independently; components connected at the far end retain the
+    /// multi-track fallback.
     std::vector<BilletBendResult> detect(const cv::Mat &mask) const;
 
     /// Draw center samples, fitted reference lines and metrics.

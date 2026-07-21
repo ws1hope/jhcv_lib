@@ -1,12 +1,15 @@
 #include "billet_bend_detector.h"
 
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
+#include <string>
 
 namespace JHDeepCore {
 namespace {
@@ -98,6 +101,89 @@ std::vector<float> smooth(const std::vector<float> &profile) {
     return output;
 }
 
+// ---- optional debug visualization (writes PNGs to BilletBendConfig::debugDir) ----
+void debugWrite(const std::string &dir, int index, const char *name, const cv::Mat &img) {
+    if (dir.empty()) return;
+    const std::string path = dir + "/comp" + std::to_string(index) + "_" + name + ".png";
+    cv::imwrite(path, img);
+}
+
+cv::Mat maskToBGR(const cv::Mat &mask) {
+    cv::Mat bgr;
+    cv::cvtColor(mask, bgr, cv::COLOR_GRAY2BGR);
+    return bgr;
+}
+
+cv::Mat distanceToColor(const cv::Mat &dist) {
+    double maxVal = 1.0;
+    cv::minMaxLoc(dist, nullptr, &maxVal);
+    cv::Mat gray;
+    dist.convertTo(gray, CV_8U, maxVal > 1e-6 ? 255.0 / maxVal : 0.0);
+    cv::Mat color;
+    cv::applyColorMap(gray, color, cv::COLORMAP_JET);
+    return color;
+}
+
+cv::Point2f projectToImage(const cv::Point2f &origin, const cv::Point2f &lengthAxis,
+                           const cv::Point2f &widthAxis, float s, float t) {
+    return origin + s * lengthAxis + t * widthAxis;
+}
+
+void drawAxesOverlay(cv::Mat &canvas, const cv::Point2f &origin,
+                     const cv::Point2f &lengthAxis, const cv::Point2f &widthAxis,
+                     float minS, float maxS, float minT, float maxT) {
+    const cv::Point2f s0 = projectToImage(origin, lengthAxis, widthAxis, minS, 0.0f);
+    const cv::Point2f s1 = projectToImage(origin, lengthAxis, widthAxis, maxS, 0.0f);
+    const cv::Point2f t0 = projectToImage(origin, lengthAxis, widthAxis, 0.0f, minT);
+    const cv::Point2f t1 = projectToImage(origin, lengthAxis, widthAxis, 0.0f, maxT);
+    cv::arrowedLine(canvas, s0, s1, cv::Scalar(0, 0, 255), 2, cv::LINE_AA, 0, 0.02); // length
+    cv::arrowedLine(canvas, t0, t1, cv::Scalar(255, 0, 0), 2, cv::LINE_AA, 0, 0.02); // width
+    cv::circle(canvas, origin, 5, cv::Scalar(0, 255, 255), cv::FILLED, cv::LINE_AA); // origin
+    cv::putText(canvas, "length", s1 + cv::Point2f(6, -6),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+    cv::putText(canvas, "width", t1 + cv::Point2f(6, -6),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 1, cv::LINE_AA);
+}
+
+void drawSlicesPeaks(cv::Mat &canvas, const cv::Point2f &origin,
+                     const cv::Point2f &lengthAxis, const cv::Point2f &widthAxis,
+                     float minT, float maxT,
+                     const std::vector<std::pair<float, std::vector<Peak>>> &slices) {
+    for (const auto &slice : slices) {
+        const cv::Point2f a = projectToImage(origin, lengthAxis, widthAxis, slice.first, minT);
+        const cv::Point2f b = projectToImage(origin, lengthAxis, widthAxis, slice.first, maxT);
+        cv::line(canvas, a, b, cv::Scalar(255, 255, 0), 1, cv::LINE_AA); // slice
+        for (const Peak &peak : slice.second) {
+            cv::circle(canvas, peak.point, 3, cv::Scalar(0, 0, 255), cv::FILLED, cv::LINE_AA);
+        }
+    }
+}
+
+const cv::Scalar &trackColor(size_t i) {
+    static const cv::Scalar palette[] = {
+        cv::Scalar(0, 0, 255),   cv::Scalar(0, 255, 0),   cv::Scalar(255, 0, 0),
+        cv::Scalar(255, 255, 0), cv::Scalar(0, 255, 255), cv::Scalar(255, 0, 255),
+        cv::Scalar(0, 128, 255), cv::Scalar(128, 255, 0)};
+    return palette[i % (sizeof(palette) / sizeof(palette[0]))];
+}
+
+void drawTracksOverlay(cv::Mat &canvas, const std::vector<Track> &tracks) {
+    for (size_t i = 0; i < tracks.size(); ++i) {
+        const cv::Scalar color = trackColor(i);
+        const std::vector<Peak> &pts = tracks[i].points;
+        for (size_t j = 0; j < pts.size(); ++j) {
+            cv::circle(canvas, pts[j].point, 2, color, cv::FILLED, cv::LINE_AA);
+            if (j > 0) {
+                cv::line(canvas, pts[j - 1].point, pts[j].point, color, 1, cv::LINE_AA);
+            }
+        }
+        if (!pts.empty()) {
+            cv::putText(canvas, "T" + std::to_string(tracks[i].id), pts.front().point,
+                        cv::FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv::LINE_AA);
+        }
+    }
+}
+
 } // namespace
 
 BilletBendDetector::BilletBendDetector(BilletBendConfig config) : config_(std::move(config)) {
@@ -106,8 +192,8 @@ BilletBendDetector::BilletBendDetector(BilletBendConfig config) : config_(std::m
     }
 }
 
-std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMask) const {
-    const cv::Mat mask = prepareMask(inputMask, config_.minConnectedArea);
+static std::vector<BilletBendResult> detectConnectedComponent(
+    const cv::Mat &mask, const BilletBendConfig &config, int firstResultId) {
     if (mask.empty() || cv::countNonZero(mask) == 0) {
         return {};
     }
@@ -134,7 +220,7 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
          static_cast<float>(pca.eigenvectors.at<double>(0, 1))},
         {static_cast<float>(pca.eigenvectors.at<double>(1, 0)),
          static_cast<float>(pca.eigenvectors.at<double>(1, 1))}};
-    cv::Point2f preferred = config_.preferredDirection;
+    cv::Point2f preferred = config.preferredDirection;
     const float preferredNorm = std::hypot(preferred.x, preferred.y);
     preferred = preferredNorm > 1e-6f ? preferred * (1.0f / preferredNorm) : cv::Point2f(0, -1);
     int longIndex = std::abs(axes[1].dot(preferred)) > std::abs(axes[0].dot(preferred)) ? 1 : 0;
@@ -162,14 +248,14 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
 
     auto extractPeaks = [&](float sliceS) {
         const int count = static_cast<int>(std::ceil((maxT - minT) /
-                                                     config_.transverseResolution)) + 1;
+                                                     config.transverseResolution)) + 1;
         std::vector<float> profile(count, 0.0f);
         std::vector<cv::Point2f> points(count, cv::Point2f(-1, -1));
         for (const LocalPixel &pixel : pixels) {
-            if (std::abs(pixel.s - sliceS) > config_.sliceHalfThickness) {
+            if (std::abs(pixel.s - sliceS) > config.sliceHalfThickness) {
                 continue;
             }
-            const int index = cvRound((pixel.t - minT) / config_.transverseResolution);
+            const int index = cvRound((pixel.t - minT) / config.transverseResolution);
             if (index >= 0 && index < count && pixel.radius > profile[index]) {
                 profile[index] = pixel.radius;
                 points[index] = pixel.point;
@@ -178,7 +264,7 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
         const std::vector<float> filtered = smooth(profile);
         std::vector<int> candidates;
         for (int i = 2; i + 2 < count; ++i) {
-            if (filtered[i] >= config_.minRadius && filtered[i] >= filtered[i - 1] &&
+            if (filtered[i] >= config.minRadius && filtered[i] >= filtered[i - 1] &&
                 filtered[i] >= filtered[i + 1] && filtered[i] >= filtered[i - 2] &&
                 filtered[i] >= filtered[i + 2]) {
                 candidates.push_back(i);
@@ -189,8 +275,8 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
         std::vector<int> selected;
         for (int candidate : candidates) {
             const bool close = std::any_of(selected.begin(), selected.end(), [&](int chosen) {
-                return std::abs(candidate - chosen) * config_.transverseResolution <
-                       config_.minPeakSpacing;
+                return std::abs(candidate - chosen) * config.transverseResolution <
+                       config.minPeakSpacing;
             });
             if (!close && points[candidate].x >= 0.0f) {
                 selected.push_back(candidate);
@@ -198,7 +284,7 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
         }
         std::vector<Peak> peaks;
         for (int index : selected) {
-            peaks.push_back({sliceS, minT + index * config_.transverseResolution,
+            peaks.push_back({sliceS, minT + index * config.transverseResolution,
                              points[index], profile[index]});
         }
         std::sort(peaks.begin(), peaks.end(), [](const Peak &a, const Peak &b) {
@@ -208,10 +294,10 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
     };
 
     const float totalLength = maxS - minS;
-    const float startS = minS + config_.endTrimRatio * totalLength;
-    const float endS = maxS - config_.endTrimRatio * totalLength;
+    const float startS = minS + config.endTrimRatio * totalLength;
+    const float endS = maxS - config.endTrimRatio * totalLength;
     std::vector<std::pair<float, std::vector<Peak>>> slices;
-    for (float s = startS; s <= endS; s += config_.sliceStep) {
+    for (float s = startS; s <= endS; s += config.sliceStep) {
         slices.emplace_back(s, extractPeaks(s));
     }
     if (slices.empty()) {
@@ -227,8 +313,8 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
             bestCount = slices[i].second.size();
             init = i;
         }
-        if (config_.expectedBilletCount > 0 &&
-            slices[i].second.size() == static_cast<size_t>(config_.expectedBilletCount)) {
+        if (config.expectedBilletCount > 0 &&
+            slices[i].second.size() == static_cast<size_t>(config.expectedBilletCount)) {
             init = i;
             bestCount = slices[i].second.size();
             break;
@@ -237,14 +323,14 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
     if (bestCount == 0) {
         return {};
     }
-    const int referenceCount = config_.expectedBilletCount > 0
-                                   ? config_.expectedBilletCount
+    const int referenceCount = config.expectedBilletCount > 0
+                                   ? config.expectedBilletCount
                                    : static_cast<int>(bestCount);
-    const int minimumCount = std::max(1, cvCeil(referenceCount * config_.minimumPeakCountRatio));
+    const int minimumCount = std::max(1, cvCeil(referenceCount * config.minimumPeakCountRatio));
     std::vector<Track> tracks;
     for (int i = 0; i < static_cast<int>(slices[init].second.size()); ++i) {
         Track track;
-        track.id = i;
+        track.id = firstResultId + i;
         track.points.push_back(slices[init].second[i]);
         tracks.push_back(std::move(track));
     }
@@ -274,12 +360,12 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
                     best = i;
                 }
             }
-            if (best < 0 || bestDistance > config_.maxMatchDistance) {
-                if (++track.missing >= config_.maxMissingSlices) track.active = false;
+            if (best < 0 || bestDistance > config.maxMatchDistance) {
+                if (++track.missing >= config.maxMissingSlices) track.active = false;
                 continue;
             }
             if (last.radius > 1e-6f &&
-                peaks[best].radius > last.radius * config_.radiusIncreaseRatio) {
+                peaks[best].radius > last.radius * config.radiusIncreaseRatio) {
                 track.active = false;
                 track.stoppedAtMerge = true;
                 continue;
@@ -295,7 +381,7 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
         BilletBendResult result;
         result.id = track.id;
         result.stoppedAtMerge = track.stoppedAtMerge;
-        if (static_cast<int>(track.points.size()) < config_.minTrackPoints) {
+        if (static_cast<int>(track.points.size()) < config.minTrackPoints) {
             results.push_back(result);
             continue;
         }
@@ -308,7 +394,7 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
         cv::fitLine(centerPoints, result.fittedLine, cv::DIST_HUBER, 0, 0.01, 0.01);
         std::vector<float> normalized;
         for (size_t i = 0; i < centerPoints.size(); ++i) {
-            if (widths[i] >= 2.0f * config_.minRadius) {
+            if (widths[i] >= 2.0f * config.minRadius) {
                 normalized.push_back(pointLineDistance(centerPoints[i], result.fittedLine) /
                                      widths[i]);
             }
@@ -325,13 +411,83 @@ std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMas
         result.bend95 = normalized[p95];
         result.bendMax = normalized.back();
         result.bendRms = std::sqrt(squareSum / normalized.size());
-        result.bent = result.bend95 > config_.bend95Threshold &&
-                      result.bendRms > config_.bendRmsThreshold;
+        result.bent = result.bend95 > config.bend95Threshold &&
+                      result.bendRms > config.bendRmsThreshold;
         result.medianWidth = median(widths);
         result.validLengthRatio = std::min(1.0f,
             (track.points.back().s - track.points.front().s) / std::max(totalLength, 1.0f));
         result.centerPoints = std::move(centerPoints);
         results.push_back(std::move(result));
+    }
+
+    if (!config.debugDir.empty()) {
+        cv::Mat cMask = maskToBGR(mask);
+        cv::Mat cDist = distanceToColor(distanceMap);
+        cv::Mat cAxes = maskToBGR(mask);
+        drawAxesOverlay(cAxes, origin, lengthAxis, widthAxis, minS, maxS, minT, maxT);
+        cv::Mat cSlices = maskToBGR(mask);
+        drawSlicesPeaks(cSlices, origin, lengthAxis, widthAxis, minT, maxT, slices);
+        cv::Mat cTracks = maskToBGR(mask);
+        drawTracksOverlay(cTracks, tracks);
+        cv::Mat cResult = maskToBGR(mask);
+        BilletBendDetector::draw(cResult, results);
+
+        debugWrite(config.debugDir, firstResultId, "01_mask", cMask);
+        debugWrite(config.debugDir, firstResultId, "02_distance", cDist);
+        debugWrite(config.debugDir, firstResultId, "03_axes", cAxes);
+        debugWrite(config.debugDir, firstResultId, "04_slices_peaks", cSlices);
+        debugWrite(config.debugDir, firstResultId, "05_tracks", cTracks);
+        debugWrite(config.debugDir, firstResultId, "06_result", cResult);
+
+        // Single composite ("one picture") tiling the six stages.
+        const double tileScale = 320.0 / std::max(1, cMask.cols);
+        auto scaleTile = [&](const cv::Mat &img) {
+            cv::Mat out;
+            cv::resize(img, out, cv::Size(), tileScale, tileScale, cv::INTER_NEAREST);
+            return out;
+        };
+        cv::Mat tiles[6] = {scaleTile(cMask), scaleTile(cDist), scaleTile(cAxes),
+                            scaleTile(cSlices), scaleTile(cTracks), scaleTile(cResult)};
+        const char *labels[6] = {"1.mask", "2.distance", "3.axes",
+                                 "4.slices+peaks", "5.tracks", "6.result"};
+        for (int i = 0; i < 6; ++i) {
+            cv::putText(tiles[i], labels[i], cv::Point(8, 22),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+        }
+        cv::Mat row0, row1, overview;
+        cv::hconcat(std::vector<cv::Mat>{tiles[0], tiles[1], tiles[2]}, row0);
+        cv::hconcat(std::vector<cv::Mat>{tiles[3], tiles[4], tiles[5]}, row1);
+        cv::vconcat(std::vector<cv::Mat>{row0, row1}, overview);
+        debugWrite(config.debugDir, firstResultId, "00_overview", overview);
+    }
+    return results;
+}
+
+std::vector<BilletBendResult> BilletBendDetector::detect(const cv::Mat &inputMask) const {
+    const cv::Mat mask = prepareMask(inputMask, config_.minConnectedArea);
+    if (mask.empty() || cv::countNonZero(mask) == 0) {
+        return {};
+    }
+
+    cv::Mat labels, stats, centroids;
+    const int componentCount =
+        cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
+    std::vector<BilletBendResult> results;
+    for (int label = 1; label < componentCount; ++label) {
+        cv::Mat componentMask;
+        cv::compare(labels, label, componentMask, cv::CMP_EQ);
+
+        BilletBendConfig componentConfig = config_;
+        // expectedBilletCount describes the combined input. Once components have
+        // been separated, an isolated component normally contains one billet.
+        if (componentCount > 2) {
+            componentConfig.expectedBilletCount = 1;
+        }
+        auto componentResults =
+            detectConnectedComponent(componentMask, componentConfig,
+                                     static_cast<int>(results.size()));
+        results.insert(results.end(), std::make_move_iterator(componentResults.begin()),
+                       std::make_move_iterator(componentResults.end()));
     }
     return results;
 }

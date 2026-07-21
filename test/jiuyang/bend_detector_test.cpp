@@ -2,6 +2,7 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include <filesystem>
 #include <iostream>
 
 int main() {
@@ -23,6 +24,9 @@ int main() {
     config.minTrackPoints = 25;
     config.bend95Threshold = 0.035f;
     config.bendRmsThreshold = 0.018f;
+    config.debugDir = "result/bend_debug/merged";
+    std::error_code ec;
+    std::filesystem::create_directories(config.debugDir, ec);
 
     JHDeepCore::BilletBendDetector detector(config);
     const auto results = detector.detect(mask);
@@ -40,6 +44,30 @@ int main() {
     if (validCount < 3 || bentCount < 1) {
         std::cerr << "Synthetic bend detection failed: valid=" << validCount
                   << ", bent=" << bentCount << std::endl;
+        return 1;
+    }
+
+    // Disconnected billets must each use their own foreground pixels for PCA.
+    cv::Mat separatedMask = cv::Mat::zeros(480, 520, CV_8U);
+    cv::line(separatedMask, cv::Point(70, 440), cv::Point(150, 45),
+             cv::Scalar(255), 24, cv::LINE_8);
+    cv::line(separatedMask, cv::Point(260, 440), cv::Point(260, 45),
+             cv::Scalar(255), 24, cv::LINE_8);
+    cv::line(separatedMask, cv::Point(450, 440), cv::Point(370, 45),
+             cv::Scalar(255), 24, cv::LINE_8);
+
+    JHDeepCore::BilletBendConfig separatedConfig = config;
+    separatedConfig.debugDir = "result/bend_debug/separated";
+    std::filesystem::create_directories(separatedConfig.debugDir, ec);
+    JHDeepCore::BilletBendDetector separatedDetector(separatedConfig);
+    const auto separatedResults = separatedDetector.detect(separatedMask);
+    int separatedValidCount = 0;
+    for (const auto &result : separatedResults) {
+        if (result.valid) ++separatedValidCount;
+    }
+    if (separatedResults.size() != 3 || separatedValidCount != 3) {
+        std::cerr << "Disconnected-component PCA failed: results="
+                  << separatedResults.size() << ", valid=" << separatedValidCount << std::endl;
         return 1;
     }
     return 0;

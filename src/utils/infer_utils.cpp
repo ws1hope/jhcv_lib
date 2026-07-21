@@ -50,38 +50,21 @@ std::string InferHelper::fixLuhaoChars(std::string text)
     return text;
 }
 
-int InferHelper::countCommonChars(const std::string& a, const std::string& b)
-{
-    int count = 0;
-    int len = static_cast<int>(std::min(a.size(), b.size()));
-    for (int i = 0; i < len; i++) {
-        if (a[i] == b[i]) count++;
-    }
-    return count;
-}
-
 int InferHelper::findBestLuhaoMatch(const std::vector<std::string>& ocr_texts,
                                       const std::string& heat_number)
 {
+    // 新标准：返回首个“长度 > 9 且前两位为数字、第 1 位 >= '2' 且第 2 位 >= '6'”的结果（例 "27..."）。
+    // 不再依据输入炉号 heat_number 做字符匹配；参数保留以兼容现有调用方。
+    (void)heat_number;
     if (ocr_texts.empty()) return -1;
 
-    std::vector<int> scores(ocr_texts.size(), 0);
     for (int i = 0; i < (int)ocr_texts.size(); i++) {
-        scores[i] = countCommonChars(ocr_texts[i], heat_number);
-    }
-
-    auto max_it = std::max_element(scores.begin(), scores.end());
-    int max_idx = static_cast<int>(std::distance(scores.begin(), max_it));
-    int max_val = scores[max_idx];
-
-    if (max_val >= 4) return max_idx;
-
-    for (int i = 0; i < (int)ocr_texts.size(); i++) {
-        if (ocr_texts[i].size() > 7 && !ocr_texts[i].empty() &&
-            ocr_texts[i][0] >= '0' && ocr_texts[i][0] <= '9') {
+        const std::string& t = ocr_texts[i];
+        if (t.size() > 9 &&
+            t[0] >= '2' && t[0] <= '9' &&
+            t[1] >= '6' && t[1] <= '9') {
             return i;
         }
     }
-
     return -1;
 }

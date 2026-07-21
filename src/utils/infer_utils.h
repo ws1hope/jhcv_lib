@@ -47,8 +47,6 @@ public:
 
     static std::string fixLuhaoChars(std::string text);
 
-    static int countCommonChars(const std::string& a, const std::string& b);
-
     static int findBestLuhaoMatch(const std::vector<std::string>& ocr_texts,
                                    const std::string& heat_number);
 };

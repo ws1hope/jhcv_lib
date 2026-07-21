@@ -15,11 +15,11 @@
 namespace JHDeepCore {
 namespace Pipeline {
 
-// 单个字符片段（zifu 分支专用，模型存在的展示信息）
 struct GxJingzhengCharInfo {
-    cv::Rect bbox;            // 字符在旋转后图像上的 bbox
-    cv::Mat image_before_flip; // 方向矫正前（旋转后裁出的原始片段）
-    cv::Mat image_after_flip;  // 方向矫正后（送 OCR 的片段）
+    cv::Rect bbox;
+    cv::Mat image_rect_crop;     // 最小外接矩 boundingRect 直接截取
+    cv::Mat image_before_flip;   // 仿射变换后、方向矫正前（长边水平）
+    cv::Mat image_after_flip;    // 方向矫正后（送 OCR 的图像）
     std::string ocr_text;
 };
 
@@ -73,11 +73,10 @@ private:
                               std::vector<GxJingzhengSegInstance>& instances_out);
 
     // zifu 分支：对每个 zifu 实例 mask 各自算最小外接矩 → 透视裁剪 → 方向分类 + OCR，
-    // 再依据 heat_number 排列片段顺序拼接结果
+    // 优先 2/6 开头片段在前，同优先级内降序排列拼接结果
     bool handleZifuBranch(const cv::Mat& crop,
                           const std::vector<GxJingzhengSegInstance>& zifu_instances,
                           GxJingzhengPipelineResult& result,
-                          const std::string& heat_number,
                           bool verbose);
 
     // 方向分类（按字符片段多数投票）

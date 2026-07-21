@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
-#include <map>
-#include <numeric>
 
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -40,98 +38,6 @@ int classIdByName(const std::vector<std::string>& names, const std::string& targ
         if (names[i] == target) return i;
     }
     return -1;
-}
-
-// 计算字符串 a、b 的公共前缀长度
-size_t commonPrefixLen(const std::string& a, const std::string& b)
-{
-    size_t m = std::min(a.size(), b.size());
-    size_t i = 0;
-    while (i < m && a[i] == b[i]) i++;
-    return i;
-}
-
-// 给定各片段文本（按 x 顺序），依据 heat_number 找出一种排列，
-// 使拼接结果与 heat_number 的公共前缀最长（让 heat_number 尽量成为结果开头）。
-// heat_number 为空 / 片段过多(>8) / 无更优解时，退化为原始 x 顺序。
-std::vector<int> bestOrderByHeat(const std::vector<std::string>& texts,
-                                  const std::string& heat_number)
-{
-    int n = static_cast<int>(texts.size());
-    std::vector<int> identity(n);
-    std::iota(identity.begin(), identity.end(), 0);
-
-    if (n <= 1 || heat_number.empty() || n > 8) {
-        return identity;
-    }
-
-    auto concat = [&](const std::vector<int>& order) {
-        std::string s;
-        for (int i : order) s += texts[i];
-        return s;
-    };
-
-    std::vector<int> best = identity;
-    size_t best_prefix = commonPrefixLen(concat(best), heat_number);
-
-    std::vector<int> cur = identity;
-    std::sort(cur.begin(), cur.end());
-    do {
-        size_t p = commonPrefixLen(concat(cur), heat_number);
-        if (p > best_prefix) {
-            best_prefix = p;
-            best = cur;
-        }
-    } while (std::next_permutation(cur.begin(), cur.end()));
-
-    return best;
-}
-
-// 滑动对齐结果：offset=片段在炉号中的最佳对齐偏移，score=该位置逐位匹配数，overlap=重叠长度
-struct AlignResult { int offset; int score; int overlap; };
-
-// 把片段 OCR 文本在整段炉号 heat 上滑动，找逐位匹配数最大的对齐位置。
-// offset = heat_index - text_index：text[i] 对齐 heat[i+offset]
-//   offset>=0：text[0] 对齐 heat[offset]（片段起点落在炉号内部）
-//   offset<0 ：text[-offset] 对齐 heat[0]（片段带炉号前的噪声前缀）
-// 片段起点可在任意位置（含跨 head/tail 边界、带噪声前后缀），不要求对齐在炉号首位。
-AlignResult bestAlign(const std::string& text, const std::string& heat)
-{
-    int best_off = 0, best_score = -1, best_ov = 0;
-    int Lh = static_cast<int>(heat.size());
-    int Lt = static_cast<int>(text.size());
-    for (int off = -(Lt - 1); off < Lh; off++) {
-        int i0 = std::max(0, -off);
-        int i1 = std::min(Lt, Lh - off);
-        if (i1 <= i0) continue;
-        int c = 0;
-        for (int i = i0; i < i1; i++) if (text[i] == heat[i + off]) c++;
-        if (c > best_score) {
-            best_score = c;
-            best_off = off;
-            best_ov = i1 - i0;
-        }
-    }
-    return {best_off, std::max(best_score, 0), best_ov};
-}
-
-// 滑动对齐命中阈值：匹配数需 >= max(3, 60%*overlap)（强多数，且至少 3 位）
-int alignThreshold(int overlap)
-{
-    return std::max(3, (overlap * 3 + 4) / 5);   // ceil(overlap*0.6)
-}
-
-// 用炉号子串覆盖 OCR 文本中与炉号重叠的区域，保留重叠区前后的原始识别结果。
-// 仅把 text[i0 .. i0+overlap) 这段替换为 heat 子串；前缀 text[0..i0)、后缀 text[i0+overlap..] 原样保留。
-//   i0 = max(0,-offset)：重叠区在 text 中的起点（offset<0 时跳过噪声前缀）。
-//   全对(score==overlap)时重叠区内容不变，等价于只保留原始 OCR 的前后缀。
-std::string overrideAlign(const std::string& text, const AlignResult& a, const std::string& heat)
-{
-    int i0 = std::max(0, -a.offset);
-    int h_start = std::max(0, a.offset);
-    return text.substr(0, i0)
-         + heat.substr(h_start, a.overlap)
-         + text.substr(i0 + a.overlap);
 }
 
 } // namespace
@@ -358,7 +264,6 @@ int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_imag
 bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
                                             const std::vector<GxJingzhengSegInstance>& zifu_instances,
                                             GxJingzhengPipelineResult& result,
-                                            const std::string& heat_number,
                                             bool verbose)
 {
     if (zifu_instances.empty()) {
@@ -366,14 +271,6 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         return false;
     }
 
-    // 炉号路径：把片段 OCR 在整段炉号上滑动对齐，按最佳对齐位置的逐位匹配数
-    // 定朝向(0/180) + 覆盖纠错（替代方向分类器）。仅当炉号 >=8 位时启用；否则原向 OCR。
-    const bool use_heat = (heat_number.size() >= 8);
-    if (verbose && use_heat) {
-        std::cout << "[DEBUG] heat=\"" << heat_number << "\" (sliding align)" << std::endl;
-    }
-
-    // 单图 OCR 封装：输出识别文本与置信度
     auto runOcr = [&](const cv::Mat& img, std::string& text, float& conf) {
         text.clear();
         conf = 0.f;
@@ -392,12 +289,13 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
     };
 
     struct Piece {
-        cv::RotatedRect rrect;  // crop 坐标系
-        cv::Mat warped_before;  // 透视裁剪后，未方向矫正
-        cv::Mat warped_after;   // 方向矫正后（实际送 OCR 的图）
+        cv::RotatedRect rrect;       // crop 坐标系
+        cv::Mat image_rect_crop;     // boundingRect 直接截取
+        cv::Mat warped_before;       // 仿射变换后，未方向矫正
+        cv::Mat warped_after;        // 方向矫正后（实际送 OCR 的图）
         int dir_flag = 0;
         std::string text;
-        float center_x = 0.f;   // 用于左→右排序
+        float center_y = 0.f;        // 用于上→下排序
     };
 
     std::vector<Piece> pieces;
@@ -406,7 +304,6 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
     for (const auto& inst : zifu_instances) {
         if (inst.mask.empty()) continue;
 
-        // 找轮廓 → 取最大者算最小外接矩 (避免噪声小块)
         std::vector<std::vector<cv::Point>> contours;
         cv::findContours(inst.mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
         if (contours.empty()) continue;
@@ -417,34 +314,30 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         cv::RotatedRect rr = cv::minAreaRect(*biggest);
         if (rr.size.width < 2.f || rr.size.height < 2.f) continue;
 
-        // 4 个源点 (crop 坐标系)
+        // boundingRect 直接截取（用于可视化）
+        cv::Rect br = rr.boundingRect();
+        cv::Rect safe_br = br & cv::Rect(0, 0, crop.cols, crop.rows);
+        cv::Mat rect_crop;
+        if (safe_br.area() > 0) rect_crop = crop(safe_br).clone();
+
+        // 透视变换：把 src 的"长边"映射到 dst 的水平边
         cv::Point2f src_pts[4];
         rr.points(src_pts);
 
-        // 目标矩形：长边 → out_w，短边 → out_h
         float w_long = std::max(rr.size.width, rr.size.height);
         float h_short = std::min(rr.size.width, rr.size.height);
         int out_w = std::max(2, static_cast<int>(std::round(w_long)));
         int out_h = std::max(2, static_cast<int>(std::round(h_short)));
 
-        // rr.points() 顺序：pts[0]=BL, pts[1]=TL, pts[2]=TR, pts[3]=BR
-        //   d01 = ||BL-TL|| = rrect.height (左竖边)
-        //   d12 = ||TL-TR|| = rrect.width  (上水平边)
-        // 目标：把 src 的"长边"映射到 dst 的水平边 (长度 out_w)，
-        //       让裁剪出来的图永远是"长边水平、短边竖直"——即旋转到 0°/180° 状态。
         float d01 = static_cast<float>(cv::norm(src_pts[0] - src_pts[1]));
         float d12 = static_cast<float>(cv::norm(src_pts[1] - src_pts[2]));
         cv::Point2f dst_pts[4];
         if (d01 >= d12) {
-            // 长边 = BL→TL (竖直方向)，需把图像顺时针旋 90°，使该边变成 dst 上水平边
-            //   BL → dst 左上, TL → dst 右上, TR → dst 右下, BR → dst 左下
             dst_pts[0] = cv::Point2f(0,           0);
             dst_pts[1] = cv::Point2f(out_w - 1.f, 0);
             dst_pts[2] = cv::Point2f(out_w - 1.f, out_h - 1.f);
             dst_pts[3] = cv::Point2f(0,           out_h - 1.f);
         } else {
-            // 长边 = TL→TR (已水平)，恒等对应
-            //   BL → dst 左下, TL → dst 左上, TR → dst 右上, BR → dst 右下
             dst_pts[0] = cv::Point2f(0,           out_h - 1.f);
             dst_pts[1] = cv::Point2f(0,           0);
             dst_pts[2] = cv::Point2f(out_w - 1.f, 0);
@@ -457,8 +350,9 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
 
         Piece p;
         p.rrect = rr;
+        p.image_rect_crop = rect_crop;
         p.warped_before = warped;
-        p.center_x = rr.center.x;
+        p.center_y = rr.center.y;
         pieces.push_back(std::move(p));
     }
 
@@ -467,116 +361,76 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         return false;
     }
 
-    // 按 x 中心左→右排序（作为初始/兜底顺序）
-    std::sort(pieces.begin(), pieces.end(),
-        [](const Piece& a, const Piece& b) { return a.center_x < b.center_x; });
-
-    // 第一遍：逐片段用炉号滑动对齐定朝向(0/180) + 覆盖纠错，再送 OCR
-    // 炉号路径：原向 OCR+滑动对齐；不达阈值则翻转再 OCR+对齐；
-    //   命中阈值(匹配数 >= max(3, 60%*overlap)) -> 用对齐位置的炉号子串覆盖文本。
-    //   两方向均不达标 -> 取匹配数较高者(并列选原向)，不覆盖。
-    // 无炉号路径：不做朝向处理，原向 OCR。
+    // 逐片段：方向分类 → 矫正 → OCR；低置信度时反向再试取最优
     bool any_flipped = false;
     for (size_t i = 0; i < pieces.size(); i++) {
         auto& p = pieces[i];
-        int char_dir = 0;
-        std::string char_text;
-        std::string raw_text;          // 采纳朝向的原始 OCR（覆盖前）
-        float char_conf = 0.f;
-        bool overridden = false;
-        int offset = 0, score = 0, overlap = 0, thr = 0;
-        cv::Mat ocr_in = p.warped_before;   // 最终采纳朝向的图（供 after_flip 可视化）
 
-        if (use_heat) {
-            // 原向 OCR
-            std::string t0; float conf0 = 0.f;
-            runOcr(p.warped_before, t0, conf0);
-            AlignResult a0 = bestAlign(t0, heat_number);
-            int thr0 = alignThreshold(a0.overlap);
+        int dir = classifyDirection({p.warped_before});
 
-            if (a0.score >= thr0 && thr0 > 0) {
-                char_dir = 0;
-                raw_text = t0;
-                char_text = overrideAlign(t0, a0, heat_number);
-                char_conf = conf0; overridden = true;
-                offset = a0.offset; score = a0.score; overlap = a0.overlap; thr = thr0;
-            } else {
-                // 翻转 180° 再 OCR
-                cv::Mat flipped;
-                cv::flip(p.warped_before, flipped, -1);
-                std::string t1; float conf1 = 0.f;
-                runOcr(flipped, t1, conf1);
-                AlignResult a1 = bestAlign(t1, heat_number);
-                int thr1 = alignThreshold(a1.overlap);
-
-                if (a1.score >= thr1 && thr1 > 0) {
-                    char_dir = 180;
-                    raw_text = t1;
-                    char_text = overrideAlign(t1, a1, heat_number);
-                    char_conf = conf1; overridden = true;
-                    ocr_in = flipped; any_flipped = true;
-                    offset = a1.offset; score = a1.score; overlap = a1.overlap; thr = thr1;
-                } else {
-                    // 两方向均不达标：取匹配数较高者（并列选原向）
-                    if (a1.score > a0.score) {
-                        char_dir = 180; raw_text = t1; char_text = t1; char_conf = conf1;
-                        ocr_in = flipped; any_flipped = true;
-                        offset = a1.offset; score = a1.score; overlap = a1.overlap; thr = thr1;
-                    } else {
-                        char_dir = 0; raw_text = t0; char_text = t0; char_conf = conf0;
-                        offset = a0.offset; score = a0.score; overlap = a0.overlap; thr = thr0;
-                    }
-                }
-            }
+        cv::Mat ocr_img;
+        if (dir == 180) {
+            cv::flip(p.warped_before, ocr_img, -1);
         } else {
-            // 无炉号：不做朝向处理
-            runOcr(p.warped_before, char_text, char_conf);
-            raw_text = char_text;
+            ocr_img = p.warped_before;
         }
 
-        p.dir_flag = char_dir;
-        p.warped_after = ocr_in;
-        p.text = char_text;
+        std::string text;
+        float conf = 0.f;
+        runOcr(ocr_img, text, conf);
+
+        // OCR 置信度 < 0.9：反向再试一次，取置信度更高者
+        constexpr float kOcrConfLow = 0.9f;
+        if (conf < kOcrConfLow) {
+            cv::Mat opposite;
+            cv::flip(ocr_img, opposite, -1);
+            std::string text2;
+            float conf2 = 0.f;
+            runOcr(opposite, text2, conf2);
+            if (conf2 > conf) {
+                text = text2;
+                conf = conf2;
+                ocr_img = opposite;
+                dir = (dir == 0) ? 180 : 0;
+            }
+        }
+
+        p.dir_flag = dir;
+        p.warped_after = ocr_img;
+        p.text = text;
+        if (dir == 180) any_flipped = true;
 
         if (verbose) {
-            std::cout << "[DEBUG]   zifu piece[" << i << "] (x-order)"
-                      << " raw=\"" << raw_text << "\""
+            std::cout << "[DEBUG]   zifu piece[" << i << "]"
                       << " text=\"" << p.text << "\""
-                      << " offset=" << offset
-                      << " match=" << score << "/" << overlap
-                      << " thr=" << thr
                       << " flip=" << p.dir_flag
-                      << (overridden ? " override=Y" : " override=N")
-                      << " ocr=" << char_conf << std::endl;
+                      << " ocr_conf=" << conf << std::endl;
         }
     }
 
-    // 第二步：根据 heat_number 重新排列各片段顺序，使拼接结果与 heat_number 的公共前缀最长
-    std::vector<std::string> texts;
-    texts.reserve(pieces.size());
-    for (auto& p : pieces) texts.push_back(p.text);
+    // 排序：优先 2/6 开头片段在前，同优先级内降序排列
+    std::sort(pieces.begin(), pieces.end(),
+        [](const Piece& a, const Piece& b) {
+            auto priority = [](const std::string& t) -> int {
+                if (t.empty()) return -1;
+                if (t[0] == '6') return 2;
+                if (t[0] == '2') return 1;
+                return 0;
+            };
+            int pa = priority(a.text), pb = priority(b.text);
+            if (pa != pb) return pa > pb;
+            return a.text > b.text;
+        });
 
-    std::vector<int> best_order = bestOrderByHeat(texts, heat_number);
-    if (verbose) {
-        std::string xorder;
-        for (auto& t : texts) xorder += t;
-        std::cout << "[DEBUG] zifu x-order concat=\"" << xorder
-                  << "\", heat=\"" << heat_number << "\"" << std::endl;
-        std::string reordered;
-        for (int idx : best_order) reordered += texts[idx];
-        std::cout << "[DEBUG] zifu heat-ordered concat=\"" << reordered << "\"" << std::endl;
-    }
-
-    // 按新顺序构建 chars 并拼接最终结果
-    // 多个片段之间用 '#' 分隔（即第二个片段起前面加 '#'），单片段则不加分隔符
+    // 构建结果，多个片段之间用 '#' 分隔
     std::string concatenated;
     result.chars.clear();
-    result.chars.reserve(best_order.size());
-    for (size_t k = 0; k < best_order.size(); k++) {
-        int idx = best_order[k];
-        auto& p = pieces[idx];
+    result.chars.reserve(pieces.size());
+    for (size_t k = 0; k < pieces.size(); k++) {
+        auto& p = pieces[k];
         GxJingzhengCharInfo cinfo;
-        cinfo.bbox = p.rrect.boundingRect();   // 轴对齐 bbox (仅作信息)
+        cinfo.bbox = p.rrect.boundingRect();
+        cinfo.image_rect_crop = p.image_rect_crop.clone();
         cinfo.image_before_flip = p.warped_before.clone();
         cinfo.image_after_flip = p.warped_after.clone();
         cinfo.ocr_text = p.text;
@@ -585,10 +439,8 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         concatenated += p.text;
     }
 
-    // 整体 direction_flag：任一片段翻转即记 180（与 zbhc 一致，仅用于可视化）
     result.direction_flag = any_flipped ? 180 : 0;
     result.ocr_text = concatenated;
-    // 每个 piece 都独立矫正了，整张 rotated_crop 概念已不存在
     result.rotated_crop = cv::Mat();
     return !concatenated.empty();
 }
@@ -650,49 +502,81 @@ cv::Mat GxJingzhengPipeline::createAnnotatedImage(
         }
     }
 
-    // zifu 分支：底部拼一个矫正后图 + 字符片段长条
-    // zifu 分支：底部拼接所有 piece 的 OCR 输入图（每个 piece 独立矫正后的字符串图）
+    // zifu 分支：底部拼接三行图像条
+    // Row1: image_rect_crop（boundingRect 截取）  Row2: image_before_flip（仿射变换后）  Row3: image_after_flip（方向矫正后）
     if (result.branch == config_.zifu_class_name && !result.chars.empty()) {
-        const int row_h = 140;
+        const int row_h = 100;
         const int margin = 20;
-        const int char_margin = 12;
+        const int char_margin = 10;
+        const int row_gap = 10;
 
-        std::vector<cv::Mat> imgs_for_strip;
+        auto buildStrip = [&](const std::vector<cv::Mat>& imgs) -> cv::Mat {
+            if (imgs.empty()) return cv::Mat();
+            std::vector<cv::Mat> resized;
+            int total_w = 0;
+            for (auto& img : imgs) {
+                if (img.empty()) continue;
+                float s = static_cast<float>(row_h) / std::max(img.rows, 1);
+                cv::Mat r;
+                cv::resize(img, r, cv::Size(), s, s, cv::INTER_LINEAR);
+                if (r.channels() == 1) cv::cvtColor(r, r, cv::COLOR_GRAY2BGR);
+                resized.push_back(r);
+                total_w += r.cols + char_margin;
+            }
+            if (resized.empty()) return cv::Mat();
+            total_w = std::max(total_w - char_margin, 1);
+            total_w = std::min(total_w, annotated.cols - 2 * margin);
+
+            cv::Mat strip(row_h, total_w, CV_8UC3, cv::Scalar(0, 0, 0));
+            int cx = 0;
+            for (auto& r : resized) {
+                if (cx + r.cols > strip.cols) break;
+                r.copyTo(strip(cv::Rect(cx, 0, r.cols, r.rows)));
+                cx += r.cols + char_margin;
+            }
+            return strip;
+        };
+
+        std::vector<cv::Mat> imgs_rect, imgs_before, imgs_after;
         for (auto& ch : result.chars) {
-            if (!ch.image_after_flip.empty()) imgs_for_strip.push_back(ch.image_after_flip);
+            if (!ch.image_rect_crop.empty()) imgs_rect.push_back(ch.image_rect_crop);
+            if (!ch.image_before_flip.empty()) imgs_before.push_back(ch.image_before_flip);
+            if (!ch.image_after_flip.empty()) imgs_after.push_back(ch.image_after_flip);
         }
-        if (imgs_for_strip.empty()) {
+
+        cv::Mat strip1 = buildStrip(imgs_rect);
+        cv::Mat strip2 = buildStrip(imgs_before);
+        cv::Mat strip3 = buildStrip(imgs_after);
+
+        // 计算总高度：每个 strip 高度 = row_h，间隙 = row_gap
+        int used_h = 0;
+        if (!strip1.empty()) used_h += row_h + row_gap;
+        if (!strip2.empty()) used_h += row_h + row_gap;
+        if (!strip3.empty()) used_h += row_h;
+        if (used_h == 0) {
             return annotated;
         }
-
-        std::vector<cv::Mat> resized;
-        int total_w = 0;
-        for (auto& img : imgs_for_strip) {
-            float s = static_cast<float>(row_h) / std::max(img.rows, 1);
-            cv::Mat r;
-            cv::resize(img, r, cv::Size(), s, s, cv::INTER_LINEAR);
-            resized.push_back(r);
-            total_w += r.cols + char_margin;
-        }
-        total_w = std::max(total_w - char_margin, 1);
-
-        int strip_w = std::min(total_w, annotated.cols - 2 * margin);
-        cv::Mat strip = cv::Mat::zeros(row_h, total_w, CV_8UC3);
-        int cx = 0;
-        for (auto& r : resized) {
-            if (cx + r.cols > strip.cols) break;
-            r.copyTo(strip(cv::Rect(cx, 0, r.cols, r.rows)));
-            cx += r.cols + char_margin;
-        }
-
-        int extra_h = row_h + 2 * margin;
+        int extra_h = used_h + 2 * margin;
         cv::Mat canvas = cv::Mat::zeros(annotated.rows + extra_h, annotated.cols, annotated.type());
         annotated.copyTo(canvas(cv::Rect(0, 0, annotated.cols, annotated.rows)));
 
-        int paste_w = std::min(strip.cols, canvas.cols - 2 * margin);
-        if (paste_w > 0) {
-            strip(cv::Rect(0, 0, paste_w, strip.rows))
-                .copyTo(canvas(cv::Rect(margin, annotated.rows + margin, paste_w, strip.rows)));
+        int y_pos = annotated.rows + margin;
+        if (!strip1.empty()) {
+            int paste_w = std::min(strip1.cols, canvas.cols - 2 * margin);
+            strip1(cv::Rect(0, 0, paste_w, strip1.rows))
+                .copyTo(canvas(cv::Rect(margin, y_pos, paste_w, strip1.rows)));
+            y_pos += row_h + row_gap;
+        }
+        if (!strip2.empty()) {
+            int paste_w = std::min(strip2.cols, canvas.cols - 2 * margin);
+            strip2(cv::Rect(0, 0, paste_w, strip2.rows))
+                .copyTo(canvas(cv::Rect(margin, y_pos, paste_w, strip2.rows)));
+            y_pos += row_h + row_gap;
+        }
+        if (!strip3.empty()) {
+            int paste_w = std::min(strip3.cols, canvas.cols - 2 * margin);
+            strip3(cv::Rect(0, 0, paste_w, strip3.rows))
+                .copyTo(canvas(cv::Rect(margin, y_pos, paste_w, strip3.rows)));
         }
         annotated = canvas;
     }
@@ -803,7 +687,7 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
                 zifu_insts.push_back(inst);
             }
         }
-        if (handleZifuBranch(crop, zifu_insts, result, heat_number, verbose)) {
+        if (handleZifuBranch(crop, zifu_insts, result, verbose)) {
             result.state_flag = "OK";
         }
     } else if (branch == config_.gangbiao_class_name) {

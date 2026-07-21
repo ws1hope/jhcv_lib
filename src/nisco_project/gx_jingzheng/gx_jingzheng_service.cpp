@@ -3,8 +3,11 @@
 #include "file_utils.h"
 #include "json.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
 
@@ -132,7 +135,29 @@ public:
         std::cout << "  device:  " << config_.device << std::endl;
         std::cout << std::endl;
 
-        std::vector<std::string> picture_path_array = FileHelper::splitStringByCsharp(image_path);
+        // 支持 -i 传入文件夹或文件名（可用 # 分隔多个）；文件夹自动展开为其中的图片文件。
+        std::vector<std::string> picture_path_array;
+        for (const std::string& tok : FileHelper::splitStringByCsharp(image_path)) {
+            if (std::filesystem::is_directory(tok)) {
+                std::vector<std::string> dir_images;
+                for (const auto& entry : std::filesystem::directory_iterator(tok)) {
+                    if (!entry.is_regular_file()) continue;
+                    std::string ext = entry.path().extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(),
+                                   [](unsigned char c) { return std::tolower(c); });
+                    if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" ||
+                        ext == ".bmp" || ext == ".tif" || ext == ".tiff" || ext == ".webp") {
+                        dir_images.push_back(entry.path().string());
+                    }
+                }
+                std::sort(dir_images.begin(), dir_images.end());
+                std::cout << "[INFO] Folder '" << tok << "': "
+                          << dir_images.size() << " image(s) found" << std::endl;
+                for (auto& p : dir_images) picture_path_array.push_back(std::move(p));
+            } else {
+                picture_path_array.push_back(tok);
+            }
+        }
 
         auto start = std::chrono::high_resolution_clock::now();
         json array_result = json::array();

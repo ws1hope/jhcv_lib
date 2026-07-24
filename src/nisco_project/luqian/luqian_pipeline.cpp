@@ -330,11 +330,9 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
 
         target_result.direction_flag = target_dir;
 
-        // 目标上下颠倒(any_flipped)时，图像中自上而下的 y 顺序与读取顺序相反：
-        // 原本顶部的行翻到了底部，故片段顺序需反向(y 降序)后再拼接
-        if (any_flipped) {
-            std::reverse(target_result.chars.begin(), target_result.chars.end());
-        }
+        // 片段顺序已由上方"最宽 -> 最窄 -> 其他"重排确定，且该顺序与片段在图像中的
+        // 上下位置无关（正/倒置结果一致），故 any_flipped 时不再反向 chars；否则会把最宽
+        // 片段翻到末尾，破坏送入 OCR 的读取顺序。
 
         // ===== Step 7: 二次识别（传入炉号且第二 OCR 模型可用时） =====
         // ocr1_text = 模型1 完整拼接；若与炉号有 1~2 位不符，则用模型2 对全部片段

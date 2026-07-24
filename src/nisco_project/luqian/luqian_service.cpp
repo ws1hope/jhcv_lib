@@ -87,24 +87,29 @@ public:
 
         json array_result = json::array();
         std::vector<float> img_confs;
+        std::vector<bool> has_detections;
         for (int pic_number = 0; pic_number < (int)picture_path_array.size(); pic_number++) {
             cv::Mat src_img = cv::imread(picture_path_array[pic_number]);
 
             json item;
 
             if (!src_img.data) {
-                item["read_picture_flag"] = "NG";
-                item["rec_state_flag"] = "NG";
-                item["rec_results"] = json::array();
+                item["picture_id"] = pic_number + 1;
+                item["state_flag"] = "NG";
+                item["result"] = "";
+                item["zifu_type"] = "Penma";
+                item["penma_version"] = "None";
                 item["picture_path"] = "";
                 array_result.push_back(item);
                 img_confs.push_back(0.0f);
+                has_detections.push_back(false);
                 fout << "detect failed! empty image" << std::endl;
                 continue;
             }
 
             Pipeline::LuqianPipelineResult pipeline_result = pipeline_->process(src_img, false, heat_number);
             img_confs.push_back(computeImageConfidence(pipeline_result));
+            has_detections.push_back(!pipeline_result.det_detections.empty());
 
             time_t currtime = time(NULL);
             tm* t = localtime(&currtime);
@@ -129,31 +134,36 @@ public:
 
             saveCharCrops(pipeline_result, pic_number, t);
 
-            json targets_ocr = json::array();
+            std::string combined_result;
             for (auto& target : pipeline_result.targets) {
                 if (!target.ocr_text.empty()) {
-                    targets_ocr.push_back(target.ocr_text);
+                    if (!combined_result.empty()) combined_result += "#";
+                    combined_result += target.ocr_text;
                 }
             }
 
-            item["read_picture_flag"] = "OK";
-            item["rec_state_flag"] = targets_ocr.empty() ? "NG" : "OK";
-            item["rec_results"] = targets_ocr;
+            item["picture_id"] = pic_number + 1;
+            item["state_flag"] = combined_result.empty() ? "NG" : "OK";
+            item["result"] = combined_result;
+            item["zifu_type"] = "Penma";
+            item["penma_version"] = combined_result.empty() ? "None" : "new";
             item["picture_path"] = save_picture_name;
 
             array_result.push_back(item);
         }
 
+        size_t best_idx = 0;
         if (!img_confs.empty()) {
-            size_t best_idx = keepBestImageConfidence(array_result, img_confs);
+            best_idx = keepBestImageConfidence(array_result, img_confs);
             std::cout << "[BEST] idx=" << best_idx
                       << " conf=" << img_confs[best_idx]
                       << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
         }
 
         json root_all;
-        root_all["station_id"] = std::to_string(station_id);
+        root_all["station_id"] = station_id;
         root_all["all_results"] = array_result;
+        root_all["duanmian"] = (!has_detections.empty() && has_detections[best_idx]) ? "yes" : "no";
 
         std::cout << "[RESULT] " << root_all.dump() << std::endl;
         fout.close();
@@ -177,6 +187,7 @@ public:
         auto start = std::chrono::high_resolution_clock::now();
         json array_result = json::array();
         std::vector<float> img_confs;
+        std::vector<bool> has_detections;
 
         for (int pic_number = 0; pic_number < (int)picture_path_array.size(); pic_number++) {
             cv::Mat src_img = cv::imread(picture_path_array[pic_number]);
@@ -185,28 +196,35 @@ public:
 
             if (!src_img.data) {
                 std::cerr << "[ERROR] Cannot read image: " << picture_path_array[pic_number] << std::endl;
-                item["read_picture_flag"] = "NG";
-                item["rec_state_flag"] = "NG";
-                item["rec_results"] = json::array();
+                item["picture_id"] = pic_number + 1;
+                item["state_flag"] = "NG";
+                item["result"] = "";
+                item["zifu_type"] = "Penma";
+                item["penma_version"] = "None";
                 item["picture_path"] = "";
                 array_result.push_back(item);
                 img_confs.push_back(0.0f);
+                has_detections.push_back(false);
                 continue;
             }
 
             Pipeline::LuqianPipelineResult pipeline_result = pipeline_->process(src_img, true, heat_number);
             img_confs.push_back(computeImageConfidence(pipeline_result));
+            has_detections.push_back(!pipeline_result.det_detections.empty());
 
-            json targets_ocr = json::array();
+            std::string combined_result;
             for (auto& target : pipeline_result.targets) {
                 if (!target.ocr_text.empty()) {
-                    targets_ocr.push_back(target.ocr_text);
+                    if (!combined_result.empty()) combined_result += "#";
+                    combined_result += target.ocr_text;
                 }
             }
 
-            item["read_picture_flag"] = "OK";
-            item["rec_state_flag"] = targets_ocr.empty() ? "NG" : "OK";
-            item["rec_results"] = targets_ocr;
+            item["picture_id"] = pic_number + 1;
+            item["state_flag"] = combined_result.empty() ? "NG" : "OK";
+            item["result"] = combined_result;
+            item["zifu_type"] = "Penma";
+            item["penma_version"] = combined_result.empty() ? "None" : "new";
             item["picture_path"] = "";
 
             array_result.push_back(item);
@@ -225,16 +243,18 @@ public:
         auto end = std::chrono::high_resolution_clock::now();
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+        size_t best_idx = 0;
         if (!img_confs.empty()) {
-            size_t best_idx = keepBestImageConfidence(array_result, img_confs);
+            best_idx = keepBestImageConfidence(array_result, img_confs);
             std::cout << "[BEST] idx=" << best_idx
                       << " conf=" << img_confs[best_idx]
                       << " kept=" << array_result.size() << "/" << img_confs.size() << std::endl;
         }
 
         json root_all;
-        root_all["station_id"] = std::to_string(station_id);
+        root_all["station_id"] = station_id;
         root_all["all_results"] = array_result;
+        root_all["duanmian"] = (!has_detections.empty() && has_detections[best_idx]) ? "yes" : "no";
 
         std::cout << std::endl;
         std::cout << "=== Result ===" << std::endl;

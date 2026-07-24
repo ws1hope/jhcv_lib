@@ -8,7 +8,7 @@
                 "${workspaceFolder}/src/cv_infer",
                 "/usr/local/include/opencv4",
                 "/usr/local/include",
-                "/usr/local/include/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64"
+                "/usr/local/include/onnxruntime"
             ],
             "defines": [
                 "USE_ONNXRUNTIME"
@@ -27,8 +27,8 @@
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/src",
                 "G:/3thirdparty/opencv/build/include",
-                "G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/include",
-                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/include",
+                "G:/3thirdparty/onnxruntime/include",
+                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8/include",
                 "G:/3thirdparty/tensorrt/include"
             ],
             "defines": [

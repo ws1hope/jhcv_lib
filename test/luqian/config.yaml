@@ -1,5 +1,5 @@
 server:
-  service_name: "luqian"
+  service_name: "character_recognition"
   host: "127.0.0.1"
   port: 8085
 models:

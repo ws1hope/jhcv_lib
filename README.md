@@ -50,7 +50,7 @@ jhcv_lib/
 
 **macOS / Linux**：依赖安装到 `/usr/local`（OpenCV、ONNX Runtime、yaml-cpp），可用 brew / apt 安装。
 
-**Windows**：第三方库统一放在 `G:/3thirdparty/`（opencv / onnxruntime / tensorrt / paddle_inference），CUDA 在 `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8`。运行时需把上述 DLL 加入 `PATH`（见 `.vscode/launch.json`）。
+**Windows**：第三方库统一放在 `G:/3thirdparty/`（opencv / onnxruntime-1.21.1-cuda12.4-sm86-sm89 / tensorrt / paddle_inference），CUDA 在 `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4`。运行时需把上述 DLL 加入 `PATH`（见 `.vscode/launch.json`）。
 
 ## 构建
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <numeric>
 
@@ -186,13 +187,34 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             char_bbox_local = char_bbox_local & cv::Rect(0, 0, target_img.cols, target_img.rows);
             if (char_bbox_local.area() <= 0) continue;
 
-            // 最小外接矩，得到字符倾角（minAreaRect.angle ∈ [-90,0)）
+            // 最小外接矩，得到字符倾角。不依赖 min_rect.angle：
+            // 不同 OpenCV 版本对 size.width/height 谁大、angle 符号约定不同
+            // (旧版 angle 在 [0,90) 且不保证 width>=height；新版归一为 width>=height, angle 在 [-45,45])，
+            // 故直接用顶点算长边方向，保证跨版本一致。
             cv::RotatedRect min_rect = cv::minAreaRect(largest);
-            float angle = min_rect.angle;
-            if (min_rect.size.width < min_rect.size.height) {
-                angle += 90.0f;   // 竖立矩归一到水平方向
+            cv::Point2f rr_pts[4];
+            min_rect.points(rr_pts);
+            cv::Point2f e0 = rr_pts[1] - rr_pts[0];
+            cv::Point2f e1 = rr_pts[2] - rr_pts[1];
+            cv::Point2f long_edge = (cv::norm(e0) > cv::norm(e1)) ? e0 : e1;
+            float theta = std::atan2(long_edge.y, long_edge.x) * 180.0f / CV_PI;
+            while (theta > 90.0f)  theta -= 180.0f;   // 折到 (-90,90]，横排字符倾角落在 0 附近
+            while (theta <= -90.0f) theta += 180.0f;
+            float angle = -theta;       // 水平化：旋转抵消倾角
+
+            if (verbose) {
+                float raw = min_rect.angle;
+                bool vertical = min_rect.size.width < min_rect.size.height;
+                std::cout << "[DEBUG]     target[" << di << "] seg[" << si
+                     << "] center=(" << min_rect.center.x << "," << min_rect.center.y << ")"
+                     << " size=" << min_rect.size.width << "x" << min_rect.size.height
+                     << " raw_angle=" << raw
+                     << " vertical=" << (vertical ? 1 : 0)
+                     << " long_edge_angle=" << theta
+                     << " final_angle=" << angle
+                     << " area=" << max_area
+                     << std::endl;
             }
-            angle = -angle;       // 水平化：旋转抵消倾角
 
             // 裁剪字符图像、mask 并转 BGR
             cv::Mat char_img = target_img(char_bbox_local).clone();

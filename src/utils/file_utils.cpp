@@ -173,6 +173,7 @@ JHDeepCore::LuqianServerConfig FileHelper::loadLuqianConfig(const std::string& c
         cfg.ocr_model = node["models"]["ocr_model"].as<std::string>("");
         cfg.ocr_label = node["models"]["ocr_label"].as<std::string>("");
         cfg.ocr_model2 = node["models"]["ocr_model2"].as<std::string>("");
+        cfg.ocr_label2 = node["models"]["ocr_label2"].as<std::string>("");
         cfg.direction_cls_model = node["models"]["direction_cls_model"].as<std::string>("");
     }
 

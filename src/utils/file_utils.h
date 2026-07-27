@@ -90,6 +90,7 @@ struct LuqianServerConfig {
     std::string ocr_model;
     std::string ocr_label;
     std::string ocr_model2;      // 二次识别 OCR 模型（为空则不启用二次识别）
+    std::string ocr_label2;      // 二次识别 OCR 解码字典（为空则回退 ocr_label）
     std::string direction_cls_model;
     std::string device = "cuda";
 };

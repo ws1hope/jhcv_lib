@@ -8,6 +8,7 @@ models:
   ocr_model: "models/luqian/rec.onnx"
   ocr_label: "models/luqian/rec.yaml"
   ocr_model2: "models/luqian/en_PP-OCRv5_mobile_rec.onnx"
+  ocr_label2: "models/luqian/en_PP-OCRv5_mobile_rec.yaml"
   direction_cls_model: "models/zbhc/zifu_fx_cls.onnx"
 inference:
   device: "cpu"

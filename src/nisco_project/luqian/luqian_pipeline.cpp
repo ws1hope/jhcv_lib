@@ -28,8 +28,11 @@ LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     std::cout << "[OK] OCR model loaded: " << config_.ocr_model << std::endl;
 
     if (!config_.ocr_model2.empty()) {
-        ocr2_ = std::make_unique<OCRRecognizer>(config_.ocr_model2, config_.ocr_label, dev_id);
-        std::cout << "[OK] OCR2 model loaded: " << config_.ocr_model2 << std::endl;
+        // 第二识别模型用独立 ocr_label2 解码；未配置则回退 ocr_label（两模型当前字符表一致，回退安全）
+        const std::string& ocr2_label = config_.ocr_label2.empty() ? config_.ocr_label : config_.ocr_label2;
+        ocr2_ = std::make_unique<OCRRecognizer>(config_.ocr_model2, ocr2_label, dev_id);
+        std::cout << "[OK] OCR2 model loaded: " << config_.ocr_model2
+                  << " (label: " << ocr2_label << ")" << std::endl;
     }
 
     direction_cls_ = std::make_unique<Classifier>(config_.direction_cls_model, "", dev_id);

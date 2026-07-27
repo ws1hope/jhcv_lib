@@ -98,20 +98,23 @@ cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
         rgb_image.convertTo(normalized, CV_32F, 1.0 / 255.0);
     }
 
-    std::vector<cv::Mat> channels;
-    {
-        PreStepTimer _("Common.split");
-        cv::split(normalized, channels);
-    }
-    {
+    if (!config_.mean.empty() && !config_.stddev.empty()) {
         PreStepTimer _("Common.normStd");
-        for (size_t i = 0; i < channels.size() && i < config_.mean.size(); ++i) {
-            channels[i] = (channels[i] - config_.mean[i]) / config_.stddev[i];
+        const int ch = normalized.channels();
+        const int nmean = static_cast<int>(config_.mean.size());
+        const int nstd = static_cast<int>(config_.stddev.size());
+        // 融合 split+归一化+merge 为就地单次遍历：逐通道 (x-mean)/std，
+        // 省掉 split/merge 的多次分配与拷贝，算术（先减后除）与原实现逐位等价。
+        for (int r = 0; r < normalized.rows; ++r) {
+            float *p = normalized.ptr<float>(r);
+            for (int c = 0; c < normalized.cols; ++c) {
+                const int base = c * ch;
+                for (int k = 0; k < ch && k < nmean && k < nstd; ++k) {
+                    const float s = config_.stddev[k] != 0.f ? config_.stddev[k] : 1.f;
+                    p[base + k] = (p[base + k] - config_.mean[k]) / s;
+                }
+            }
         }
-    }
-    {
-        PreStepTimer _("Common.merge");
-        cv::merge(channels, normalized);
     }
 
     return normalized;
@@ -148,20 +151,21 @@ cv::Mat BaseInference::PreprocessImageDetection(const cv::Mat &image) {
     }
 
     if (!config_.mean.empty() && !config_.stddev.empty()) {
-        std::vector<cv::Mat> channels;
-        {
-            PreStepTimer _("Detection.split");
-            cv::split(normalized, channels);
-        }
-        {
-            PreStepTimer _("Detection.normStd");
-            for (size_t i = 0; i < channels.size() && i < config_.mean.size(); ++i) {
-                channels[i] = (channels[i] - config_.mean[i]) / config_.stddev[i];
+        PreStepTimer _("Detection.normStd");
+        const int ch = normalized.channels();
+        const int nmean = static_cast<int>(config_.mean.size());
+        const int nstd = static_cast<int>(config_.stddev.size());
+        // 融合 split+归一化+merge 为就地单次遍历：逐通道 (x-mean)/std，
+        // 省掉 split/merge 的多次分配与拷贝，算术（先减后除）与原实现逐位等价。
+        for (int r = 0; r < normalized.rows; ++r) {
+            float *p = normalized.ptr<float>(r);
+            for (int c = 0; c < normalized.cols; ++c) {
+                const int base = c * ch;
+                for (int k = 0; k < ch && k < nmean && k < nstd; ++k) {
+                    const float s = config_.stddev[k] != 0.f ? config_.stddev[k] : 1.f;
+                    p[base + k] = (p[base + k] - config_.mean[k]) / s;
+                }
             }
-        }
-        {
-            PreStepTimer _("Detection.merge");
-            cv::merge(channels, normalized);
         }
     }
 

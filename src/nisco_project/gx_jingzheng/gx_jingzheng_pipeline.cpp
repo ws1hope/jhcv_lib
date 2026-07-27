@@ -48,6 +48,7 @@ void accumulateTiming(InferenceTiming& acc, const InferenceTiming& t)
     acc.tensor_ms += t.tensor_ms;
     acc.run_ms += t.run_ms;
     acc.h2d_ms += t.h2d_ms;
+    acc.d2h_ms += t.d2h_ms;
     acc.h2d_split = acc.h2d_split || t.h2d_split;
     if (acc.device.empty() && !t.device.empty()) acc.device = t.device;
 }
@@ -761,7 +762,8 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
                       << " prep=" << t.preprocess_ms << "ms";
             if (t.h2d_split) {
                 std::cout << " h2d=" << t.h2d_ms << "ms"
-                          << " infer=" << (t.run_ms - t.h2d_ms) << "ms";
+                          << " d2h=" << t.d2h_ms << "ms"
+                          << " infer=" << (t.run_ms - t.h2d_ms - t.d2h_ms) << "ms";
             } else {
                 std::cout << " ten=" << t.tensor_ms << "ms"
                           << " run=" << t.run_ms << "ms (incl. H2D)";

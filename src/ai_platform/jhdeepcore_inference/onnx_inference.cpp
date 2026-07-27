@@ -261,6 +261,7 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
+    measureD2HProxy(output_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -322,6 +323,7 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
+    measureD2HProxy(output_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -389,6 +391,7 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
+    measureD2HProxy(detection_size + protos_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -489,6 +492,7 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
     // 分类路径：tensor/run 在此累加；count/preprocess 由 InferSingle 累加
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
+    measureD2HProxy(output_size);
     return output;
 #else
     throw std::runtime_error("ONNX Runtime not found");
@@ -531,6 +535,25 @@ void OnnxInference::measureH2DProxy(const float *data, size_t count) {
 #else
     (void)data;
     (void)count;
+#endif
+}
+
+void OnnxInference::measureD2HProxy(size_t float_count) {
+    // 用输出尺寸做一次 cudaMemcpy(D2H) 计时作 D2H 估算。不改 Run（Run 内部另做一次真实
+    // D2H），推理零风险；infer ≈ run_ms - h2d_ms - d2h_ms。
+    if (device_ != "cuda" || !h2d_split_enabled()) return;
+#ifdef USE_CUDA
+    if (float_count == 0) return;
+    ensureCudaInput(float_count);
+    if (!cuda_input_) return;   // cudaMalloc 失败则跳过
+    if (host_scratch_.size() < float_count) host_scratch_.resize(float_count);
+    auto t0 = std::chrono::high_resolution_clock::now();
+    cudaMemcpy(host_scratch_.data(), cuda_input_, float_count * sizeof(float), cudaMemcpyDeviceToHost);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    batch_timing_.d2h_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+    batch_timing_.h2d_split = true;
+#else
+    (void)float_count;
 #endif
 }
 

@@ -356,6 +356,7 @@ class OCRRecognizerPrivate {
     std::string rec_device_;   // 实际执行设备 "cuda"/"cpu"（仅 USE_CUDA && useGPU 为 cuda）
     float *rec_cuda_scratch_ = nullptr;   // H2D 估算用的 throwaway GPU 缓冲
     size_t rec_cuda_scratch_count_ = 0;
+    std::vector<float> rec_host_scratch_;  // D2H 估算用的 throwaway CPU 缓冲
 
     void ensureCudaScratch(size_t float_count) {
 #ifdef USE_CUDA
@@ -392,6 +393,25 @@ class OCRRecognizerPrivate {
 #else
         (void)data;
         (void)count;
+#endif
+    }
+
+    // JHDEEP_H2D_SPLIT=1 且 cuda 时：用输出尺寸做 cudaMemcpy(D2H) 计时作 D2H 估算，
+    // 不改 Run（推理零风险）；infer ≈ run_ms - h2d_ms - d2h_ms。
+    void measureD2HProxy(size_t float_count) {
+        if (rec_device_ != "cuda" || !h2dSplitEnabled()) return;
+#ifdef USE_CUDA
+        if (float_count == 0) return;
+        ensureCudaScratch(float_count);
+        if (!rec_cuda_scratch_) return;
+        if (rec_host_scratch_.size() < float_count) rec_host_scratch_.resize(float_count);
+        auto t0 = std::chrono::high_resolution_clock::now();
+        cudaMemcpy(rec_host_scratch_.data(), rec_cuda_scratch_, float_count * sizeof(float), cudaMemcpyDeviceToHost);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        batch_timing_.d2h_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        batch_timing_.h2d_split = true;
+#else
+        (void)float_count;
 #endif
     }
 
@@ -437,6 +457,7 @@ class OCRRecognizerPrivate {
         auto rec_output_shape = rec_output.GetTensorTypeAndShapeInfo().GetShape();
         int rec_out_seq = static_cast<int>(rec_output_shape[1]);
         int rec_out_chars = static_cast<int>(rec_output_shape[2]);
+        measureD2HProxy(static_cast<size_t>(rec_out_seq) * static_cast<size_t>(rec_out_chars));
         const float *rec_output_data = rec_output.GetTensorData<float>();
 
         std::string text;

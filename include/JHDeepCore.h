@@ -59,7 +59,8 @@ struct InferenceTiming {
     double tensor_ms = 0.0;     // 构造 ORT 输入 tensor（CPU allocator 包 buffer，预期≈0）
     double run_ms = 0.0;        // session->Run（cuda 下含 H2D 拷贝 + 算子 + D2H）
     double h2d_ms = 0.0;        // H2D 输入拷贝估算（仅 JHDEEP_H2D_SPLIT=1 时测量，否则 0）
-    bool h2d_split = false;     // 本次是否做了 H2D 拆分测量
+    double d2h_ms = 0.0;        // D2H 输出回拷估算（仅 JHDEEP_H2D_SPLIT=1 时测量，否则 0）
+    bool h2d_split = false;     // 本次是否做了 H2D/D2H 拆分测量
     std::string device;         // 实际执行设备 "cuda"/"cpu"
 };
 

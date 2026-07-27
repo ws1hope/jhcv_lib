@@ -66,11 +66,15 @@ class OnnxInference : public BaseInference {
     // JHDEEP_H2D_SPLIT=1 且 device=cuda 时：把输入显式 cudaMemcpy 到缓存 GPU buffer
     // 并计时，作为 H2D 估算累加进 batch_timing_.h2d_ms（不改 Run 的输入，推理零风险）。
     void measureH2DProxy(const float *data, size_t count);
+    // JHDEEP_H2D_SPLIT=1 且 device=cuda 时：用输出尺寸做一次 cudaMemcpy(D2H) 计时，
+    // 作为 D2H 估算累加进 batch_timing_.d2h_ms。
+    void measureD2HProxy(size_t float_count);
     // 按需分配/扩容 cuda_input_（仅 USE_CUDA 下实际分配）
     void ensureCudaInput(size_t float_count);
 
-    float *cuda_input_ = nullptr;   // 缓存的 GPU 输入缓冲（H2D 估算用，throwaway）
+    float *cuda_input_ = nullptr;   // 缓存的 GPU 输入缓冲（H2D/D2H 估算用，throwaway）
     size_t cuda_input_count_ = 0;
+    std::vector<float> host_scratch_;  // D2H 估算用的 CPU 目的缓冲（throwaway）
 };
 
 } // namespace inference

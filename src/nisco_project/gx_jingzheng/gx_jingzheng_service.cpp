@@ -90,7 +90,8 @@ public:
                          << " prep=" << t.preprocess_ms;
                     if (t.h2d_split) {
                         fout << " h2d=" << t.h2d_ms
-                             << " infer=" << (t.run_ms - t.h2d_ms);
+                             << " d2h=" << t.d2h_ms
+                             << " infer=" << (t.run_ms - t.h2d_ms - t.d2h_ms);
                     } else {
                         fout << " ten=" << t.tensor_ms
                              << " run=" << t.run_ms;

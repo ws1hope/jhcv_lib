@@ -178,18 +178,23 @@ ClassificationResult OnnxInference::InferSingle(const cv::Mat &image) {
         throw std::runtime_error("Model not loaded, call LoadModel() first");
     }
 
+    auto _pre0 = std::chrono::high_resolution_clock::now();
     cv::Mat preprocessed = PreprocessImageCommon(image);
-    std::cerr << "[DEBUG] InferSingle: preprocessed " << preprocessed.cols << "x" << preprocessed.rows
-              << " channels=" << preprocessed.channels() << std::endl;
     PreprocessForOnnx(preprocessed);
-    std::cerr << "[DEBUG] InferSingle: PreprocessForOnnx done, input_buffer_ size=" << input_buffer_.size() << std::endl;
+    auto _pre1 = std::chrono::high_resolution_clock::now();
 
     std::vector<float> output = RunInference(input_buffer_);
+
+    batch_timing_.count++;
+    batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
+    // tensor_ms / run_ms 由 RunInference 内部累加
 
     return ProcessClassificationOutput(output);
 }
 
 std::vector<ClassificationResult> OnnxInference::InferBatch(const std::vector<cv::Mat> &images) {
+    batch_timing_ = InferenceTiming{};
+    batch_timing_.device = device_;
     std::vector<ClassificationResult> results;
     for (const auto &image : images) {
         results.push_back(InferSingle(image));
@@ -202,17 +207,21 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
         throw std::runtime_error("Model not loaded, call LoadModel() first");
     }
 
+    auto _pre0 = std::chrono::high_resolution_clock::now();
     cv::Mat preprocessed = PreprocessImageCommon(image);
     PreprocessForOnnx(preprocessed);
+    auto _pre1 = std::chrono::high_resolution_clock::now();
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
 
+    auto _ten0 = std::chrono::high_resolution_clock::now();
     Ort::Value input_tensor =
         Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
+    auto _ten1 = std::chrono::high_resolution_clock::now();
 
     auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
@@ -231,6 +240,11 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     size_t output_size = tensor_info.GetElementCount();
     std::vector<int64_t> output_shape = tensor_info.GetShape();
     std::vector<float> output(float_array, float_array + output_size);
+
+    batch_timing_.count++;
+    batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
+    batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
+    batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -239,6 +253,8 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
 }
 
 std::vector<SegmentationResult> OnnxInference::InferBatchSegmentation(const std::vector<cv::Mat> &images) {
+    batch_timing_ = InferenceTiming{};
+    batch_timing_.device = device_;
     std::vector<SegmentationResult> results;
     for (const auto &image : images) {
         results.push_back(InferSingleSegmentation(image));
@@ -251,17 +267,21 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
         throw std::runtime_error("Model not loaded, call LoadModel() first");
     }
 
+    auto _pre0 = std::chrono::high_resolution_clock::now();
     cv::Mat preprocessed = PreprocessImageDetection(image);
     PreprocessForOnnx(preprocessed);
+    auto _pre1 = std::chrono::high_resolution_clock::now();
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
 
+    auto _ten0 = std::chrono::high_resolution_clock::now();
     Ort::Value input_tensor =
         Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
+    auto _ten1 = std::chrono::high_resolution_clock::now();
 
     auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
@@ -280,6 +300,11 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     size_t output_size = tensor_info.GetElementCount();
     std::vector<int64_t> output_shape = tensor_info.GetShape();
     std::vector<float> output(float_array, float_array + output_size);
+
+    batch_timing_.count++;
+    batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
+    batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
+    batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -288,6 +313,8 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
 }
 
 std::vector<DetectionResult> OnnxInference::InferBatchDetection(const std::vector<cv::Mat> &images) {
+    batch_timing_ = InferenceTiming{};
+    batch_timing_.device = device_;
     std::vector<DetectionResult> results;
     for (const auto &image : images) {
         results.push_back(InferSingleDetection(image));
@@ -300,17 +327,21 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
         throw std::runtime_error("Model not loaded, call LoadModel() first");
     }
 
+    auto _pre0 = std::chrono::high_resolution_clock::now();
     cv::Mat preprocessed = PreprocessImageDetection(image);
     PreprocessForOnnx(preprocessed);
+    auto _pre1 = std::chrono::high_resolution_clock::now();
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
 
+    auto _ten0 = std::chrono::high_resolution_clock::now();
     Ort::Value input_tensor =
         Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
+    auto _ten1 = std::chrono::high_resolution_clock::now();
 
     auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
@@ -336,6 +367,10 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     std::vector<int64_t> protos_output_shape = protos_tensor_info.GetShape();
     std::vector<float> protos_output(protos_array, protos_array + protos_size);
 
+    batch_timing_.count++;
+    batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
+    batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
+    batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -346,6 +381,8 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
 
 std::vector<InstanceSegmentationResult> OnnxInference::InferBatchInstanceSegmentation(
     const std::vector<cv::Mat> &images) {
+    batch_timing_ = InferenceTiming{};
+    batch_timing_.device = device_;
     std::vector<InstanceSegmentationResult> results;
     for (const auto &image : images) {
         results.push_back(InferSingleInstanceSegmentation(image));
@@ -405,9 +442,11 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
         throw std::runtime_error("Model not loaded");
     }
 
+    auto _ten0 = std::chrono::high_resolution_clock::now();
     Ort::Value input_tensor =
         Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
                                         input_shape_.data(), input_shape_.size());
+    auto _ten1 = std::chrono::high_resolution_clock::now();
 
     auto _bench_t0 = std::chrono::high_resolution_clock::now();
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
@@ -426,6 +465,10 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
     size_t output_size = tensor_info.GetElementCount();
 
     std::vector<float> output(float_array, float_array + output_size);
+
+    // 分类路径：tensor/run 在此累加；count/preprocess 由 InferSingle 累加
+    batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
+    batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_bench_t1 - _bench_t0).count();
     return output;
 #else
     throw std::runtime_error("ONNX Runtime not found");

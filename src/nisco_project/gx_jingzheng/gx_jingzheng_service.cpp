@@ -82,6 +82,23 @@ public:
             Pipeline::GxJingzhengPipelineResult pres =
                 pipeline_->process(src_img, station_id, heat_number, false);
 
+            // 各模型分段耗时写进日志（每张图一行）。run 在 cuda 下含 H2D 拷贝，ten 预期≈0。
+            {
+                const auto& T = pres.timing;
+                auto put = [&](const char* name, const InferenceTiming& t) {
+                    fout << " " << name << "(n=" << t.count
+                         << " prep=" << t.preprocess_ms
+                         << " ten=" << t.tensor_ms
+                         << " run=" << t.run_ms << ")";
+                };
+                fout << "[timing] pic=" << (pic_number + 1) << " device=" << T.device;
+                put("det", T.det);
+                put("seg", T.seg);
+                put("cls", T.cls);
+                put("ocr", T.ocr);
+                fout << " total=" << T.total_ms << "ms" << std::endl;
+            }
+
             time_t currtime = time(NULL);
             tm* t = localtime(&currtime);
 

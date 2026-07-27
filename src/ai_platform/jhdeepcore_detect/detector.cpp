@@ -31,6 +31,11 @@ public:
         results = onnx->InferBatchDetection(images);
     }
 
+    InferenceTiming lastBatchTiming() const {
+        if (!inference_) return InferenceTiming{};
+        return inference_->lastBatchTiming();
+    }
+
     size_t get_batch() const {
         if (!inference_) throw std::runtime_error("Detector not initialized");
         return static_cast<size_t>(inference_->GetConfig().batch_size);
@@ -63,6 +68,8 @@ Detector::~Detector() = default;
 void Detector::process(std::vector<cv::Mat> &images, std::vector<DetectionResult> &results) {
     m_pHandle->process(images, results);
 }
+
+InferenceTiming Detector::lastBatchTiming() const { return m_pHandle->lastBatchTiming(); }
 
 size_t Detector::GetBatch() const { return m_pHandle->get_batch(); }
 size_t Detector::GetInputWidth() const { return m_pHandle->get_input_width(); }

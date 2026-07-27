@@ -29,6 +29,11 @@ public:
         results = onnx->InferBatchInstanceSegmentation(images);
     }
 
+    InferenceTiming lastBatchTiming() const {
+        if (!inference_) return InferenceTiming{};
+        return inference_->lastBatchTiming();
+    }
+
     size_t get_batch() const {
         if (!inference_) throw std::runtime_error("Instance segmenter not initialized");
         return static_cast<size_t>(inference_->GetConfig().batch_size);
@@ -62,6 +67,8 @@ void InstanceSegmenter::process(std::vector<cv::Mat> &images,
                                 std::vector<InstanceSegmentationResult> &results) {
     m_pHandle->process(images, results);
 }
+
+InferenceTiming InstanceSegmenter::lastBatchTiming() const { return m_pHandle->lastBatchTiming(); }
 
 size_t InstanceSegmenter::GetBatch() const { return m_pHandle->get_batch(); }
 size_t InstanceSegmenter::GetInputWidth() const { return m_pHandle->get_input_width(); }

@@ -38,6 +38,10 @@ class BaseInference {
     utils::ModelConfig GetConfig() const { return config_; }
     void SetThresholds(float conf, float iou) { conf_threshold_ = conf; iou_threshold_ = iou; }
 
+    // 返回最近一次 InferBatch* 的分段耗时统计（preprocess/tensor/run + device）
+    // 默认返回零；子类（OnnxInference）覆盖以提供真实数据
+    virtual InferenceTiming lastBatchTiming() const { return InferenceTiming{}; }
+
   protected:
     std::string model_path_;
     std::string device_;

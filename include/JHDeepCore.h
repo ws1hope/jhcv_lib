@@ -52,6 +52,15 @@ struct OCRResult {
     std::vector<OCRBox> boxes;
 };
 
+// 单次/批次推理的分段耗时统计（毫秒）
+struct InferenceTiming {
+    int count = 0;               // 本批次推理图片数
+    double preprocess_ms = 0.0; // 图像预处理：letterbox/resize/归一化 + HWC->CHW
+    double tensor_ms = 0.0;     // 构造 ORT 输入 tensor（CPU allocator 包 buffer，预期≈0）
+    double run_ms = 0.0;        // session->Run（cuda 下含 H2D 拷贝 + 算子 + D2H）
+    std::string device;         // 实际执行设备 "cuda"/"cpu"
+};
+
 // ======================== 跟踪模块 ========================
 
 /// 跟踪距离度量类型
@@ -108,6 +117,7 @@ class Classifier {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
+    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<ClassifierPrivate> m_pHandle;
@@ -128,6 +138,7 @@ class Detector {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
+    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<DetectorPrivate> m_pHandle;
@@ -167,6 +178,7 @@ class InstanceSegmenter {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
+    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<InstanceSegmenterPrivate> m_pHandle;
@@ -187,6 +199,7 @@ class OCRRecognizer {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
+    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<OCRRecognizerPrivate> m_pHandle;

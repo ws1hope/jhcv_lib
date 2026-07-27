@@ -34,6 +34,8 @@ class OnnxInference : public BaseInference {
 
     void WarmupModel(int iterations = 5);
 
+    InferenceTiming lastBatchTiming() const override { return batch_timing_; }
+
   private:
 #ifdef ONNXRUNTIME_FOUND
     std::unique_ptr<Ort::Session> session_;
@@ -49,6 +51,9 @@ class OnnxInference : public BaseInference {
 
     bool model_loaded_;
     bool warmup_enabled_;
+
+    // 最近一次 InferBatch* 的分段耗时（每次 InferBatch* 起点复位，InferSingle* 累加）
+    InferenceTiming batch_timing_;
 
     // 预分配缓冲区，避免每次推理重复申请释放
     std::vector<float> input_buffer_;

@@ -27,6 +27,11 @@ public:
         results = onnx->InferBatch(images);
     }
 
+    InferenceTiming lastBatchTiming() const {
+        if (!inference_) return InferenceTiming{};
+        return inference_->lastBatchTiming();
+    }
+
     size_t get_batch() const {
         if (!inference_) throw std::runtime_error("Classifier not initialized");
         return static_cast<size_t>(inference_->GetConfig().batch_size);
@@ -55,6 +60,8 @@ Classifier::~Classifier() = default;
 void Classifier::process(std::vector<cv::Mat> &images, std::vector<ClassificationResult> &results) {
     m_pHandle->process(images, results);
 }
+
+InferenceTiming Classifier::lastBatchTiming() const { return m_pHandle->lastBatchTiming(); }
 
 size_t Classifier::GetBatch() const { return m_pHandle->get_batch(); }
 size_t Classifier::GetInputWidth() const { return m_pHandle->get_input_width(); }

@@ -277,6 +277,12 @@ class OCRRecognizerPrivate {
                     rec_env, rec_session,
                     rec_input_names, rec_output_names,
                     rec_input_node_names, rec_output_node_names);
+        // 与 initSession 内 EP 选择一致：仅 USE_CUDA 编译且 useGPU 才真正跑 cuda
+#ifdef USE_CUDA
+        rec_device_ = useGPU ? "cuda" : "cpu";
+#else
+        rec_device_ = "cpu";
+#endif
         std::cout << "[INFO] Rec model loaded: " << model_path << std::endl;
 
         {
@@ -298,6 +304,8 @@ class OCRRecognizerPrivate {
 
     void process(std::vector<cv::Mat> &images, std::vector<OCRResult> &results) {
         results.clear();
+        batch_timing_ = InferenceTiming{};
+        batch_timing_.device = rec_device_;
         for (auto &img : images) {
             results.push_back(recognizeSingle(img));
         }
@@ -306,6 +314,8 @@ class OCRRecognizerPrivate {
     size_t get_batch() const { return 1; }
     size_t get_input_width() const { return 10; }
     size_t get_input_height() const { return 48; }
+
+    InferenceTiming lastBatchTiming() const { return batch_timing_; }
 
   private:
     Ort::Env rec_env{ORT_LOGGING_LEVEL_WARNING, "ocr_rec"};
@@ -322,6 +332,10 @@ class OCRRecognizerPrivate {
     bool useGPU = false;
     int gpuId = 0;
 
+    // 最近一次 process() 的分段耗时（process 起点复位，recognizeSingle 累加）
+    InferenceTiming batch_timing_;
+    std::string rec_device_;   // 实际执行设备 "cuda"/"cpu"（仅 USE_CUDA && useGPU 为 cuda）
+
     OCRResult recognizeSingle(const cv::Mat &text_image) {
         OCRResult result;
 
@@ -336,17 +350,28 @@ class OCRRecognizerPrivate {
         rec_img_w = std::max(rec_img_w, 10);
         rec_img_w = std::min(rec_img_w, rec_img_h * 10);
 
+        auto _pre0 = std::chrono::high_resolution_clock::now();
         std::vector<float> rec_input = preprocessRec(text_image, rec_img_h, rec_img_w, rec_mean, rec_std);
+        auto _pre1 = std::chrono::high_resolution_clock::now();
 
         std::array<int64_t, 4> rec_input_shape = {1, 3, rec_img_h, rec_img_w};
         Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        auto _ten0 = std::chrono::high_resolution_clock::now();
         Ort::Value rec_input_tensor = Ort::Value::CreateTensor<float>(
             memInfo, rec_input.data(), rec_input.size(), rec_input_shape.data(), rec_input_shape.size());
+        auto _ten1 = std::chrono::high_resolution_clock::now();
 
+        auto _run0 = std::chrono::high_resolution_clock::now();
         auto rec_outputs = rec_session->Run(
             Ort::RunOptions{nullptr},
             rec_input_names.data(), &rec_input_tensor, 1,
             rec_output_names.data(), rec_output_names.size());
+        auto _run1 = std::chrono::high_resolution_clock::now();
+
+        batch_timing_.count++;
+        batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
+        batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
+        batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_run1 - _run0).count();
 
         auto &rec_output = rec_outputs[0];
         auto rec_output_shape = rec_output.GetTensorTypeAndShapeInfo().GetShape();
@@ -403,6 +428,8 @@ OCRRecognizer::~OCRRecognizer() = default;
 void OCRRecognizer::process(std::vector<cv::Mat> &images, std::vector<OCRResult> &results) {
     m_pHandle->process(images, results);
 }
+
+InferenceTiming OCRRecognizer::lastBatchTiming() const { return m_pHandle->lastBatchTiming(); }
 
 size_t OCRRecognizer::GetBatch() const { return m_pHandle->get_batch(); }
 size_t OCRRecognizer::GetInputWidth() const { return m_pHandle->get_input_width(); }

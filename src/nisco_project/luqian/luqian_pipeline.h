@@ -51,6 +51,10 @@ public:
 private:
     void warmup();
 
+    // 方向分类器(pm_fx_cls)逐字符投票定目标朝向；cls_out=-1 表示无结论(票数平局/空)，调用方回退几何法
+    int classifyDirection(const std::vector<cv::Mat>& char_images,
+                          int* cls_out, float* conf_out);
+
     cv::Mat createAnnotatedImage(
         const cv::Mat& src_img,
         const std::vector<Detection>& det_dets,

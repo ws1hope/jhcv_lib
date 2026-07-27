@@ -12,6 +12,23 @@
 namespace JHDeepCore {
 namespace Pipeline {
 
+// 把单字符 crop 按比例居中放入 target_w x target_h 画布（pad 0），避免被分类器拉伸变形。
+// pm_fx_cls 输入 600x200（宽条带），单字符近正方形，直接送会被 PreprocessImageCommon 的 cv::resize 拉伸失真。
+static cv::Mat letterboxToCanvas(const cv::Mat& img, int target_w, int target_h) {
+    cv::Mat canvas = cv::Mat::zeros(target_h, target_w, img.type());
+    if (img.empty()) return canvas;
+    float scale = std::min(static_cast<float>(target_w) / img.cols,
+                           static_cast<float>(target_h) / img.rows);
+    int new_w = std::max(1, static_cast<int>(std::round(img.cols * scale)));
+    int new_h = std::max(1, static_cast<int>(std::round(img.rows * scale)));
+    cv::Mat resized;
+    cv::resize(img, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_LINEAR);
+    int x = (target_w - new_w) / 2;
+    int y = (target_h - new_h) / 2;
+    resized.copyTo(canvas(cv::Rect(x, y, new_w, new_h)));
+    return canvas;
+}
+
 
 LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     : config_(config)
@@ -41,6 +58,50 @@ LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     warmup();
 }
 
+int LuqianPipeline::classifyDirection(const std::vector<cv::Mat>& char_images,
+                                      int* cls_out, float* conf_out)
+{
+    if (cls_out) *cls_out = -1;
+    if (conf_out) *conf_out = 0.f;
+    if (char_images.empty()) return 0;
+    // 方向分类置信度阈值（对称处理，低置信度一律反向）：
+    //   判为翻转(180)且平均置信度 < 阈值 -> 不翻转(0)
+    //   判为正向(0)且平均置信度  < 阈值 -> 反向翻转(180)
+    constexpr float kFlipConfThreshold = 0.95f;
+    // pm_fx_cls 输入 600x200（见 models/luqian/pm_fx_cls.yaml 的 img_scale）
+    constexpr int kClsW = 600, kClsH = 200;
+    int count_0 = 0, count_180 = 0;
+    float conf_0_sum = 0.f, conf_180_sum = 0.f;
+    for (auto& img : char_images) {
+        if (img.empty()) continue;
+        cv::Mat bgr;
+        if (img.channels() == 1) cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
+        else bgr = img;
+        cv::Mat canvas = letterboxToCanvas(bgr, kClsW, kClsH);
+        std::vector<cv::Mat> imgs = {canvas};
+        std::vector<ClassificationResult> results;
+        direction_cls_->process(imgs, results);
+        if (!results.empty()) {
+            if (results[0].class_id == 0) { count_0++; conf_0_sum += results[0].confidence; }
+            else { count_180++; conf_180_sum += results[0].confidence; }
+        }
+    }
+    if (count_180 > count_0) {
+        float avg_conf = conf_180_sum / count_180;
+        if (cls_out) *cls_out = 180;
+        if (conf_out) *conf_out = avg_conf;
+        return (avg_conf >= kFlipConfThreshold) ? 180 : 0;
+    }
+    if (count_0 > count_180) {
+        float avg_conf = conf_0_sum / count_0;
+        if (cls_out) *cls_out = 0;
+        if (conf_out) *conf_out = avg_conf;
+        return (avg_conf < kFlipConfThreshold) ? 180 : 0;
+    }
+    // 票数平局或无有效预测：cls_out 保持 -1，由调用方回退几何法
+    return 0;
+}
+
 LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                                              const std::string& heat_number)
 {
@@ -48,7 +109,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
 
     LuqianPipelineResult result;
 
-    // 方向判断改用几何法（不使用方向分类模型/炉号匹配）；heat_number 用于二次识别纠错
+    // 方向判断：分类器(pm_fx_cls)逐字符投票为主、几何法兜底；heat_number 用于二次识别纠错
 
     // 单图 OCR 封装：输出识别文本与置信度
     auto runOcr = [&](const cv::Mat& img, std::string& text, float& conf) {
@@ -268,31 +329,49 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             char_crops.push_back(std::move(crop));
         }
 
-        // ===== Step 5: 几何法判定整体朝向（不使用方向分类模型/炉号匹配） =====
-        // 字符已各自水平化，但片段间相对位置不变。最宽(最长)字符片段若位于
-        // 其余片段上方(y 更小)，则整体为正向；否则为倒置，整体翻转 180°。
-        bool any_flipped = false;
-        if (char_crops.size() >= 2) {
+        // ===== Step 5: 方向判定（分类器投票为主，几何法兜底） =====
+        // 字符已各自水平化。先用方向分类器(pm_fx_cls)对每个字符 crop 分类，
+        // 多数票 + 置信度阈值定目标朝向；分类器无结论(票数平局/空)时回退几何法
+        // （最宽片段是否严格位于其余片段上方）。
+        auto geometricAnyFlipped = [&]() -> bool {
+            if (char_crops.size() < 2) return false;
             int widest = 0;
             for (int i = 1; i < (int)char_crops.size(); ++i) {
                 if (char_crops[i].bbox_local.width > char_crops[widest].bbox_local.width)
                     widest = i;
             }
             int widest_y = char_crops[widest].bbox_local.y;
-            bool upright = true;  // 最宽片段是否严格位于所有其余片段上方
             for (int i = 0; i < (int)char_crops.size(); ++i) {
                 if (i == widest) continue;
-                if (widest_y >= char_crops[i].bbox_local.y) { upright = false; break; }
+                if (widest_y >= char_crops[i].bbox_local.y) return true;  // 非严格在上 -> 倒置
             }
-            any_flipped = !upright;
+            return false;
+        };
+
+        std::vector<cv::Mat> cls_imgs;
+        cls_imgs.reserve(char_crops.size());
+        for (auto& c : char_crops) cls_imgs.push_back(c.img_bgr);
+
+        int cls_out = -1; float cls_conf = 0.f;
+        int cls_dir = classifyDirection(cls_imgs, &cls_out, &cls_conf);
+
+        bool any_flipped;
+        if (cls_out >= 0) {
+            any_flipped = (cls_dir == 180);
+            if (verbose) {
+                std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
+                     << " (classifier vote, conf=" << cls_conf << ")" << std::endl;
+            }
+        } else {
+            any_flipped = geometricAnyFlipped();
+            if (verbose) {
+                std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
+                     << " (geometric fallback)" << std::endl;
+            }
         }
         const int target_dir = any_flipped ? 180 : 0;
-        if (verbose) {
-            std::cout << "[DEBUG]   target[" << di << "] direction: " << target_dir
-                 << " (geometric, per-target)" << std::endl;
-        }
 
-        // ===== Step 6: 逐片段 OCR（朝向已由几何法确定，整体翻转） =====
+        // ===== Step 6: 逐片段 OCR（朝向已由 Step 5 确定，整体翻转） =====
         for (auto& c : char_crops) {
             std::string char_text;
             float char_conf = 0.f;

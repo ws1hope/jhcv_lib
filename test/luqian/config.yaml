@@ -9,7 +9,7 @@ models:
   ocr_label: "models/luqian/rec.yaml"
   ocr_model2: "models/luqian/ocr6.onnx"
   ocr_label2: "models/luqian/ocr6.yaml"
-  direction_cls_model: "models/zbhc/zifu_fx_cls.onnx"
+  direction_cls_model: "models/luqian/pm_fx_cls.onnx"
 inference:
   device: "cpu"
 output:

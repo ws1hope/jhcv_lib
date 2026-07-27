@@ -42,6 +42,20 @@ bool h2d_split_enabled() {
 void log_pure_inference(double ms) {
     std::cerr << "[BENCH] Pure inference (session->Run): " << ms << " ms" << std::endl;
 }
+
+// JHDEEP_BENCH=1 时按段打印预处理各步耗时；关闭时仅一次 now() 调用，开销可忽略。
+struct PreStepTimer {
+    const char *tag;
+    std::chrono::high_resolution_clock::time_point t0;
+    explicit PreStepTimer(const char *t) : tag(t), t0(std::chrono::high_resolution_clock::now()) {}
+    ~PreStepTimer() {
+        if (!bench_enabled()) return;
+        double ms = std::chrono::duration<double, std::milli>(
+                        std::chrono::high_resolution_clock::now() - t0)
+                        .count();
+        std::cerr << "[BENCH] " << tag << ": " << ms << " ms" << std::endl;
+    }
+};
 } // namespace
 
 static auto to_model_path(const std::string &s) {
@@ -435,6 +449,7 @@ void OnnxInference::PreprocessForOnnx(const cv::Mat &image) {
         int expected_h = static_cast<int>(input_shape_[2]);
         int expected_w = static_cast<int>(input_shape_[3]);
         if (image.rows != expected_h || image.cols != expected_w) {
+            PreStepTimer _("ForOnnx.resize");
             cv::resize(image, resized, cv::Size(expected_w, expected_h));
             img = &resized;
         }
@@ -445,14 +460,17 @@ void OnnxInference::PreprocessForOnnx(const cv::Mat &image) {
     int width = img->cols;
     int hw = height * width;
 
-    for (int h = 0; h < height; ++h) {
-        const cv::Vec3f *row = img->ptr<cv::Vec3f>(h);
-        for (int w = 0; w < width; ++w) {
-            const cv::Vec3f &pixel = row[w];
-            int spatial = h * width + w;
-            input_buffer_[spatial] = pixel[0];
-            input_buffer_[hw + spatial] = pixel[1];
-            input_buffer_[2 * hw + spatial] = pixel[2];
+    {
+        PreStepTimer _("ForOnnx.transpose");
+        for (int h = 0; h < height; ++h) {
+            const cv::Vec3f *row = img->ptr<cv::Vec3f>(h);
+            for (int w = 0; w < width; ++w) {
+                const cv::Vec3f &pixel = row[w];
+                int spatial = h * width + w;
+                input_buffer_[spatial] = pixel[0];
+                input_buffer_[hw + spatial] = pixel[1];
+                input_buffer_[2 * hw + spatial] = pixel[2];
+            }
         }
     }
 }

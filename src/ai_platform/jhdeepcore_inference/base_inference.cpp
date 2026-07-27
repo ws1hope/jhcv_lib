@@ -1,10 +1,44 @@
 #include "jhdeepcore_inference/base_inference.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <numeric>
 
 namespace JHDeepCore {
 namespace inference {
+
+namespace {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+bool pre_bench_enabled() {
+    static const bool enabled = []() {
+        const char *env = std::getenv("JHDEEP_BENCH");
+        return env && std::string(env) == "1";
+    }();
+    return enabled;
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+// JHDEEP_BENCH=1 时按段打印预处理各步耗时；关闭时仅一次 now() 调用，开销可忽略。
+struct PreStepTimer {
+    const char *tag;
+    std::chrono::high_resolution_clock::time_point t0;
+    explicit PreStepTimer(const char *t) : tag(t), t0(std::chrono::high_resolution_clock::now()) {}
+    ~PreStepTimer() {
+        if (!pre_bench_enabled()) return;
+        double ms = std::chrono::duration<double, std::milli>(
+                        std::chrono::high_resolution_clock::now() - t0)
+                        .count();
+        std::cerr << "[BENCH] " << tag << ": " << ms << " ms" << std::endl;
+    }
+};
+} // namespace
 
 BaseInference::BaseInference(const std::string &model_path, const std::string &device,
                              const std::vector<std::string> &class_names)
@@ -30,12 +64,15 @@ BaseInference::BaseInference(const std::string &model_path, const std::string &d
 
 cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
     cv::Mat rgb_image;
-    if (image.channels() == 3) {
-        cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
-    } else if (image.channels() == 1) {
-        cv::cvtColor(image, rgb_image, cv::COLOR_GRAY2RGB);
-    } else {
-        rgb_image = image.clone();
+    {
+        PreStepTimer _("Common.cvtColor");
+        if (image.channels() == 3) {
+            cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
+        } else if (image.channels() == 1) {
+            cv::cvtColor(image, rgb_image, cv::COLOR_GRAY2RGB);
+        } else {
+            rgb_image = image.clone();
+        }
     }
 
     original_image_size_ = rgb_image.size();
@@ -48,17 +85,32 @@ cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
     }
 
     cv::Mat resized;
-    cv::resize(rgb_image, resized, resize_size);
+    {
+        PreStepTimer _("Common.resize");
+        cv::resize(rgb_image, resized, resize_size);
+    }
 
     cv::Mat normalized;
-    resized.convertTo(normalized, CV_32F, 1.0 / 255.0);
+    {
+        PreStepTimer _("Common.convertTo");
+        resized.convertTo(normalized, CV_32F, 1.0 / 255.0);
+    }
 
     std::vector<cv::Mat> channels;
-    cv::split(normalized, channels);
-    for (size_t i = 0; i < channels.size() && i < config_.mean.size(); ++i) {
-        channels[i] = (channels[i] - config_.mean[i]) / config_.stddev[i];
+    {
+        PreStepTimer _("Common.split");
+        cv::split(normalized, channels);
     }
-    cv::merge(channels, normalized);
+    {
+        PreStepTimer _("Common.normStd");
+        for (size_t i = 0; i < channels.size() && i < config_.mean.size(); ++i) {
+            channels[i] = (channels[i] - config_.mean[i]) / config_.stddev[i];
+        }
+    }
+    {
+        PreStepTimer _("Common.merge");
+        cv::merge(channels, normalized);
+    }
 
     return normalized;
 }
@@ -67,27 +119,46 @@ cv::Mat BaseInference::PreprocessImageDetection(const cv::Mat &image) {
     original_image_size_ = image.size();
 
     cv::Mat rgb_image;
-    if (image.channels() == 3) {
-        cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
-    } else if (image.channels() == 1) {
-        cv::cvtColor(image, rgb_image, cv::COLOR_GRAY2RGB);
-    } else {
-        rgb_image = image.clone();
+    {
+        PreStepTimer _("Detection.cvtColor");
+        if (image.channels() == 3) {
+            cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
+        } else if (image.channels() == 1) {
+            cv::cvtColor(image, rgb_image, cv::COLOR_GRAY2RGB);
+        } else {
+            rgb_image = image.clone();
+        }
     }
 
     cv::Size target_size = config_.img_scale.width > 0 ? config_.img_scale : cv::Size(640, 640);
-    cv::Mat letterboxed = Letterbox(rgb_image, target_size, letterbox_pad_, letterbox_gain_);
+    cv::Mat letterboxed;
+    {
+        PreStepTimer _("Detection.letterbox");
+        letterboxed = Letterbox(rgb_image, target_size, letterbox_pad_, letterbox_gain_);
+    }
 
     cv::Mat normalized;
-    letterboxed.convertTo(normalized, CV_32F, 1.0 / 255.0);
+    {
+        PreStepTimer _("Detection.convertTo");
+        letterboxed.convertTo(normalized, CV_32F, 1.0 / 255.0);
+    }
 
     if (!config_.mean.empty() && !config_.stddev.empty()) {
         std::vector<cv::Mat> channels;
-        cv::split(normalized, channels);
-        for (size_t i = 0; i < channels.size() && i < config_.mean.size(); ++i) {
-            channels[i] = (channels[i] - config_.mean[i]) / config_.stddev[i];
+        {
+            PreStepTimer _("Detection.split");
+            cv::split(normalized, channels);
         }
-        cv::merge(channels, normalized);
+        {
+            PreStepTimer _("Detection.normStd");
+            for (size_t i = 0; i < channels.size() && i < config_.mean.size(); ++i) {
+                channels[i] = (channels[i] - config_.mean[i]) / config_.stddev[i];
+            }
+        }
+        {
+            PreStepTimer _("Detection.merge");
+            cv::merge(channels, normalized);
+        }
     }
 
     return normalized;

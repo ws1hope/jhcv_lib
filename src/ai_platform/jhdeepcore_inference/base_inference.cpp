@@ -63,19 +63,7 @@ BaseInference::BaseInference(const std::string &model_path, const std::string &d
 }
 
 cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
-    cv::Mat rgb_image;
-    {
-        PreStepTimer _("Common.cvtColor");
-        if (image.channels() == 3) {
-            cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
-        } else if (image.channels() == 1) {
-            cv::cvtColor(image, rgb_image, cv::COLOR_GRAY2RGB);
-        } else {
-            rgb_image = image.clone();
-        }
-    }
-
-    original_image_size_ = rgb_image.size();
+    original_image_size_ = image.size();
 
     cv::Size resize_size;
     if (config_.img_scale.width > 0 && config_.img_scale.height > 0) {
@@ -84,16 +72,30 @@ cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
         resize_size = cv::Size(config_.class_scale, config_.class_scale);
     }
 
+    // 先 resize 再 cvtColor：通道交换是逐像素操作，与空间 resize 可交换；
+    // 放到小图上做，避免对原图做一次全分辨率拷贝+通道交换（大图时 cvtColor 受访存带宽限制）。
     cv::Mat resized;
     {
         PreStepTimer _("Common.resize");
-        cv::resize(rgb_image, resized, resize_size);
+        cv::resize(image, resized, resize_size);
+    }
+
+    cv::Mat rgb_image;
+    {
+        PreStepTimer _("Common.cvtColor");
+        if (resized.channels() == 3) {
+            cv::cvtColor(resized, rgb_image, cv::COLOR_BGR2RGB);
+        } else if (resized.channels() == 1) {
+            cv::cvtColor(resized, rgb_image, cv::COLOR_GRAY2RGB);
+        } else {
+            rgb_image = resized.clone();
+        }
     }
 
     cv::Mat normalized;
     {
         PreStepTimer _("Common.convertTo");
-        resized.convertTo(normalized, CV_32F, 1.0 / 255.0);
+        rgb_image.convertTo(normalized, CV_32F, 1.0 / 255.0);
     }
 
     std::vector<cv::Mat> channels;
@@ -118,29 +120,31 @@ cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
 cv::Mat BaseInference::PreprocessImageDetection(const cv::Mat &image) {
     original_image_size_ = image.size();
 
-    cv::Mat rgb_image;
-    {
-        PreStepTimer _("Detection.cvtColor");
-        if (image.channels() == 3) {
-            cv::cvtColor(image, rgb_image, cv::COLOR_BGR2RGB);
-        } else if (image.channels() == 1) {
-            cv::cvtColor(image, rgb_image, cv::COLOR_GRAY2RGB);
-        } else {
-            rgb_image = image.clone();
-        }
-    }
-
     cv::Size target_size = config_.img_scale.width > 0 ? config_.img_scale : cv::Size(640, 640);
+    // 先 Letterbox 再 cvtColor：通道交换与 resize/pad 可交换，放到小图(640x640)上做，
+    // 避免对原图做全分辨率拷贝+通道交换（大图时 cvtColor 受访存带宽限制）。
     cv::Mat letterboxed;
     {
         PreStepTimer _("Detection.letterbox");
-        letterboxed = Letterbox(rgb_image, target_size, letterbox_pad_, letterbox_gain_);
+        letterboxed = Letterbox(image, target_size, letterbox_pad_, letterbox_gain_);
+    }
+
+    cv::Mat rgb_image;
+    {
+        PreStepTimer _("Detection.cvtColor");
+        if (letterboxed.channels() == 3) {
+            cv::cvtColor(letterboxed, rgb_image, cv::COLOR_BGR2RGB);
+        } else if (letterboxed.channels() == 1) {
+            cv::cvtColor(letterboxed, rgb_image, cv::COLOR_GRAY2RGB);
+        } else {
+            rgb_image = letterboxed.clone();
+        }
     }
 
     cv::Mat normalized;
     {
         PreStepTimer _("Detection.convertTo");
-        letterboxed.convertTo(normalized, CV_32F, 1.0 / 255.0);
+        rgb_image.convertTo(normalized, CV_32F, 1.0 / 255.0);
     }
 
     if (!config_.mean.empty() && !config_.stddev.empty()) {

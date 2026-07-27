@@ -47,6 +47,8 @@ void accumulateTiming(InferenceTiming& acc, const InferenceTiming& t)
     acc.preprocess_ms += t.preprocess_ms;
     acc.tensor_ms += t.tensor_ms;
     acc.run_ms += t.run_ms;
+    acc.h2d_ms += t.h2d_ms;
+    acc.h2d_split = acc.h2d_split || t.h2d_split;
     if (acc.device.empty() && !t.device.empty()) acc.device = t.device;
 }
 
@@ -756,9 +758,15 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
         std::cout << "[DEBUG] gx_jingzheng timing summary (device=" << result.timing.device << "):" << std::endl;
         auto printRow = [&](const char* name, const InferenceTiming& t) {
             std::cout << "[DEBUG]   " << name << " : n=" << t.count
-                      << " prep=" << t.preprocess_ms << "ms"
-                      << " ten=" << t.tensor_ms << "ms"
-                      << " run=" << t.run_ms << "ms (incl. H2D)" << std::endl;
+                      << " prep=" << t.preprocess_ms << "ms";
+            if (t.h2d_split) {
+                std::cout << " h2d=" << t.h2d_ms << "ms"
+                          << " infer=" << (t.run_ms - t.h2d_ms) << "ms";
+            } else {
+                std::cout << " ten=" << t.tensor_ms << "ms"
+                          << " run=" << t.run_ms << "ms (incl. H2D)";
+            }
+            std::cout << std::endl;
         };
         printRow("det", result.timing.det);
         printRow("seg", result.timing.seg);

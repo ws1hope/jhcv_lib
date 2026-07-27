@@ -87,9 +87,15 @@ public:
                 const auto& T = pres.timing;
                 auto put = [&](const char* name, const InferenceTiming& t) {
                     fout << " " << name << "(n=" << t.count
-                         << " prep=" << t.preprocess_ms
-                         << " ten=" << t.tensor_ms
-                         << " run=" << t.run_ms << ")";
+                         << " prep=" << t.preprocess_ms;
+                    if (t.h2d_split) {
+                        fout << " h2d=" << t.h2d_ms
+                             << " infer=" << (t.run_ms - t.h2d_ms);
+                    } else {
+                        fout << " ten=" << t.tensor_ms
+                             << " run=" << t.run_ms;
+                    }
+                    fout << ")";
                 };
                 fout << "[timing] pic=" << (pic_number + 1) << " device=" << T.device;
                 put("det", T.det);

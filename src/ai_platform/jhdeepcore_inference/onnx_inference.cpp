@@ -4,6 +4,10 @@
 #include <iostream>
 #include <stdexcept>
 
+#ifdef USE_CUDA
+#include <cuda_runtime_api.h>
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -19,6 +23,14 @@ namespace {
 bool bench_enabled() {
     static const bool enabled = []() {
         const char *env = std::getenv("JHDEEP_BENCH");
+        return env && std::string(env) == "1";
+    }();
+    return enabled;
+}
+
+bool h2d_split_enabled() {
+    static const bool enabled = []() {
+        const char *env = std::getenv("JHDEEP_H2D_SPLIT");
         return env && std::string(env) == "1";
     }();
     return enabled;
@@ -92,6 +104,9 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
 }
 
 OnnxInference::~OnnxInference() {
+#ifdef USE_CUDA
+    if (cuda_input_) cudaFree(cuda_input_);
+#endif
 #ifdef ONNXRUNTIME_FOUND
     session_.reset();
 #endif
@@ -211,6 +226,7 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     cv::Mat preprocessed = PreprocessImageCommon(image);
     PreprocessForOnnx(preprocessed);
     auto _pre1 = std::chrono::high_resolution_clock::now();
+    measureH2DProxy(input_buffer_.data(), input_buffer_.size());
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
@@ -271,6 +287,7 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     cv::Mat preprocessed = PreprocessImageDetection(image);
     PreprocessForOnnx(preprocessed);
     auto _pre1 = std::chrono::high_resolution_clock::now();
+    measureH2DProxy(input_buffer_.data(), input_buffer_.size());
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
@@ -331,6 +348,7 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     cv::Mat preprocessed = PreprocessImageDetection(image);
     PreprocessForOnnx(preprocessed);
     auto _pre1 = std::chrono::high_resolution_clock::now();
+    measureH2DProxy(input_buffer_.data(), input_buffer_.size());
 
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
@@ -442,6 +460,8 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
         throw std::runtime_error("Model not loaded");
     }
 
+    measureH2DProxy(input_data.data(), input_data.size());
+
     auto _ten0 = std::chrono::high_resolution_clock::now();
     Ort::Value input_tensor =
         Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
@@ -472,6 +492,45 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
     return output;
 #else
     throw std::runtime_error("ONNX Runtime not found");
+#endif
+}
+
+void OnnxInference::ensureCudaInput(size_t float_count) {
+#ifdef USE_CUDA
+    if (float_count > cuda_input_count_) {
+        if (cuda_input_) {
+            cudaFree(cuda_input_);
+            cuda_input_ = nullptr;
+            cuda_input_count_ = 0;
+        }
+        if (cudaMalloc(&cuda_input_, float_count * sizeof(float)) == cudaSuccess) {
+            cuda_input_count_ = float_count;
+        } else {
+            cuda_input_ = nullptr;   // 分配失败：保持空，下次调用重试
+        }
+    }
+#else
+    (void)float_count;
+#endif
+}
+
+void OnnxInference::measureH2DProxy(const float *data, size_t count) {
+    // 仅在 cuda + JHDEEP_H2D_SPLIT=1 时做一次显式 cudaMemcpy 计时作 H2D 估算。
+    // 不改 Run 的输入（Run 仍用 CPU tensor，内部另做一次 H2D），故对推理零风险；
+    // infer ≈ run_ms - h2d_ms（run 含真实 H2D，与代理拷贝同尺寸故量级一致）。
+    if (device_ != "cuda" || !h2d_split_enabled()) return;
+#ifdef USE_CUDA
+    if (count == 0) return;
+    ensureCudaInput(count);
+    if (!cuda_input_) return;   // cudaMalloc 失败则跳过，不影响推理
+    auto t0 = std::chrono::high_resolution_clock::now();
+    cudaMemcpy(cuda_input_, data, count * sizeof(float), cudaMemcpyHostToDevice);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    batch_timing_.h2d_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+    batch_timing_.h2d_split = true;
+#else
+    (void)data;
+    (void)count;
 #endif
 }
 

@@ -5,6 +5,7 @@
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <array>
 #include <regex>
@@ -14,7 +15,19 @@
 #include <onnxruntime_cxx_api.h>
 #include <yaml-cpp/yaml.h>
 
+#ifdef USE_CUDA
+#include <cuda_runtime_api.h>
+#endif
+
 namespace JHDeepCore {
+
+static bool h2dSplitEnabled() {
+    static const bool enabled = []() {
+        const char *env = std::getenv("JHDEEP_H2D_SPLIT");
+        return env && std::string(env) == "1";
+    }();
+    return enabled;
+}
 
 static std::vector<std::string> parseYamlCharDict(const std::string &yaml_path,
                                                     std::vector<float> &out_mean,
@@ -302,6 +315,12 @@ class OCRRecognizerPrivate {
         std::cout << "[INFO] OCR Rec engine initialized." << std::endl;
     }
 
+    ~OCRRecognizerPrivate() {
+#ifdef USE_CUDA
+        if (rec_cuda_scratch_) cudaFree(rec_cuda_scratch_);
+#endif
+    }
+
     void process(std::vector<cv::Mat> &images, std::vector<OCRResult> &results) {
         results.clear();
         batch_timing_ = InferenceTiming{};
@@ -335,6 +354,46 @@ class OCRRecognizerPrivate {
     // 最近一次 process() 的分段耗时（process 起点复位，recognizeSingle 累加）
     InferenceTiming batch_timing_;
     std::string rec_device_;   // 实际执行设备 "cuda"/"cpu"（仅 USE_CUDA && useGPU 为 cuda）
+    float *rec_cuda_scratch_ = nullptr;   // H2D 估算用的 throwaway GPU 缓冲
+    size_t rec_cuda_scratch_count_ = 0;
+
+    void ensureCudaScratch(size_t float_count) {
+#ifdef USE_CUDA
+        if (float_count > rec_cuda_scratch_count_) {
+            if (rec_cuda_scratch_) {
+                cudaFree(rec_cuda_scratch_);
+                rec_cuda_scratch_ = nullptr;
+                rec_cuda_scratch_count_ = 0;
+            }
+            if (cudaMalloc(&rec_cuda_scratch_, float_count * sizeof(float)) == cudaSuccess) {
+                rec_cuda_scratch_count_ = float_count;
+            } else {
+                rec_cuda_scratch_ = nullptr;
+            }
+        }
+#else
+        (void)float_count;
+#endif
+    }
+
+    // JHDEEP_H2D_SPLIT=1 且 cuda 时：显式 cudaMemcpy 一份输入计时作 H2D 估算，
+    // 不改 Run 输入（推理零风险）；infer ≈ run_ms - h2d_ms。
+    void measureH2DProxy(const float *data, size_t count) {
+        if (rec_device_ != "cuda" || !h2dSplitEnabled()) return;
+#ifdef USE_CUDA
+        if (count == 0) return;
+        ensureCudaScratch(count);
+        if (!rec_cuda_scratch_) return;
+        auto t0 = std::chrono::high_resolution_clock::now();
+        cudaMemcpy(rec_cuda_scratch_, data, count * sizeof(float), cudaMemcpyHostToDevice);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        batch_timing_.h2d_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        batch_timing_.h2d_split = true;
+#else
+        (void)data;
+        (void)count;
+#endif
+    }
 
     OCRResult recognizeSingle(const cv::Mat &text_image) {
         OCRResult result;
@@ -353,6 +412,7 @@ class OCRRecognizerPrivate {
         auto _pre0 = std::chrono::high_resolution_clock::now();
         std::vector<float> rec_input = preprocessRec(text_image, rec_img_h, rec_img_w, rec_mean, rec_std);
         auto _pre1 = std::chrono::high_resolution_clock::now();
+        measureH2DProxy(rec_input.data(), rec_input.size());
 
         std::array<int64_t, 4> rec_input_shape = {1, 3, rec_img_h, rec_img_w};
         Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);

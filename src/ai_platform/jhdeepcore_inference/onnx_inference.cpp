@@ -503,7 +503,7 @@ void OnnxInference::ensureCudaInput(size_t float_count) {
             cuda_input_ = nullptr;
             cuda_input_count_ = 0;
         }
-        if (cudaMalloc(&cuda_input_, float_count * sizeof(float)) == cudaSuccess) {
+        if (cudaMalloc((void **)&cuda_input_, float_count * sizeof(float)) == cudaSuccess) {
             cuda_input_count_ = float_count;
         } else {
             cuda_input_ = nullptr;   // 分配失败：保持空，下次调用重试

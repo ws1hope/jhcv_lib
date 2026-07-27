@@ -365,7 +365,7 @@ class OCRRecognizerPrivate {
                 rec_cuda_scratch_ = nullptr;
                 rec_cuda_scratch_count_ = 0;
             }
-            if (cudaMalloc(&rec_cuda_scratch_, float_count * sizeof(float)) == cudaSuccess) {
+            if (cudaMalloc((void **)&rec_cuda_scratch_, float_count * sizeof(float)) == cudaSuccess) {
                 rec_cuda_scratch_count_ = float_count;
             } else {
                 rec_cuda_scratch_ = nullptr;

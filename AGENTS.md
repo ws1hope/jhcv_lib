@@ -98,7 +98,7 @@ This workflow is mandatory whenever an agent actually changes project code in th
 ### Required sequence
 
 1. Finish the requested project-code change and run the relevant formatter, build, tests, or other verification available in the current environment.
-2. In `/Users/wangsen/Documents/GitHub/jhcv_lib`, inspect the diff, stage only files belonging to the task, inspect the staged diff, and commit the project change first.
+2. **Obtain explicit user approval for the completed change first** (present a concise summary/diff; per the approval gate in `CLAUDE.md`, do not commit or push without it). Then, in `/Users/wangsen/Documents/GitHub/jhcv_lib`, inspect the diff, stage only files belonging to the task, inspect the staged diff, and commit the project change first.
 3. Capture the full project commit hash with `git rev-parse HEAD`. Never guess it or use a pre-commit hash.
 4. Add one truthful resolved record to the two tracking files without altering historical records:
    - Append exactly one index row to the Markdown table immediately below `## 已解决汇总`. The table columns must remain `日期 | 问题 | 解决办法`.

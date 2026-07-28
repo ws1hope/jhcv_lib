@@ -29,6 +29,19 @@ static cv::Mat letterboxToCanvas(const cv::Mat& img, int target_w, int target_h)
     return canvas;
 }
 
+// 把一次 lastBatchTiming() 的结果累加进 per-model 累加器
+static void accumulateTiming(InferenceTiming& acc, const InferenceTiming& t)
+{
+    acc.count += t.count;
+    acc.preprocess_ms += t.preprocess_ms;
+    acc.tensor_ms += t.tensor_ms;
+    acc.run_ms += t.run_ms;
+    acc.h2d_ms += t.h2d_ms;
+    acc.d2h_ms += t.d2h_ms;
+    acc.h2d_split = acc.h2d_split || t.h2d_split;
+    if (acc.device.empty() && !t.device.empty()) acc.device = t.device;
+}
+
 
 LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     : config_(config)
@@ -81,6 +94,7 @@ int LuqianPipeline::classifyDirection(const std::vector<cv::Mat>& char_images,
         std::vector<cv::Mat> imgs = {canvas};
         std::vector<ClassificationResult> results;
         direction_cls_->process(imgs, results);
+        accumulateTiming(t_cls_, direction_cls_->lastBatchTiming());
         if (!results.empty()) {
             if (results[0].class_id == 0) { count_0++; conf_0_sum += results[0].confidence; }
             else { count_180++; conf_180_sum += results[0].confidence; }
@@ -102,12 +116,32 @@ int LuqianPipeline::classifyDirection(const std::vector<cv::Mat>& char_images,
     return 0;
 }
 
+void LuqianPipeline::fillTiming(LuqianPipelineResult& r, double total_ms)
+{
+    r.timing.det = t_det_;
+    r.timing.seg = t_seg_;
+    r.timing.cls = t_cls_;
+    r.timing.ocr = t_ocr_;
+    r.timing.ocr2 = t_ocr2_;
+    r.timing.total_ms = total_ms;
+    // device 取首个有值的模型（实际执行设备，cuda 下可能因 EP 失败降级为 cpu）
+    if (!t_det_.device.empty()) r.timing.device = t_det_.device;
+    else if (!t_seg_.device.empty()) r.timing.device = t_seg_.device;
+    else if (!t_cls_.device.empty()) r.timing.device = t_cls_.device;
+    else if (!t_ocr_.device.empty()) r.timing.device = t_ocr_.device;
+    else if (!t_ocr2_.device.empty()) r.timing.device = t_ocr2_.device;
+    else r.timing.device = config_.device;
+}
+
 LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                                              const std::string& heat_number)
 {
     auto infer_start = std::chrono::high_resolution_clock::now();
 
     LuqianPipelineResult result;
+
+    // 复位各模型耗时累加器
+    t_det_ = t_seg_ = t_cls_ = t_ocr_ = t_ocr2_ = InferenceTiming{};
 
     // 方向判断：分类器(pm_fx_cls)逐字符投票为主、几何法兜底；heat_number 用于二次识别纠错
 
@@ -119,6 +153,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         std::vector<cv::Mat> ocr_imgs = {img};
         std::vector<OCRResult> ocr_results;
         ocr_->process(ocr_imgs, ocr_results);
+        accumulateTiming(t_ocr_, ocr_->lastBatchTiming());
         OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
         if (!ocr_res.boxes.empty()) {
             text = ocr_res.boxes[0].text;
@@ -134,6 +169,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         std::vector<cv::Mat> ocr_imgs = {img};
         std::vector<OCRResult> ocr_results;
         ocr2_->process(ocr_imgs, ocr_results);
+        accumulateTiming(t_ocr2_, ocr2_->lastBatchTiming());
         OCRResult ocr_res = ocr_results.empty() ? OCRResult{} : ocr_results[0];
         if (!ocr_res.boxes.empty()) {
             text = ocr_res.boxes[0].text;
@@ -145,6 +181,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
     std::vector<cv::Mat> det_imgs = {image};
     std::vector<DetectionResult> det_results;
     det_->process(det_imgs, det_results);
+    accumulateTiming(t_det_, det_->lastBatchTiming());
     DetectionResult det_res = det_results.empty() ? DetectionResult{} : det_results[0];
 
     if (verbose) {
@@ -154,6 +191,9 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
     result.det_detections = det_res.detections;
 
     if (det_res.num_detections == 0) {
+        auto infer_end = std::chrono::high_resolution_clock::now();
+        auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
+        fillTiming(result, static_cast<double>(infer_ms));
         result.annotated_image = createAnnotatedImage(image, {}, {});
         return result;
     }
@@ -186,6 +226,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         std::vector<cv::Mat> seg_imgs = {target_img};
         std::vector<InstanceSegmentationResult> seg_results;
         seg_->process(seg_imgs, seg_results);
+        accumulateTiming(t_seg_, seg_->lastBatchTiming());
         InstanceSegmentationResult seg_res = seg_results.empty() ? InstanceSegmentationResult{} : seg_results[0];
 
         if (verbose) {
@@ -495,8 +536,28 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
 
     auto infer_end = std::chrono::high_resolution_clock::now();
     auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
+    fillTiming(result, static_cast<double>(infer_ms));
     if (verbose) {
-        std::cout << "[DEBUG] total inference time: " << infer_ms << " ms" << std::endl;
+        std::cout << "[DEBUG] luqian timing summary (device=" << result.timing.device << "):" << std::endl;
+        auto printRow = [&](const char* name, const InferenceTiming& t) {
+            std::cout << "[DEBUG]   " << name << " : n=" << t.count
+                      << " prep=" << t.preprocess_ms << "ms";
+            if (t.h2d_split) {
+                std::cout << " h2d=" << t.h2d_ms << "ms"
+                          << " d2h=" << t.d2h_ms << "ms"
+                          << " infer=" << (t.run_ms - t.h2d_ms - t.d2h_ms) << "ms";
+            } else {
+                std::cout << " ten=" << t.tensor_ms << "ms"
+                          << " run=" << t.run_ms << "ms (incl. H2D)";
+            }
+            std::cout << std::endl;
+        };
+        printRow("det", result.timing.det);
+        printRow("seg", result.timing.seg);
+        printRow("cls", result.timing.cls);
+        printRow("ocr", result.timing.ocr);
+        printRow("ocr2", result.timing.ocr2);
+        std::cout << "[DEBUG]   total: " << result.timing.total_ms << " ms" << std::endl;
     }
 
     result.annotated_image = createAnnotatedImage(

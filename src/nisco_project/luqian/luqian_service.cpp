@@ -111,6 +111,31 @@ public:
             img_confs.push_back(computeImageConfidence(pipeline_result));
             has_detections.push_back(!pipeline_result.det_detections.empty());
 
+            // 各模型分段耗时写进日志（每张图一行）。run 在 cuda 下含 H2D 拷贝，ten 预期≈0。
+            {
+                const auto& T = pipeline_result.timing;
+                auto put = [&](const char* name, const InferenceTiming& t) {
+                    fout << " " << name << "(n=" << t.count
+                         << " prep=" << t.preprocess_ms;
+                    if (t.h2d_split) {
+                        fout << " h2d=" << t.h2d_ms
+                             << " d2h=" << t.d2h_ms
+                             << " infer=" << (t.run_ms - t.h2d_ms - t.d2h_ms);
+                    } else {
+                        fout << " ten=" << t.tensor_ms
+                             << " run=" << t.run_ms;
+                    }
+                    fout << ")";
+                };
+                fout << "[timing] pic=" << (pic_number + 1) << " device=" << T.device;
+                put("det", T.det);
+                put("seg", T.seg);
+                put("cls", T.cls);
+                put("ocr", T.ocr);
+                put("ocr2", T.ocr2);
+                fout << " total=" << T.total_ms << "ms" << std::endl;
+            }
+
             time_t currtime = time(NULL);
             tm* t = localtime(&currtime);
 

@@ -35,10 +35,23 @@ struct LuqianTargetResult {
     float ocr_confidence = 0.f;  // 该目标各已识别字符 OCR 置信度的最小值
 };
 
+// 各模型分段耗时汇总（毫秒）。device 反映实际执行设备（cuda/cpu）。
+// run_ms 在 cuda 下含 H2D 拷贝；tensor_ms 预期≈0（CPU allocator 包 buffer）。
+struct LuqianTiming {
+    InferenceTiming det;      // 目标检测
+    InferenceTiming seg;     // 实例分割
+    InferenceTiming cls;    // 方向分类
+    InferenceTiming ocr;    // OCR（模型1）
+    InferenceTiming ocr2;   // OCR（模型2，二次识别，未配置则为空）
+    double total_ms = 0.0;  // process() 总耗时（含非模型部分）
+    std::string device;     // 实际设备 cuda/cpu
+};
+
 struct LuqianPipelineResult {
     std::vector<Detection> det_detections;
     std::vector<LuqianTargetResult> targets;
     cv::Mat annotated_image;
+    LuqianTiming timing;     // 各模型分段耗时 + 总耗时 + 设备
 };
 
 class LuqianPipeline {
@@ -60,12 +73,18 @@ private:
         const std::vector<Detection>& det_dets,
         const std::vector<LuqianTargetResult>& targets);
 
+    // 把本次 process() 累计的各模型耗时写进 result.timing
+    void fillTiming(LuqianPipelineResult& r, double total_ms);
+
     std::unique_ptr<Detector> det_;
     std::unique_ptr<InstanceSegmenter> seg_;
     std::unique_ptr<OCRRecognizer> ocr_;
     std::unique_ptr<OCRRecognizer> ocr2_;   // 二次识别 OCR（可选，为空不启用）
     std::unique_ptr<Classifier> direction_cls_;
     LuqianServerConfig config_;
+
+    // 各模型分段耗时累加器：process() 起点复位，各模型调用后累加
+    InferenceTiming t_det_, t_seg_, t_cls_, t_ocr_, t_ocr2_;
 };
 
 } // namespace Pipeline

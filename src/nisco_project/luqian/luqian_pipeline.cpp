@@ -194,7 +194,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         auto infer_end = std::chrono::high_resolution_clock::now();
         auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
         fillTiming(result, static_cast<double>(infer_ms));
-        result.annotated_image = createAnnotatedImage(image, {}, {});
+        result.annotated_image = createAnnotatedImage(image, {});
         return result;
     }
 
@@ -561,272 +561,94 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
     }
 
     result.annotated_image = createAnnotatedImage(
-        image, result.det_detections, result.targets);
+        image, result.targets);
 
     return result;
 }
 
 cv::Mat LuqianPipeline::createAnnotatedImage(
     const cv::Mat& src_img,
-    const std::vector<Detection>& det_dets,
     const std::vector<LuqianTargetResult>& targets)
 {
-    cv::Mat annotated = src_img.clone();
-
-    // 层1: det 目标检测框 (绿色)
-    for (int i = 0; i < (int)det_dets.size(); i++) {
-        auto& det = det_dets[i];
-        cv::rectangle(annotated, det.bbox, cv::Scalar(0, 255, 0), 2);
-        std::string label = "det_" + std::to_string(i + 1) + " " + det.class_name
-                            + " " + cv::format("%.2f", det.confidence);
-        cv::putText(annotated, label,
-                    cv::Point(det.bbox.x, det.bbox.y - 5),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+    // 底图裁到第一个目标框（targets[0].bbox_on_src = 最左 det 框）内；无目标时回退整图。
+    // 后续绿/蓝/红框及标注均按裁剪原点偏移对齐，且只绘制第一个目标。
+    cv::Rect crop_rect(0, 0, src_img.cols, src_img.rows);
+    const bool focus_first = !targets.empty();
+    if (focus_first) {
+        cv::Rect r = targets[0].bbox_on_src & cv::Rect(0, 0, src_img.cols, src_img.rows);
+        if (r.area() > 0) crop_rect = r;
     }
+    cv::Mat annotated = src_img(crop_rect).clone();
+    const int ox = crop_rect.x, oy = crop_rect.y;   // 裁剪原点：整图坐标减去它落到裁剪图
+    auto off = [&](cv::Rect r) {
+        return cv::Rect(r.x - ox, r.y - oy, r.width, r.height);
+    };
 
-    // 层2+3: 目标检测框 (蓝色) + 实例分割字符 (红色)
-    for (int ti = 0; ti < (int)targets.size(); ti++) {
-        auto& target = targets[ti];
-        cv::rectangle(annotated, target.bbox_on_src, cv::Scalar(255, 100, 0), 2);
-        std::string target_label = "target" + std::to_string(ti + 1) + " " + target.class_name
-                                    + " " + cv::format("%.2f", target.confidence)
-                                    + " dir=" + std::to_string(target.direction_flag);
-        cv::putText(annotated, target_label,
-                    cv::Point(target.bbox_on_src.x, target.bbox_on_src.y - 5),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 100, 0), 2);
+    if (focus_first) {
+        const auto& t0 = targets[0];
 
-        for (auto& ch : target.chars) {
-            cv::rectangle(annotated, ch.bbox_on_src, cv::Scalar(0, 0, 255), 1);
-            // 字符框右上角标注角度分类结果，右下角标注 OCR 置信度
-            std::string dir_label = "d" + std::to_string(ch.direction_flag);
-            cv::putText(annotated, dir_label,
-                        cv::Point(ch.bbox_on_src.x + ch.bbox_on_src.width + 3,
-                                  ch.bbox_on_src.y + 12),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 200, 255), 1);
-            std::string conf_label = cv::format("%.2f", ch.ocr_confidence);
-            cv::putText(annotated, conf_label,
-                        cv::Point(ch.bbox_on_src.x + ch.bbox_on_src.width + 3,
-                                  ch.bbox_on_src.y + ch.bbox_on_src.height),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+        // 层1: det 目标检测框 (绿色) - 第一个目标的 det 框
+        {
+            cv::Rect dr = off(t0.bbox_on_src);
+            cv::rectangle(annotated, dr, cv::Scalar(0, 255, 0), 2);
+            std::string label = "det_1 " + t0.class_name
+                                + " " + cv::format("%.2f", t0.confidence);
+            cv::putText(annotated, label,
+                        cv::Point(dr.x, dr.y - 5),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+        }
+
+        // 层2+3: 目标检测框 (蓝色) + 实例分割字符 (红色)
+        {
+            cv::Rect tr = off(t0.bbox_on_src);
+            cv::rectangle(annotated, tr, cv::Scalar(255, 100, 0), 2);
+            std::string target_label = "target1 " + t0.class_name
+                                        + " " + cv::format("%.2f", t0.confidence)
+                                        + " dir=" + std::to_string(t0.direction_flag);
+            cv::putText(annotated, target_label,
+                        cv::Point(tr.x, tr.y - 5),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 100, 0), 2);
+
+            for (auto& ch : t0.chars) {
+                cv::Rect cr = off(ch.bbox_on_src);
+                cv::rectangle(annotated, cr, cv::Scalar(0, 0, 255), 1);
+                // 字符框右上角标注角度分类结果，右下角标注 OCR 置信度
+                std::string dir_label = "d" + std::to_string(ch.direction_flag);
+                cv::putText(annotated, dir_label,
+                            cv::Point(cr.x + cr.width + 3, cr.y + 12),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 200, 255), 1);
+                std::string conf_label = cv::format("%.2f", ch.ocr_confidence);
+                cv::putText(annotated, conf_label,
+                            cv::Point(cr.x + cr.width + 3, cr.y + cr.height),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+            }
         }
     }
 
-    // 层4: 左上角两次识别结果(ocr1/ocr2)与最终结果(final,绿色)，加大字号；超宽时加宽画布
-    {
+    // 层4: 左上角最终结果(final,绿色)，加大字号；超宽时加宽画布
+    // ocr1/ocr2 不再绘于图上，改写入日志（见 luqian_service.cpp handleRequest 的 [ocr] 行）
+    if (focus_first) {
+        const auto& t = targets[0];
         const double fs = 4.5;     // 字号（加大）
         const int thick = 11;
         const int line_gap = 140;  // 行距
         auto textW = [&](const std::string& s) {
             return cv::getTextSize(s, cv::FONT_HERSHEY_SIMPLEX, fs, thick, nullptr).width;
         };
-        int need_w = 0;
-        for (auto& t : targets) {
-            need_w = std::max(need_w, textW("ocr1: " + t.ocr1_text));
-            if (!t.ocr2_text.empty())
-                need_w = std::max(need_w, textW("ocr2: " + t.ocr2_text));
-            need_w = std::max(need_w, textW("final: " + t.ocr_text));
-        }
+        int need_w = textW(t.ocr_text);
         if (need_w + 40 > annotated.cols) {
             cv::copyMakeBorder(annotated, annotated, 0, 0, 0,
                                need_w + 40 - annotated.cols,
                                cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
         }
         int text_y = 120;
-        for (int ti = 0; ti < (int)targets.size(); ti++) {
-            auto& t = targets[ti];
-            if (text_y + line_gap > annotated.rows) break;
-            cv::putText(annotated, "ocr1: " + t.ocr1_text, cv::Point(20, text_y),
-                        cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 200, 255), thick);   // 黄
-            text_y += line_gap;
-            if (!t.ocr2_text.empty()) {
-                cv::putText(annotated, "ocr2: " + t.ocr2_text, cv::Point(20, text_y),
-                            cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(255, 100, 0), thick); // 蓝
-                text_y += line_gap;
-            }
-            cv::putText(annotated, "final: " + t.ocr_text, cv::Point(20, text_y),
+        if (text_y + line_gap <= annotated.rows) {
+            cv::putText(annotated, t.ocr_text, cv::Point(20, text_y),
                         cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 255, 0), thick);   // 绿
-            text_y += line_gap + 30;
         }
     }
 
-    // ===== 底部可视化：每个目标 = 一张卡片（字符片段），卡片间横向排列、自动换行 =====
-    // 参考 zbhc 的可视化方式
-    const int margin = 26;
-    const int row_h = 300;
-    const int char_margin = 8;
-    const int gap = 26;
-    const int section_gap = 18;
-    const int pad_bottom = 26;
-    const double strip_font_scale = 1.2;
-
-    // 把多张字符图缩放到统一高度 row_h，并按最大宽度自动折行拼成多行
-    // 返回每行 strip（宽度可能不同，高度均为 row_h），供调用方逐行粘贴
-    auto buildWrappedStrips = [&](const std::vector<cv::Mat>& imgs, int max_w) -> std::vector<cv::Mat> {
-        std::vector<cv::Mat> resized;
-        for (auto& img : imgs) {
-            if (img.empty()) continue;
-            float s = static_cast<float>(row_h) / img.rows;
-            cv::Mat r;
-            cv::resize(img, r, cv::Size(), s, s, cv::INTER_LINEAR);
-            resized.push_back(r);
-        }
-        std::vector<cv::Mat> lines;
-        if (resized.empty()) return lines;
-        std::vector<cv::Mat> cur; int cur_w = 0;
-        auto flush = [&]() {
-            if (cur.empty()) return;
-            int total_w = 0;
-            for (auto& r : cur) total_w += r.cols + char_margin;
-            total_w -= char_margin;
-            cv::Mat line = cv::Mat::zeros(row_h, total_w, CV_8UC3);
-            int cx = 0;
-            for (auto& r : cur) {
-                cv::Rect roi(cx, 0, r.cols, r.rows);
-                r.copyTo(line(roi));
-                cx += r.cols + char_margin;
-            }
-            lines.push_back(line);
-            cur.clear(); cur_w = 0;
-        };
-        for (auto& r : resized) {
-            int add = r.cols + (cur.empty() ? 0 : char_margin);
-            if (!cur.empty() && cur_w + add > max_w) flush();
-            cur_w += add;
-            cur.push_back(r);
-        }
-        flush();
-        return lines;
-    };
-
-    const int label_h = 34;            // 每行 strip 上方文字标签高度
-    const int line_pitch = row_h + label_h;  // 单行字符（含标签）总高
-
-    // 每个目标打包成一个卡片：字符 strip 多行（自动折行）
-    struct Card {
-        std::vector<cv::Mat> strip_lines;  // 字符 strip 各行（0°：1+ 行；180°：before 段 + after 段）
-        int before_lines = 0;          // 180° 时 before 段行数，用于粘贴时区分标签
-        int strip_w = 0;               // strip 区域宽度（取各行最大宽度）
-        int strip_h = 0;               // strip 区域高度（含标签）
-        int card_w = 0, card_h = 0;    // 整卡尺寸
-    };
-
-    int avail_w = annotated.cols - 2 * margin;   // 卡片可用的水平空间
-    std::vector<Card> cards;
-    cards.reserve(targets.size());
-
-    for (auto& target : targets) {
-        Card c;
-        int strip_max_w = std::max(1, avail_w);
-
-        std::vector<cv::Mat> imgs_before, imgs_after;
-        for (auto& ch : target.chars) {
-            imgs_before.push_back(ch.image_before_flip);
-            imgs_after.push_back(ch.image_after_flip);
-        }
-
-        if (target.direction_flag == 180) {
-            auto before = buildWrappedStrips(imgs_before, strip_max_w);
-            auto after = buildWrappedStrips(imgs_after, strip_max_w);
-            c.before_lines = (int)before.size();
-            // before 段
-            for (auto& l : before) { c.strip_lines.push_back(l); c.strip_w = std::max(c.strip_w, l.cols); }
-            c.strip_h += (int)before.size() * line_pitch;
-            // after 段（带额外段间距）
-            if (!after.empty()) c.strip_h += section_gap;
-            for (auto& l : after) { c.strip_lines.push_back(l); c.strip_w = std::max(c.strip_w, l.cols); }
-            c.strip_h += (int)after.size() * line_pitch;
-        } else {
-            auto lines = buildWrappedStrips(imgs_after, strip_max_w);
-            for (auto& l : lines) { c.strip_lines.push_back(l); c.strip_w = std::max(c.strip_w, l.cols); }
-            c.strip_h += (int)lines.size() * line_pitch;
-        }
-
-        c.card_w = c.strip_lines.empty() ? 0 : c.strip_w;
-        c.card_h = c.strip_h;
-        cards.push_back(std::move(c));
-    }
-
-    // 无有效卡片时不扩展画布
-    bool any_content = false;
-    for (auto& c : cards) if (c.card_w > 0) { any_content = true; break; }
-    if (!any_content) {
-        return annotated;
-    }
-
-    // 第一遍：流式排版（卡片间横向排列、放不下换行），只算总高度
-    int cur_x = margin, cur_y = 0, row_max_h = 0, total_h = 0;
-    for (auto& c : cards) {
-        if (c.card_w <= 0) continue;
-        if (cur_x + c.card_w > annotated.cols - margin && cur_x > margin) {
-            cur_y += row_max_h + section_gap;
-            cur_x = margin;
-            row_max_h = 0;
-        }
-        cur_x += c.card_w + gap;
-        row_max_h = std::max(row_max_h, c.card_h);
-        total_h = std::max(total_h, cur_y + row_max_h);
-    }
-    total_h += pad_bottom;
-
-    // 扩展画布：原图标注置顶，下方追加可视化区域
-    int canvas_h = annotated.rows + total_h;
-    cv::Mat result = cv::Mat::zeros(canvas_h, annotated.cols, annotated.type());
-    annotated.copyTo(result(cv::Rect(0, 0, annotated.cols, annotated.rows)));
-
-    // 带越界裁剪的粘贴（保证绝不出界）
-    auto pasteAt = [&](const cv::Mat& img, int x, int y) {
-        if (img.empty()) return;
-        cv::Rect paste_rect(x, y, img.cols, img.rows);
-        cv::Rect clipped = paste_rect & cv::Rect(0, 0, result.cols, result.rows);
-        if (clipped.empty()) return;
-        cv::Rect src_roi(clipped.x - x, clipped.y - y, clipped.width, clipped.height);
-        img(src_roi).copyTo(result(clipped));
-    };
-
-    // 第二遍：在确定画布上重新流式排版并粘贴
-    cur_x = margin;
-    int row_top = annotated.rows;
-    row_max_h = 0;
-    for (int ti = 0; ti < (int)cards.size(); ti++) {
-        auto& c = cards[ti];
-        if (c.card_w <= 0) continue;
-        std::string tag = "target" + std::to_string(ti + 1);
-
-        // 放不下则换行
-        if (cur_x + c.card_w > result.cols - margin && cur_x > margin) {
-            row_top += row_max_h + section_gap;
-            cur_x = margin;
-            row_max_h = 0;
-        }
-
-        int card_top = row_top;
-        int strip_x = cur_x;
-
-        // 字符 strip 逐行粘贴
-        int ly = card_top;
-        for (int li = 0; li < (int)c.strip_lines.size(); li++) {
-            // 180° 的 after 段首行前补段间距，与 strip_h 计算一致
-            if (targets[ti].direction_flag == 180 && li == c.before_lines && c.before_lines > 0) {
-                ly += section_gap;
-            }
-            std::string lbl;
-            if (targets[ti].direction_flag == 180) {
-                lbl = (li < c.before_lines) ? (tag + " dir=180 Before flip:")
-                                            : (tag + " dir=180 After flip:");
-            } else {
-                lbl = tag + " Char crops:";
-            }
-            cv::putText(result, lbl, cv::Point(strip_x, ly + label_h - 5),
-                        cv::FONT_HERSHEY_SIMPLEX, strip_font_scale, cv::Scalar(200, 200, 200), 3);
-            pasteAt(c.strip_lines[li], strip_x, ly + label_h);
-            ly += line_pitch;
-        }
-
-        cur_x += c.card_w + gap;
-        row_max_h = std::max(row_max_h, c.card_h);
-    }
-
-    return result;
+    return annotated;
 }
 
 void LuqianPipeline::warmup()

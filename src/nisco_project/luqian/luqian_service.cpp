@@ -136,6 +136,15 @@ public:
                 fout << " total=" << T.total_ms << "ms" << std::endl;
             }
 
+            // 每个目标的两次识别(ocr1/ocr2)与最终结果(final)写入日志（ocr1/ocr2 不再绘于结果图）
+            for (int ti = 0; ti < (int)pipeline_result.targets.size(); ti++) {
+                const auto& t = pipeline_result.targets[ti];
+                fout << "[ocr] pic=" << (pic_number + 1) << " target=" << (ti + 1)
+                     << " ocr1=\"" << t.ocr1_text << "\""
+                     << " ocr2=\"" << t.ocr2_text << "\""
+                     << " final=\"" << t.ocr_text << "\"" << std::endl;
+            }
+
             time_t currtime = time(NULL);
             tm* t = localtime(&currtime);
 

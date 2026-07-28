@@ -70,7 +70,6 @@ private:
 
     cv::Mat createAnnotatedImage(
         const cv::Mat& src_img,
-        const std::vector<Detection>& det_dets,
         const std::vector<LuqianTargetResult>& targets);
 
     // 把本次 process() 累计的各模型耗时写进 result.timing

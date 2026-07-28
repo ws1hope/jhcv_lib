@@ -588,11 +588,10 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
         }
     }
 
-    // ===== 底部可视化：每个目标 = 一张卡片（缩略图 + 字符片段），卡片间横向排列、自动换行 =====
+    // ===== 底部可视化：每个目标 = 一张卡片（字符片段），卡片间横向排列、自动换行 =====
     // 参考 zbhc 的可视化方式
     const int margin = 26;
     const int row_h = 300;
-    const int thumb_height = 1000;
     const int char_margin = 8;
     const int gap = 26;
     const int section_gap = 18;
@@ -641,10 +640,8 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
     const int label_h = 34;            // 每行 strip 上方文字标签高度
     const int line_pitch = row_h + label_h;  // 单行字符（含标签）总高
 
-    // 每个目标打包成一个卡片：缩略图（左）+ 字符 strip 多行（右，自动折行）
+    // 每个目标打包成一个卡片：字符 strip 多行（自动折行）
     struct Card {
-        cv::Mat thumb;                 // 缩略图（已缩放到 thumb_height 高）
-        int thumb_w = 0;
         std::vector<cv::Mat> strip_lines;  // 字符 strip 各行（0°：1+ 行；180°：before 段 + after 段）
         int before_lines = 0;          // 180° 时 before 段行数，用于粘贴时区分标签
         int strip_w = 0;               // strip 区域宽度（取各行最大宽度）
@@ -658,12 +655,7 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
 
     for (auto& target : targets) {
         Card c;
-        if (!target.target_image.empty()) {
-            float thumb_scale = static_cast<float>(thumb_height) / target.target_image.rows;
-            cv::resize(target.target_image, c.thumb, cv::Size(), thumb_scale, thumb_scale, cv::INTER_LINEAR);
-            c.thumb_w = c.thumb.cols;
-        }
-        int strip_max_w = std::max(1, avail_w - c.thumb_w - gap);
+        int strip_max_w = std::max(1, avail_w);
 
         std::vector<cv::Mat> imgs_before, imgs_after;
         for (auto& ch : target.chars) {
@@ -688,8 +680,8 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
             c.strip_h += (int)lines.size() * line_pitch;
         }
 
-        c.card_w = c.thumb_w + (c.strip_lines.empty() ? 0 : gap + c.strip_w);
-        c.card_h = std::max(thumb_height, c.strip_h);
+        c.card_w = c.strip_lines.empty() ? 0 : c.strip_w;
+        c.card_h = c.strip_h;
         cards.push_back(std::move(c));
     }
 
@@ -747,14 +739,7 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
         }
 
         int card_top = row_top;
-        int thumb_x = cur_x;
-        int strip_x = cur_x + c.thumb_w + (c.strip_lines.empty() ? 0 : gap);
-
-        // 缩略图竖直居中于卡片（标签由各 strip 行的 "targetN ..." 文字标识，不另画）
-        if (!c.thumb.empty()) {
-            int thumb_y = card_top + (c.card_h - c.thumb.rows) / 2;
-            pasteAt(c.thumb, thumb_x, thumb_y);
-        }
+        int strip_x = cur_x;
 
         // 字符 strip 逐行粘贴
         int ly = card_top;

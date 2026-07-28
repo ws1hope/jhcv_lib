@@ -370,10 +370,12 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             char_crops.push_back(std::move(crop));
         }
 
-        // ===== Step 5: 方向判定（分类器投票为主，几何法兜底） =====
-        // 字符已各自水平化。先用方向分类器(pm_fx_cls)对每个字符 crop 分类，
-        // 多数票 + 置信度阈值定目标朝向；分类器无结论(票数平局/空)时回退几何法
-        // （最宽片段是否严格位于其余片段上方）。
+        // ===== Step 5: 方向判定（几何法为主、分类器兜底） =====
+        // 字符已各自水平化，但片段间相对位置不变。最宽(最长)字符片段若位于
+        // 其余片段上方(y 更小)，则整体为正向；否则为倒置，整体翻转 180°。
+        // 触发：最宽与最窄片段宽度差 >= 300（最宽片段足够突出，几何信号可靠）时
+        // 用几何法；否则用方向分类器(pm_fx_cls)逐字符投票判向，分类器无结论时
+        // 回退几何法。
         auto geometricAnyFlipped = [&]() -> bool {
             if (char_crops.size() < 2) return false;
             int widest = 0;
@@ -382,32 +384,52 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                     widest = i;
             }
             int widest_y = char_crops[widest].bbox_local.y;
+            bool upright = true;  // 最宽片段是否严格位于所有其余片段上方
             for (int i = 0; i < (int)char_crops.size(); ++i) {
                 if (i == widest) continue;
-                if (widest_y >= char_crops[i].bbox_local.y) return true;  // 非严格在上 -> 倒置
+                if (widest_y >= char_crops[i].bbox_local.y) { upright = false; break; }
             }
-            return false;
+            return !upright;
         };
 
-        std::vector<cv::Mat> cls_imgs;
-        cls_imgs.reserve(char_crops.size());
-        for (auto& c : char_crops) cls_imgs.push_back(c.img_bgr);
-
-        int cls_out = -1; float cls_conf = 0.f;
-        int cls_dir = classifyDirection(cls_imgs, &cls_out, &cls_conf);
+        // 最宽与最窄片段宽度差 >= 300 时几何信号可靠，优先用几何法
+        bool use_geometric = false;
+        if (char_crops.size() >= 2) {
+            int widest = 0, narrowest = 0;
+            for (int i = 1; i < (int)char_crops.size(); ++i) {
+                if (char_crops[i].bbox_local.width > char_crops[widest].bbox_local.width) widest = i;
+                if (char_crops[i].bbox_local.width < char_crops[narrowest].bbox_local.width) narrowest = i;
+            }
+            use_geometric = (char_crops[widest].bbox_local.width
+                             - char_crops[narrowest].bbox_local.width) >= 300;
+        }
 
         bool any_flipped;
-        if (cls_out >= 0) {
-            any_flipped = (cls_dir == 180);
-            if (verbose) {
-                std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
-                     << " (classifier vote, conf=" << cls_conf << ")" << std::endl;
-            }
-        } else {
+        if (use_geometric) {
             any_flipped = geometricAnyFlipped();
             if (verbose) {
                 std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
-                     << " (geometric fallback)" << std::endl;
+                     << " (geometric, width gap>=300)" << std::endl;
+            }
+        } else {
+            std::vector<cv::Mat> cls_imgs;
+            cls_imgs.reserve(char_crops.size());
+            for (auto& c : char_crops) cls_imgs.push_back(c.img_bgr);
+
+            int cls_out = -1; float cls_conf = 0.f;
+            int cls_dir = classifyDirection(cls_imgs, &cls_out, &cls_conf);
+            if (cls_out >= 0) {
+                any_flipped = (cls_dir == 180);
+                if (verbose) {
+                    std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
+                         << " (classifier vote, conf=" << cls_conf << ")" << std::endl;
+                }
+            } else {
+                any_flipped = geometricAnyFlipped();
+                if (verbose) {
+                    std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
+                         << " (geometric fallback, classifier undecided)" << std::endl;
+                }
             }
         }
         const int target_dir = any_flipped ? 180 : 0;
@@ -456,6 +478,34 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         // 片段顺序已由上方"最宽 -> 最窄 -> 其他"重排确定，且该顺序与片段在图像中的
         // 上下位置无关（正/倒置结果一致），故 any_flipped 时不再反向 chars；否则会把最宽
         // 片段翻到末尾，破坏送入 OCR 的读取顺序。
+
+        // OCR 后按内容对齐炉号开头：把与输入炉号逐字符匹配最多（无炉号则取首两位
+        // 数字 >= 26）的片段稳定置首，其余保持原相对顺序。基于 model1 的 ocr_text。
+        if (target_result.chars.size() >= 2) {
+            int first_idx = -1;
+            if (!heat_number.empty()) {
+                int best_match = -1;
+                for (int k = 0; k < (int)target_result.chars.size(); ++k) {
+                    const std::string& t = target_result.chars[k].ocr_text;
+                    size_t n = std::min(t.size(), heat_number.size());
+                    int m = 0;
+                    for (size_t i = 0; i < n; ++i) if (t[i] == heat_number[i]) ++m;
+                    if (m > best_match) { best_match = m; first_idx = k; }
+                }
+            } else {
+                for (int k = 0; k < (int)target_result.chars.size(); ++k) {
+                    const std::string& t = target_result.chars[k].ocr_text;
+                    if (t.size() >= 2 && t[0] >= '0' && t[0] <= '9' && t[1] >= '0' && t[1] <= '9') {
+                        if ((t[0] - '0') * 10 + (t[1] - '0') >= 26) { first_idx = k; break; }
+                    }
+                }
+            }
+            if (first_idx > 0) {
+                std::rotate(target_result.chars.begin(),
+                            target_result.chars.begin() + first_idx,
+                            target_result.chars.begin() + first_idx + 1);
+            }
+        }
 
         // ===== Step 7: 二次识别（传入炉号且第二 OCR 模型可用时） =====
         // ocr1_text = 模型1 完整拼接；若与炉号有 1~2 位不符，则用模型2 对全部片段

@@ -26,6 +26,14 @@ struct ZbsltjBilletResult {
     bool success = false;
 };
 
+/// 单次 process() 各步骤耗时（毫秒）
+struct ZbsltjTiming {
+    double det_ms = 0.0;    // 坯料检测
+    double seg_ms = 0.0;    // 字符分割 + 旋转矫正
+    double ocr_ms = 0.0;    // OCR 识别
+    double total_ms = 0.0;  // process() 总耗时
+};
+
 class ZbsltjPipeline {
 public:
     explicit ZbsltjPipeline(const ZbsltjConfig& config);
@@ -39,6 +47,9 @@ public:
         std::string& current_heat,    // in/out: 当前计数炉号
         int& seq_counter,             // in/out: 当前序号
         bool verbose = false);
+
+    /// 最近一次 process() 的各步骤耗时
+    const ZbsltjTiming& lastTiming() const;
 
     /// 在原图上绘制识别结果（绿框、文本、序号、炉号、PDI）
     void drawResults(cv::Mat& image,
@@ -77,6 +88,7 @@ private:
     std::unique_ptr<InstanceSegmenter> char_seg_;
     std::unique_ptr<OCRRecognizer> ocr_;
     ZbsltjConfig config_;
+    ZbsltjTiming last_timing_;
 };
 
 } // namespace Pipeline

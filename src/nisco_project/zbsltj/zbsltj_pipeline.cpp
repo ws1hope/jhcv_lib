@@ -287,12 +287,20 @@ std::vector<ZbsltjBilletResult> ZbsltjPipeline::process(
 
     if (image.empty()) return all_results;
 
-    auto infer_start = std::chrono::high_resolution_clock::now();
+    auto t_start = std::chrono::high_resolution_clock::now();
+    last_timing_ = ZbsltjTiming{};
 
     // step 1: billet detection
+    auto t_det0 = std::chrono::high_resolution_clock::now();
     auto billets = detectBillets(image);
+    auto t_det1 = std::chrono::high_resolution_clock::now();
+    double det_ms = std::chrono::duration<double, std::milli>(t_det1 - t_det0).count();
+
     if (billets.empty()) {
         if (verbose) std::cout << "[DEBUG] No billets detected" << std::endl;
+        last_timing_.det_ms = det_ms;
+        last_timing_.total_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t_start).count();
         return all_results;
     }
     if (verbose) std::cout << "[DEBUG] Detected " << billets.size() << " billets" << std::endl;
@@ -308,6 +316,7 @@ std::vector<ZbsltjBilletResult> ZbsltjPipeline::process(
     if (candidate_pdis.size() > 1) pdi1 = candidate_pdis[1];
     if (candidate_pdis.size() > 2) pdi2 = candidate_pdis[2];
 
+    double seg_ms = 0.0, ocr_ms = 0.0;
     for (int kk = 0; kk < (int)billets.size(); kk++) {
         auto& [billet_roi, bbox] = billets[kk];
 
@@ -319,7 +328,12 @@ std::vector<ZbsltjBilletResult> ZbsltjPipeline::process(
         // step 2: char segmentation + rotation
         cv::Mat rotated_image;
         std::vector<CharCropInfo> char_crops;
-        if (!segmentAndRotateChars(billet_roi, rotated_image, char_crops)) {
+        auto t_seg0 = std::chrono::high_resolution_clock::now();
+        bool seg_ok = segmentAndRotateChars(billet_roi, rotated_image, char_crops);
+        auto t_seg1 = std::chrono::high_resolution_clock::now();
+        seg_ms += std::chrono::duration<double, std::milli>(t_seg1 - t_seg0).count();
+
+        if (!seg_ok) {
             if (verbose) std::cout << "[DEBUG] No chars detected in billet " << kk << std::endl;
             result.success = false;
             all_results.push_back(result);
@@ -332,7 +346,10 @@ std::vector<ZbsltjBilletResult> ZbsltjPipeline::process(
 
         // step 3: OCR
         std::vector<std::string> texts;
+        auto t_ocr0 = std::chrono::high_resolution_clock::now();
         recognizeFragments(char_crops, texts);
+        auto t_ocr1 = std::chrono::high_resolution_clock::now();
+        ocr_ms += std::chrono::duration<double, std::milli>(t_ocr1 - t_ocr0).count();
 
         // step 4: sort by y
         sortByY(char_crops, texts);
@@ -397,11 +414,23 @@ std::vector<ZbsltjBilletResult> ZbsltjPipeline::process(
         seq_counter++;
     }
 
-    auto infer_end = std::chrono::high_resolution_clock::now();
-    auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
-    if (verbose) std::cout << "[DEBUG] Total inference time: " << infer_ms << " ms" << std::endl;
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double total_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    last_timing_.det_ms = det_ms;
+    last_timing_.seg_ms = seg_ms;
+    last_timing_.ocr_ms = ocr_ms;
+    last_timing_.total_ms = total_ms;
+    if (verbose) {
+        std::cout << "[DEBUG] timing: det=" << det_ms << "ms seg=" << seg_ms
+                  << "ms ocr=" << ocr_ms << "ms total=" << total_ms << "ms" << std::endl;
+    }
 
     return all_results;
+}
+
+const ZbsltjTiming& ZbsltjPipeline::lastTiming() const
+{
+    return last_timing_;
 }
 
 // draw results on image

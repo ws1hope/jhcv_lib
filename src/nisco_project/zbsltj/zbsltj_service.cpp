@@ -54,6 +54,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx_);
 
+        auto req_start = std::chrono::high_resolution_clock::now();
+
         // open daily log file
         time_t currentTime = time(NULL);
         char chCurrentTime[256];
@@ -118,6 +120,7 @@ public:
         json root_all;
         json array_all_results = json::array();
         json array_piliao_count = json::array();
+        int current_billet_count = 0;
 
         if (pictures.empty()) {
             fout << "Received empty pictures_information" << std::endl;
@@ -157,7 +160,30 @@ public:
                     cam1_current_heat_ = cam0_current_heat_;
                 }
 
-                total_billet_count_ += results.size();
+                current_billet_count += results.size();
+
+                // per-step timing + per-billet results
+                const auto& T = pipeline_->lastTiming();
+                fout << "[timing] cam=" << cam_id
+                     << " det=" << T.det_ms << "ms"
+                     << " seg=" << T.seg_ms << "ms"
+                     << " ocr=" << T.ocr_ms << "ms"
+                     << " total=" << T.total_ms << "ms"
+                     << " billets=" << results.size() << std::endl;
+                for (size_t i = 0; i < results.size(); i++) {
+                    std::string texts_joined;
+                    for (size_t k = 0; k < results[i].rec_texts.size(); k++) {
+                        if (k > 0) texts_joined += "#";
+                        texts_joined += results[i].rec_texts[k];
+                    }
+                    if (results[i].rec_texts.empty()) texts_joined = "0";
+                    fout << "[billet] cam=" << cam_id << " #" << (i + 1)
+                         << " seq=" << results[i].seq_number
+                         << " heat=\"" << results[i].matched_heat << "\""
+                         << " pdi=\"" << results[i].pdi_count << "\""
+                         << " ocr=\"" << texts_joined << "\""
+                         << " ok=" << (results[i].success ? 1 : 0) << std::endl;
+                }
 
                 // draw results
                 pipeline_->drawResults(src_img, results);
@@ -222,11 +248,13 @@ public:
         root_all["all_results"] = array_all_results;
 
         json piliao_item;
-        piliao_item["piliao_count"] = total_billet_count_;
+        piliao_item["piliao_count"] = current_billet_count;
         array_piliao_count.push_back(piliao_item);
         root_all["piliao_count"] = array_piliao_count;
 
-        fout << "Request processed." << std::endl;
+        auto req_end = std::chrono::high_resolution_clock::now();
+        double req_ms = std::chrono::duration<double, std::milli>(req_end - req_start).count();
+        fout << "Request processed. total=" << req_ms << "ms" << std::endl;
         fout.close();
 
         std::cout << "[RESULT] " << root_all.dump() << std::endl;
@@ -288,7 +316,6 @@ public:
     std::string cam1_current_heat_;
     int cam0_seq_ = 0;
     int cam1_seq_ = 0;
-    int total_billet_count_ = 0;
 };
 
 ZbsltjService::ZbsltjService(const std::string& config_path)

@@ -508,7 +508,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         }
 
         // ===== Step 7: 二次识别（传入炉号且第二 OCR 模型可用时） =====
-        // ocr1_text = 模型1 完整拼接；若与炉号有 1~2 位不符，则用模型2 对全部片段
+        // ocr1_text = 模型1 完整拼接；若与炉号有任意位不符(bad>=1)，则用模型2 对全部片段
         // 重识别得 ocr2_text，并逐片段保留使整体与炉号匹配数更多者作为最终结果。
         for (auto& ch : target_result.chars) target_result.ocr1_text += ch.ocr_text;
 
@@ -520,7 +520,18 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                 if (target_result.ocr1_text[i] == heat_number[i]) ++matched;
             int bad = hlen - matched;   // 不符或缺省位数
 
-            if (bad >= 1 && bad <= 2) {
+            if (verbose) {
+                std::cout << "[DEBUG]     target[" << di << "] ocr2 gate:"
+                     << " heat=\"" << heat_number << "\""
+                     << " ocr1=\"" << target_result.ocr1_text << "\""
+                     << " hlen=" << hlen
+                     << " matched=" << matched
+                     << " bad=" << bad
+                     << " -> " << (bad >= 1 ? "retry" : "skip")
+                     << std::endl;
+            }
+
+            if (bad >= 1) {
                 // 模型2 识别全部片段（完整第二次结果，供对比与选优）
                 std::vector<std::string> t2_list(target_result.chars.size());
                 std::vector<float> c2_list(target_result.chars.size(), 0.f);
@@ -553,6 +564,10 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                     }
                 }
             }
+        } else if (verbose) {
+            std::cout << "[DEBUG]     target[" << di << "] ocr2 gate: skip ("
+                 << (!ocr2_ ? "no ocr2 model" : "empty heat_number") << ")"
+                 << std::endl;
         }
 
         // 按当前片段顺序拼接 OCR 文本，并在倒数第三位前插入 '#'
@@ -564,6 +579,42 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             target_ocr.insert(target_ocr.size() - 3, "#");
         }
         target_result.ocr_text = target_ocr;
+
+        // ===== Step 8: 炉号纠错兜底 =====
+        // 已传入炉号且两次识别(ocr1/ocr2)均有结果时：若两者都未与炉号完全一致，
+        // 但其中之一与炉号错位 ≤3（识别已接近正确），则改用用户输入的权威炉号
+        // 作为最终结果。错位口径与 Step 7 的 bad 一致：仅按炉号长度 hlen 对齐前缀
+        // 计数(hlen - matched)，忽略识别串超出 hlen 的尾部(如 '#' 后的附加后缀)，
+        // 故不会把附加码误计为错位。仅替换热号部分，保留原识别的后缀。
+        if (!heat_number.empty() && !target_result.ocr2_text.empty()) {
+            auto heatErrors = [](const std::string& ocr, const std::string& heat) -> int {
+                int hlen = (int)heat.size();
+                int n = (int)std::min(ocr.size(), (size_t)hlen);
+                int matched = 0;
+                for (int i = 0; i < n; ++i) if (ocr[i] == heat[i]) ++matched;
+                return hlen - matched;
+            };
+            int e1 = heatErrors(target_result.ocr1_text, heat_number);
+            int e2 = heatErrors(target_result.ocr2_text, heat_number);
+            // e==0 表示该次识别的热号部分与炉号完全一致；两者都 >0 才算"都没比对上"
+            if (e1 > 0 && e2 > 0 && std::min(e1, e2) <= 3) {
+                std::string heat_final = heat_number;
+                size_t hp = target_result.ocr_text.find('#');
+                if (hp != std::string::npos) {
+                    // 保留原识别结果 '#' 后的尾部后缀，仅替换热号部分
+                    heat_final += "#";
+                    heat_final += target_result.ocr_text.substr(hp + 1);
+                } else if (heat_final.size() >= 3) {
+                    heat_final.insert(heat_final.size() - 3, "#");
+                }
+                target_result.ocr_text = heat_final;
+                if (verbose) {
+                    std::cout << "[DEBUG]     target[" << di << "] heat override:"
+                         << " ocr1_err=" << e1 << " ocr2_err=" << e2
+                         << " -> \"" << heat_final << "\"" << std::endl;
+                }
+            }
+        }
 
         // 目标置信度 = 各已识别字符(ocr_text 非空)置信度的最小值
         float bmin = 1.0f;
@@ -577,7 +628,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         target_result.ocr_confidence = has_rec ? bmin : 0.0f;
 
         if (verbose) {
-            std::cout << "[DEBUG]   target[" << di << "] ocr_text=\"" << target_ocr
+            std::cout << "[DEBUG]   target[" << di << "] ocr_text=\"" << target_result.ocr_text
                  << "\" ocr_conf=" << target_result.ocr_confidence << std::endl;
         }
 

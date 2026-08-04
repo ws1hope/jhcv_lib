@@ -713,7 +713,7 @@
                     "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 },
                 {
-                    "name": "JHDEEP_PROFILE",
+                    "name": "JHDEEP_H2D_SPLIT",
                     "value": "1"
                 }
             ],

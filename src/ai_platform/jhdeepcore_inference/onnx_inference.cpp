@@ -36,29 +36,6 @@ bool h2d_split_enabled() {
     }();
     return enabled;
 }
-
-bool profile_enabled() {
-    static const bool enabled = []() {
-        const char *env = std::getenv("JHDEEP_PROFILE");
-        return env && std::string(env) == "1";
-    }();
-    return enabled;
-}
-
-// profiling 输出前缀：profile_<模型文件名去扩展名>，便于区分各模型产生的 chrome-trace JSON
-static auto profile_prefix(const std::string &model_path) {
-    size_t slash = model_path.find_last_of("/\\");
-    std::string base = (slash != std::string::npos) ? model_path.substr(slash + 1) : model_path;
-    size_t dot = base.find_last_of('.');
-    if (dot != std::string::npos) base = base.substr(0, dot);
-    if (base.empty()) base = "jhdeep";
-    base = "profile_" + base;
-#ifdef _WIN32
-    return std::wstring(base.begin(), base.end());
-#else
-    return base;
-#endif
-}
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
@@ -82,33 +59,35 @@ struct PreStepTimer {
     }
 };
 
-// session->Run() 计时守卫：cuda 设备用 cudaEvent（在默认 stream 0 上 record start/stop，
+// session->Run() 计时守卫：cuda 设备用 cudaEvent（在传入的 stream 上 record start/stop，
 // 包住同步的 Run()，cudaEventSynchronize 后取 GPU 时间戳 elapsed），cpu 用 steady_clock。
-// 注意：ORT 的 CUDA EP kernel 跑在自有 stream，事件记在 stream 0（空闲）故测的是 Run 的 host
-// 墙钟，非纯 kernel GPU 时间。split 路径输入在 GPU，run_ms 已排除 H2D/D2H，仍含 ORT host
-// 开销+kernel；非 split 路径输入为 CPU tensor，run_ms 含 ORT 内部 H2D+kernel+D2H。事件按调用
-// create/destroy，开销 μs 级，相对 ms 级推理可忽略，且只在 device_=="cuda" 时发生。
+// split 路径传 kernel_stream_（ORT 经 user_compute_stream 也跑此 stream），事件才 bracket 住
+// kernel -> 拿到 kernel GPU 时间；非 split 传 nullptr（默认 stream 0），测 Run host 墙钟。
 struct RunTimer {
     bool use_events;
     std::chrono::steady_clock::time_point t0;
 #ifdef USE_CUDA
     cudaEvent_t start_ev, stop_ev;
+    cudaStream_t stream;
 #endif
-    explicit RunTimer(bool use_cuda_events) : use_events(use_cuda_events) {
+    explicit RunTimer(bool use_cuda_events, void *s = nullptr) : use_events(use_cuda_events) {
 #ifdef USE_CUDA
         if (use_events) {
+            stream = static_cast<cudaStream_t>(s);
             cudaEventCreate(&start_ev);
             cudaEventCreate(&stop_ev);
-            cudaEventRecord(start_ev, 0);
+            cudaEventRecord(start_ev, stream);
             return;
         }
+#else
+        (void)s;
 #endif
         t0 = std::chrono::steady_clock::now();
     }
     double elapsed_ms() {
 #ifdef USE_CUDA
         if (use_events) {
-            cudaEventRecord(stop_ev, 0);
+            cudaEventRecord(stop_ev, stream);
             cudaEventSynchronize(stop_ev);
             float ms = 0.0f;
             cudaEventElapsedTime(&ms, start_ev, stop_ev);
@@ -122,21 +101,22 @@ struct RunTimer {
     }
 };
 
-// cudaEvent 计时一段 cudaMemcpyAsync（stream 0 上 record start/stop + sync 后取 elapsed），
+// cudaEvent 计时一段 cudaMemcpyAsync（在传入 stream 上 record start/stop + sync 后取 elapsed），
 // 用于真实 H2D/D2H 计时。事件按调用 create/destroy，开销 μs 级。仅 USE_CUDA 下可用。
 #ifdef USE_CUDA
-static double timedCudaCopyAsync(void *dst, const void *src, size_t bytes, cudaMemcpyKind kind) {
-    cudaEvent_t s, e;
-    cudaEventCreate(&s);
-    cudaEventCreate(&e);
-    cudaEventRecord(s, 0);
-    cudaMemcpyAsync(dst, src, bytes, kind, 0);
-    cudaEventRecord(e, 0);
-    cudaEventSynchronize(e);
+static double timedCudaCopyAsync(void *dst, const void *src, size_t bytes, cudaMemcpyKind kind, void *s) {
+    cudaStream_t stream = static_cast<cudaStream_t>(s);
+    cudaEvent_t ev_s, ev_e;
+    cudaEventCreate(&ev_s);
+    cudaEventCreate(&ev_e);
+    cudaEventRecord(ev_s, stream);
+    cudaMemcpyAsync(dst, src, bytes, kind, stream);
+    cudaEventRecord(ev_e, stream);
+    cudaEventSynchronize(ev_e);
     float ms = 0.0f;
-    cudaEventElapsedTime(&ms, s, e);
-    cudaEventDestroy(s);
-    cudaEventDestroy(e);
+    cudaEventElapsedTime(&ms, ev_s, ev_e);
+    cudaEventDestroy(ev_s);
+    cudaEventDestroy(ev_e);
     return static_cast<double>(ms);
 }
 #endif
@@ -166,8 +146,7 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
 #ifdef ONNXRUNTIME_FOUND
       ,
       env_(ORT_LOGGING_LEVEL_WARNING, "JHDeepCore"),
-      memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
-      cuda_mem_info_(Ort::MemoryInfo("Cuda", OrtArenaAllocator, 0, OrtMemTypeDefault))
+      memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
 #endif
       ,
       model_loaded_(false), warmup_enabled_(warmup) {
@@ -183,11 +162,22 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
 
     if (device_ == "cuda") {
 #ifdef USE_CUDA
+        // split 路径：建一条 CUDA stream 并让 ORT 的 CUDA EP 跑在上面（user_compute_stream），
+        // 这样 H2D/Run/D2H 全在 kernel_stream_ 上，cudaEvent 才能 bracket 住 kernel。
+        if (h2d_split_enabled()) {
+            cudaStream_t s = nullptr;
+            if (cudaStreamCreate(&s) == cudaSuccess) kernel_stream_ = s;
+        }
         try {
             OrtCUDAProviderOptions cuda_options;
             cuda_options.device_id = 0;
+            if (kernel_stream_) {
+                cuda_options.has_user_compute_stream = 1;
+                cuda_options.user_compute_stream = kernel_stream_;
+            }
             session_options_.AppendExecutionProvider_CUDA(cuda_options);
-            std::cout << "[INFO] ONNX Runtime: using CUDA provider" << std::endl;
+            std::cout << "[INFO] ONNX Runtime: using CUDA provider"
+                      << (kernel_stream_ ? " (user_compute_stream for split timing)" : "") << std::endl;
         } catch (const std::exception &e) {
             std::cerr << "[WARN] CUDA provider not available, falling back to CPU: " << e.what() << std::endl;
             device_ = "cpu";
@@ -199,20 +189,19 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
     } else if (device_ == "cpu") {
         std::cout << "[INFO] ONNX Runtime: using optimized CPU for Mac M-series chips" << std::endl;
     }
-
-    if (profile_enabled()) {
-        session_options_.EnableProfiling(profile_prefix(model_path_).c_str());
-        std::cerr << "[INFO] ORT profiling enabled -> profile_<model>_<timestamp>.json per Run" << std::endl;
-    }
 #endif
 }
 
 OnnxInference::~OnnxInference() {
-#ifdef USE_CUDA
-    if (cuda_input_) cudaFree(cuda_input_);
-#endif
 #ifdef ONNXRUNTIME_FOUND
-    session_.reset();
+    session_.reset();   // 先释放 session（其内 EP 可能仍用 kernel_stream_），再销毁 stream
+#endif
+#ifdef USE_CUDA
+    if (kernel_stream_) {
+        cudaStreamSynchronize(static_cast<cudaStream_t>(kernel_stream_));
+        cudaStreamDestroy(static_cast<cudaStream_t>(kernel_stream_));
+        kernel_stream_ = nullptr;
+    }
 #endif
 }
 
@@ -276,6 +265,19 @@ bool OnnxInference::LoadModel() {
         model_loaded_ = true;
         std::cerr << "[DEBUG] LoadModel done" << std::endl;
 
+        // split 路径：拿 CUDA EP 的 allocator（供 prepareInput 分配 GPU 输入 buffer）。
+        // 用 "Cuda"/OrtArenaAllocator 向 session 查 EP 注册的 allocator；失败则 split 路径回退 CPU。
+        if (device_ == "cuda" && h2d_split_enabled()) {
+            try {
+                cuda_allocator_ = std::make_unique<Ort::Allocator>(
+                    *session_, Ort::MemoryInfo("Cuda", OrtArenaAllocator, 0, OrtMemTypeDefault));
+                std::cerr << "[INFO] CUDA allocator ready for split timing" << std::endl;
+            } catch (const std::exception &e) {
+                std::cerr << "[WARN] get CUDA allocator failed, split falls back to CPU: " << e.what() << std::endl;
+                cuda_allocator_.reset();
+            }
+        }
+
         if (warmup_enabled_ && device_ == "cuda") {
             WarmupModel();
         }
@@ -338,15 +340,14 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_buffer_.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfoPtr(), input_ptr, input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda");
+    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
-    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -366,6 +367,10 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
+    if (bench_enabled() || input_on_gpu_) {
+        std::cerr << "[BENCH] h2d=" << last_h2d_ms_ << " run=" << _run_ms << " d2h=" << last_d2h_ms_ << " ms" << std::endl;
+    }
+    freeInput(input_ptr);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -400,15 +405,14 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_buffer_.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfoPtr(), input_ptr, input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda");
+    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
-    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -428,6 +432,10 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
+    if (bench_enabled() || input_on_gpu_) {
+        std::cerr << "[BENCH] h2d=" << last_h2d_ms_ << " run=" << _run_ms << " d2h=" << last_d2h_ms_ << " ms" << std::endl;
+    }
+    freeInput(input_ptr);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -462,15 +470,14 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_buffer_.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfoPtr(), input_ptr, input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda");
+    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
-    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -497,6 +504,10 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
+    if (bench_enabled() || input_on_gpu_) {
+        std::cerr << "[BENCH] h2d=" << last_h2d_ms_ << " run=" << _run_ms << " d2h=" << last_d2h_ms_ << " ms" << std::endl;
+    }
+    freeInput(input_ptr);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -576,15 +587,14 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_data.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfoPtr(), input_ptr, input_data.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda");
+    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
-    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -603,28 +613,13 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
     // 分类路径：tensor/run 在此累加；count/preprocess 由 InferSingle 累加
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
+    if (bench_enabled() || input_on_gpu_) {
+        std::cerr << "[BENCH] h2d=" << last_h2d_ms_ << " run=" << _run_ms << " d2h=" << last_d2h_ms_ << " ms" << std::endl;
+    }
+    freeInput(input_ptr);
     return output;
 #else
     throw std::runtime_error("ONNX Runtime not found");
-#endif
-}
-
-void OnnxInference::ensureCudaInput(size_t float_count) {
-#ifdef USE_CUDA
-    if (float_count > cuda_input_count_) {
-        if (cuda_input_) {
-            cudaFree(cuda_input_);
-            cuda_input_ = nullptr;
-            cuda_input_count_ = 0;
-        }
-        if (cudaMalloc((void **)&cuda_input_, float_count * sizeof(float)) == cudaSuccess) {
-            cuda_input_count_ = float_count;
-        } else {
-            cuda_input_ = nullptr;   // 分配失败：保持空，下次调用重试
-        }
-    }
-#else
-    (void)float_count;
 #endif
 }
 
@@ -632,41 +627,47 @@ bool OnnxInference::useGpuTensor() const {
     return device_ == "cuda" && h2d_split_enabled();
 }
 
-void OnnxInference::maybeFlushProfile() {
 #ifdef ONNXRUNTIME_FOUND
-    if (!profile_enabled() || profile_flushed_ || !session_) return;
-    Ort::AllocatorWithDefaultOptions alloc;
-    session_->EndProfilingAllocated(alloc);
-    profile_flushed_ = true;
-    std::cerr << "[INFO] ORT profile flushed to profile_<model>_<timestamp>.json (first Run recorded)" << std::endl;
-#endif
-}
-
-#ifdef ONNXRUNTIME_FOUND
-const Ort::MemoryInfo &OnnxInference::inputMemInfo() const {
-    return input_on_gpu_ ? cuda_mem_info_ : memory_info_;
+const OrtMemoryInfo *OnnxInference::inputMemInfoPtr() const {
+    if (input_on_gpu_ && cuda_allocator_) return cuda_allocator_->GetInfo();
+    return memory_info_;
 }
 #endif
 
 float *OnnxInference::prepareInput(const float *data, size_t count) {
     // 非 split：原样返回 CPU 指针供建 CPU tensor（ORT 内部自行 H2D）。
     input_on_gpu_ = false;
+    last_h2d_ms_ = 0;
     if (!useGpuTensor()) return const_cast<float *>(data);
 #ifdef USE_CUDA
-    if (count == 0) return const_cast<float *>(data);
-    ensureCudaInput(count);
-    if (!cuda_input_) return const_cast<float *>(data);   // cudaMalloc 失败回退 CPU 路径
-    batch_timing_.h2d_ms += timedCudaCopyAsync(cuda_input_, data, count * sizeof(float), cudaMemcpyHostToDevice);
+    if (count == 0 || !cuda_allocator_) return const_cast<float *>(data);   // allocator 未就绪回退 CPU
+    float *d_in = static_cast<float *>(cuda_allocator_->Alloc(count * sizeof(float)));
+    if (!d_in) return const_cast<float *>(data);
+    double h2d = timedCudaCopyAsync(d_in, data, count * sizeof(float), cudaMemcpyHostToDevice, kernel_stream_);
+    batch_timing_.h2d_ms += h2d;
+    last_h2d_ms_ = h2d;
     batch_timing_.h2d_split = true;
     input_on_gpu_ = true;
-    return cuda_input_;
+    return d_in;
 #else
     return const_cast<float *>(data);
 #endif
 }
 
+void OnnxInference::freeInput(float *ptr) {
+#ifdef USE_CUDA
+    if (input_on_gpu_ && cuda_allocator_ && ptr) {
+        cuda_allocator_->Free(ptr);
+        input_on_gpu_ = false;
+    }
+#else
+    (void)ptr;
+#endif
+}
+
 void OnnxInference::readOutput(const float *src, size_t count, std::vector<float> &dst) {
     dst.resize(count);
+    last_d2h_ms_ = 0;
     if (count == 0) return;
     if (!input_on_gpu_) {
         // src 为 CPU 指针（非 split：ORT 内部已 D2H 到 CPU），直接拷贝
@@ -674,8 +675,10 @@ void OnnxInference::readOutput(const float *src, size_t count, std::vector<float
         return;
     }
 #ifdef USE_CUDA
-    // src 为 GPU 指针（split：输入在 GPU，输出亦在 GPU），真实 D2H
-    batch_timing_.d2h_ms += timedCudaCopyAsync(dst.data(), src, count * sizeof(float), cudaMemcpyDeviceToHost);
+    // src 为 GPU 指针（split：输入在 GPU，输出亦在 GPU），真实 D2H（kernel_stream_）
+    double d2h = timedCudaCopyAsync(dst.data(), src, count * sizeof(float), cudaMemcpyDeviceToHost, kernel_stream_);
+    batch_timing_.d2h_ms += d2h;
+    last_d2h_ms_ = d2h;
     batch_timing_.h2d_split = true;
 #else
     std::copy(src, src + count, dst.begin());

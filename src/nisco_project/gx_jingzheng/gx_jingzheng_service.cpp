@@ -82,7 +82,7 @@ public:
             Pipeline::GxJingzhengPipelineResult pres =
                 pipeline_->process(src_img, station_id, heat_number, false);
 
-            // 各模型分段耗时写进日志（每张图一行）。split 时输入在 GPU、run 已排除 H2D/D2H（仍含 ORT host 开销+kernel，非纯 kernel），infer=run_ms；非 split 时 run 含 ORT 内部 H2D/D2H，ten 预期≈0。
+            // 各模型分段耗时写进日志（每张图一行）。split 时 run≈kernel（user_compute_stream 上事件 bracket kernel），infer=run_ms；非 split 时 run 含 ORT 内部 H2D/D2H，ten 预期≈0。
             {
                 const auto& T = pres.timing;
                 auto put = [&](const char* name, const InferenceTiming& t) {

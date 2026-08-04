@@ -36,7 +36,7 @@ struct LuqianTargetResult {
 };
 
 // 各模型分段耗时汇总（毫秒）。device 反映实际执行设备（cuda/cpu）。
-// split 时输入在 GPU、run_ms 已排除 H2D/D2H（仍含 ORT host 开销+kernel，非纯 kernel），infer=run_ms；非 split 时 run_ms 含 ORT 内部 H2D/D2H。tensor_ms 预期≈0。
+// split 时 run_ms≈kernel（user_compute_stream 上事件 bracket kernel），infer=run_ms；非 split 时 run_ms 含 ORT 内部 H2D/D2H。tensor_ms 预期≈0。
 struct LuqianTiming {
     InferenceTiming det;      // 目标检测
     InferenceTiming seg;     // 实例分割

@@ -57,10 +57,10 @@ struct InferenceTiming {
     int count = 0;               // 本批次推理图片数
     double preprocess_ms = 0.0; // 图像预处理：letterbox/resize/归一化 + HWC->CHW
     double tensor_ms = 0.0;     // 构造 ORT 输入 tensor（包已有 buffer，预期≈0）
-    double run_ms = 0.0;        // session->Run 的 host 墙钟（cudaEvent 记在默认流，ORT kernel 在其自有 stream）。split 时已排除 H2D/D2H 但仍含 ORT host 开销+kernel（非纯 kernel）；非 split 含 ORT 内部 H2D+算子+D2H
+    double run_ms = 0.0;        // session->Run（cudaEvent）。split 时事件记在 kernel_stream_（ORT 经 user_compute_stream 跑此 stream）bracket 住 kernel -> ≈ kernel GPU 时间（sync Run 仍含少量 host 开销）；非 split 事件记默认流=Run host 墙钟，含 ORT 内部 H2D+算子+D2H
     double h2d_ms = 0.0;        // 真实 H2D 输入拷贝（cudaMemcpyAsync+cudaEvent，仅 JHDEEP_H2D_SPLIT=1 时测量，否则 0）
     double d2h_ms = 0.0;        // 真实 D2H 输出回拷（cudaMemcpyAsync+cudaEvent，仅 JHDEEP_H2D_SPLIT=1 时测量，否则 0）
-    bool h2d_split = false;     // 本次是否做了 H2D/D2H 拆分测量（split 时 H2D/run/D2H 三段 disjoint；infer=run_ms 即 Run 段，含 host 开销+kernel）
+    bool h2d_split = false;     // 本次是否做了 H2D/D2H 拆分测量（split 时 H2D/run/D2H 三段 disjoint；infer=run_ms 即 kernel 段）
     std::string device;         // 实际执行设备 "cuda"/"cpu"
 };
 

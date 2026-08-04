@@ -111,7 +111,7 @@ public:
             img_confs.push_back(computeImageConfidence(pipeline_result));
             has_detections.push_back(!pipeline_result.det_detections.empty());
 
-            // 各模型分段耗时写进日志（每张图一行）。split 时输入在 GPU、run 已排除 H2D/D2H（仍含 ORT host 开销+kernel，非纯 kernel），infer=run_ms；非 split 时 run 含 ORT 内部 H2D/D2H，ten 预期≈0。
+            // 各模型分段耗时写进日志（每张图一行）。split 时 run≈kernel（user_compute_stream 上事件 bracket kernel），infer=run_ms；非 split 时 run 含 ORT 内部 H2D/D2H，ten 预期≈0。
             {
                 const auto& T = pipeline_result.timing;
                 auto put = [&](const char* name, const InferenceTiming& t) {

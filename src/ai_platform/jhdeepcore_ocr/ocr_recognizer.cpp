@@ -29,8 +29,10 @@ static bool h2dSplitEnabled() {
     return enabled;
 }
 
-// rec_session->Run() 计时守卫：cuda 设备用 cudaEvent（默认 stream 包住同步 Run），
+// rec_session->Run() 计时守卫：cuda 设备用 cudaEvent（默认 stream 0 包住同步 Run），
 // cpu 用 steady_clock。事件按调用 create/destroy。与 onnx_inference.cpp 中的同名结构同义。
+// 注意：ORT CUDA EP kernel 跑在自有 stream，事件记在 stream 0（空闲）故测的是 Run 的 host 墙钟，
+// 非纯 kernel GPU 时间（split 路径已排除 H2D/D2H，仍含 ORT host 开销+kernel）。
 struct RunTimer {
     bool use_events;
     std::chrono::steady_clock::time_point t0;
@@ -64,6 +66,25 @@ struct RunTimer {
                    std::chrono::steady_clock::now() - t0).count();
     }
 };
+
+// cudaEvent 计时一段 cudaMemcpyAsync（stream 0 上 record start/stop + sync 后取 elapsed），
+// 用于真实 H2D/D2H 计时。事件按调用 create/destroy，开销 μs 级。仅 USE_CUDA 下可用。
+#ifdef USE_CUDA
+static double timedCudaCopyAsync(void *dst, const void *src, size_t bytes, cudaMemcpyKind kind) {
+    cudaEvent_t s, e;
+    cudaEventCreate(&s);
+    cudaEventCreate(&e);
+    cudaEventRecord(s, 0);
+    cudaMemcpyAsync(dst, src, bytes, kind, 0);
+    cudaEventRecord(e, 0);
+    cudaEventSynchronize(e);
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, s, e);
+    cudaEventDestroy(s);
+    cudaEventDestroy(e);
+    return static_cast<double>(ms);
+}
+#endif
 
 static std::vector<std::string> parseYamlCharDict(const std::string &yaml_path,
                                                     std::vector<float> &out_mean,
@@ -389,9 +410,13 @@ class OCRRecognizerPrivate {
     // 最近一次 process() 的分段耗时（process 起点复位，recognizeSingle 累加）
     InferenceTiming batch_timing_;
     std::string rec_device_;   // 实际执行设备 "cuda"/"cpu"（仅 USE_CUDA && useGPU 为 cuda）
-    float *rec_cuda_scratch_ = nullptr;   // H2D 估算用的 throwaway GPU 缓冲
+    Ort::MemoryInfo rec_cpu_mem_info_{Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)};
+    Ort::MemoryInfo rec_cuda_mem_info_{"Cuda", OrtArenaAllocator, 0, OrtMemTypeDefault};
+    float *rec_cuda_scratch_ = nullptr;   // GPU 输入缓冲（split 路径作为 Run 的真实输入）
     size_t rec_cuda_scratch_count_ = 0;
-    std::vector<float> rec_host_scratch_;  // D2H 估算用的 throwaway CPU 缓冲
+    // 由 prepareInput 设置、inputMemInfo/readOutput 读取：本次输入是否实际落在 GPU。
+    // cudaMalloc 失败时 prepareInput 回退 CPU，此标志为 false，保证 ptr 与 MemoryInfo 一致。
+    bool input_on_gpu_ = false;
 
     void ensureCudaScratch(size_t float_count) {
 #ifdef USE_CUDA
@@ -412,41 +437,44 @@ class OCRRecognizerPrivate {
 #endif
     }
 
-    // JHDEEP_H2D_SPLIT=1 且 cuda 时：显式 cudaMemcpy 一份输入计时作 H2D 估算，
-    // 不改 Run 输入（推理零风险）；infer ≈ run_ms - h2d_ms。
-    void measureH2DProxy(const float *data, size_t count) {
-        if (rec_device_ != "cuda" || !h2dSplitEnabled()) return;
+    // rec_device_=="cuda" && JHDEEP_H2D_SPLIT==1：输入走真实 GPU tensor 路径（H2D/run/D2H
+    // 三段分开 cudaEvent 计时）。否则走原 CPU tensor 路径（Run 内部自行 H2D/D2H，不拆分）。
+    bool useGpuTensor() const { return rec_device_ == "cuda" && h2dSplitEnabled(); }
+    // 按 input_on_gpu_（由 prepareInput 设置）返 rec_cuda_mem_info_ 或 rec_cpu_mem_info_。
+    const Ort::MemoryInfo &inputMemInfo() const {
+        return input_on_gpu_ ? rec_cuda_mem_info_ : rec_cpu_mem_info_;
+    }
+    // split 路径：真实 cudaMemcpyAsync(H2D)+cudaEvent 拷进 rec_cuda_scratch_，累计 h2d_ms，返回 GPU 指针；
+    // 非 split：原样返回（const_cast）CPU 指针，供建 CPU tensor。
+    float *prepareInput(const float *data, size_t count) {
+        input_on_gpu_ = false;
+        if (!useGpuTensor()) return const_cast<float *>(data);
 #ifdef USE_CUDA
-        if (count == 0) return;
+        if (count == 0) return const_cast<float *>(data);
         ensureCudaScratch(count);
-        if (!rec_cuda_scratch_) return;
-        auto t0 = std::chrono::steady_clock::now();
-        cudaMemcpy(rec_cuda_scratch_, data, count * sizeof(float), cudaMemcpyHostToDevice);
-        auto t1 = std::chrono::steady_clock::now();
-        batch_timing_.h2d_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        if (!rec_cuda_scratch_) return const_cast<float *>(data);   // cudaMalloc 失败回退 CPU 路径
+        batch_timing_.h2d_ms += timedCudaCopyAsync(rec_cuda_scratch_, data, count * sizeof(float), cudaMemcpyHostToDevice);
         batch_timing_.h2d_split = true;
+        input_on_gpu_ = true;
+        return rec_cuda_scratch_;
 #else
-        (void)data;
-        (void)count;
+        return const_cast<float *>(data);
 #endif
     }
-
-    // JHDEEP_H2D_SPLIT=1 且 cuda 时：用输出尺寸做 cudaMemcpy(D2H) 计时作 D2H 估算，
-    // 不改 Run（推理零风险）；infer ≈ run_ms - h2d_ms - d2h_ms。
-    void measureD2HProxy(size_t float_count) {
-        if (rec_device_ != "cuda" || !h2dSplitEnabled()) return;
+    // split 路径：真实 cudaMemcpyAsync(D2H)+cudaEvent 把 GPU 输出拷进 dst，累计 d2h_ms；
+    // 非 split：src 为 CPU 指针，直接 std::copy 进 dst。
+    void readOutput(const float *src, size_t count, std::vector<float> &dst) {
+        dst.resize(count);
+        if (count == 0) return;
+        if (!input_on_gpu_) {
+            std::copy(src, src + count, dst.begin());
+            return;
+        }
 #ifdef USE_CUDA
-        if (float_count == 0) return;
-        ensureCudaScratch(float_count);
-        if (!rec_cuda_scratch_) return;
-        if (rec_host_scratch_.size() < float_count) rec_host_scratch_.resize(float_count);
-        auto t0 = std::chrono::steady_clock::now();
-        cudaMemcpy(rec_host_scratch_.data(), rec_cuda_scratch_, float_count * sizeof(float), cudaMemcpyDeviceToHost);
-        auto t1 = std::chrono::steady_clock::now();
-        batch_timing_.d2h_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        batch_timing_.d2h_ms += timedCudaCopyAsync(dst.data(), src, count * sizeof(float), cudaMemcpyDeviceToHost);
         batch_timing_.h2d_split = true;
 #else
-        (void)float_count;
+        std::copy(src, src + count, dst.begin());
 #endif
     }
 
@@ -467,13 +495,12 @@ class OCRRecognizerPrivate {
         auto _pre0 = std::chrono::steady_clock::now();
         std::vector<float> rec_input = preprocessRec(text_image, rec_img_h, rec_img_w, rec_mean, rec_std);
         auto _pre1 = std::chrono::steady_clock::now();
-        measureH2DProxy(rec_input.data(), rec_input.size());
+        float *rec_input_ptr = prepareInput(rec_input.data(), rec_input.size());
 
         std::array<int64_t, 4> rec_input_shape = {1, 3, rec_img_h, rec_img_w};
-        Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
         auto _ten0 = std::chrono::steady_clock::now();
         Ort::Value rec_input_tensor = Ort::Value::CreateTensor<float>(
-            memInfo, rec_input.data(), rec_input.size(), rec_input_shape.data(), rec_input_shape.size());
+            inputMemInfo(), rec_input_ptr, rec_input.size(), rec_input_shape.data(), rec_input_shape.size());
         auto _ten1 = std::chrono::steady_clock::now();
 
         RunTimer _run_rt(rec_device_ == "cuda");
@@ -492,8 +519,10 @@ class OCRRecognizerPrivate {
         auto rec_output_shape = rec_output.GetTensorTypeAndShapeInfo().GetShape();
         int rec_out_seq = static_cast<int>(rec_output_shape[1]);
         int rec_out_chars = static_cast<int>(rec_output_shape[2]);
-        measureD2HProxy(static_cast<size_t>(rec_out_seq) * static_cast<size_t>(rec_out_chars));
-        const float *rec_output_data = rec_output.GetTensorData<float>();
+        size_t rec_out_count = static_cast<size_t>(rec_out_seq) * static_cast<size_t>(rec_out_chars);
+        std::vector<float> rec_output_host;
+        readOutput(rec_output.GetTensorData<float>(), rec_out_count, rec_output_host);
+        const float *rec_output_data = rec_output_host.data();
 
         std::string text;
         float total_score = 0.0f;

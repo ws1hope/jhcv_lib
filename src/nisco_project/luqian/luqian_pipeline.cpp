@@ -646,7 +646,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             if (t.h2d_split) {
                 std::cout << " h2d=" << t.h2d_ms << "ms"
                           << " d2h=" << t.d2h_ms << "ms"
-                          << " infer=" << (t.run_ms - t.h2d_ms - t.d2h_ms) << "ms";
+                          << " infer=" << t.run_ms << "ms";
             } else {
                 std::cout << " ten=" << t.tensor_ms << "ms"
                           << " run=" << t.run_ms << "ms (incl. H2D)";

@@ -1,4 +1,5 @@
 #include "jhdeepcore_inference/onnx_inference.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -58,11 +59,12 @@ struct PreStepTimer {
     }
 };
 
-// session->Run() 计时守卫：cuda 设备用 cudaEvent（在默认 stream 上 record start/stop，
+// session->Run() 计时守卫：cuda 设备用 cudaEvent（在默认 stream 0 上 record start/stop，
 // 包住同步的 Run()，cudaEventSynchronize 后取 GPU 时间戳 elapsed），cpu 用 steady_clock。
-// ORT 的 CUDA EP 内部用自身 stream，外部无法插入 event，故测的是 Run 调用的端到端 GPU
-// 时间（数值上 ≈ 同步 Run 的墙钟耗时），不是纯 kernel 时间。事件按调用 create/destroy，
-// 开销 μs 级，相对 ms 级推理可忽略，且只在 device_=="cuda" 时发生。
+// 注意：ORT 的 CUDA EP kernel 跑在自有 stream，事件记在 stream 0（空闲）故测的是 Run 的 host
+// 墙钟，非纯 kernel GPU 时间。split 路径输入在 GPU，run_ms 已排除 H2D/D2H，仍含 ORT host
+// 开销+kernel；非 split 路径输入为 CPU tensor，run_ms 含 ORT 内部 H2D+kernel+D2H。事件按调用
+// create/destroy，开销 μs 级，相对 ms 级推理可忽略，且只在 device_=="cuda" 时发生。
 struct RunTimer {
     bool use_events;
     std::chrono::steady_clock::time_point t0;
@@ -96,6 +98,25 @@ struct RunTimer {
                    std::chrono::steady_clock::now() - t0).count();
     }
 };
+
+// cudaEvent 计时一段 cudaMemcpyAsync（stream 0 上 record start/stop + sync 后取 elapsed），
+// 用于真实 H2D/D2H 计时。事件按调用 create/destroy，开销 μs 级。仅 USE_CUDA 下可用。
+#ifdef USE_CUDA
+static double timedCudaCopyAsync(void *dst, const void *src, size_t bytes, cudaMemcpyKind kind) {
+    cudaEvent_t s, e;
+    cudaEventCreate(&s);
+    cudaEventCreate(&e);
+    cudaEventRecord(s, 0);
+    cudaMemcpyAsync(dst, src, bytes, kind, 0);
+    cudaEventRecord(e, 0);
+    cudaEventSynchronize(e);
+    float ms = 0.0f;
+    cudaEventElapsedTime(&ms, s, e);
+    cudaEventDestroy(s);
+    cudaEventDestroy(e);
+    return static_cast<double>(ms);
+}
+#endif
 } // namespace
 
 static auto to_model_path(const std::string &s) {
@@ -122,7 +143,8 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
 #ifdef ONNXRUNTIME_FOUND
       ,
       env_(ORT_LOGGING_LEVEL_WARNING, "JHDeepCore"),
-      memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
+      memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
+      cuda_mem_info_(Ort::MemoryInfo("Cuda", OrtArenaAllocator, 0, OrtMemTypeDefault))
 #endif
       ,
       model_loaded_(false), warmup_enabled_(warmup) {
@@ -280,16 +302,15 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     cv::Mat preprocessed = PreprocessImageCommon(image);
     PreprocessForOnnx(preprocessed);
     auto _pre1 = std::chrono::steady_clock::now();
-    measureH2DProxy(input_buffer_.data(), input_buffer_.size());
-
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
+    float *input_ptr = prepareInput(input_buffer_.data(), input_buffer_.size());
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
@@ -309,13 +330,13 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     auto tensor_info = output_tensors.front().GetTensorTypeAndShapeInfo();
     size_t output_size = tensor_info.GetElementCount();
     std::vector<int64_t> output_shape = tensor_info.GetShape();
-    std::vector<float> output(float_array, float_array + output_size);
+    std::vector<float> output;
+    readOutput(float_array, output_size, output);
 
     batch_timing_.count++;
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
-    measureD2HProxy(output_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -342,16 +363,15 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     cv::Mat preprocessed = PreprocessImageDetection(image);
     PreprocessForOnnx(preprocessed);
     auto _pre1 = std::chrono::steady_clock::now();
-    measureH2DProxy(input_buffer_.data(), input_buffer_.size());
-
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
+    float *input_ptr = prepareInput(input_buffer_.data(), input_buffer_.size());
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
@@ -371,13 +391,13 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     auto tensor_info = output_tensors.front().GetTensorTypeAndShapeInfo();
     size_t output_size = tensor_info.GetElementCount();
     std::vector<int64_t> output_shape = tensor_info.GetShape();
-    std::vector<float> output(float_array, float_array + output_size);
+    std::vector<float> output;
+    readOutput(float_array, output_size, output);
 
     batch_timing_.count++;
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
-    measureD2HProxy(output_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -404,16 +424,15 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     cv::Mat preprocessed = PreprocessImageDetection(image);
     PreprocessForOnnx(preprocessed);
     auto _pre1 = std::chrono::steady_clock::now();
-    measureH2DProxy(input_buffer_.data(), input_buffer_.size());
-
 #ifdef ONNXRUNTIME_FOUND
     if (!session_) {
         throw std::runtime_error("Model session not initialized");
     }
+    float *input_ptr = prepareInput(input_buffer_.data(), input_buffer_.size());
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory_info_, input_buffer_.data(), input_buffer_.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_buffer_.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
@@ -433,19 +452,20 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     auto detection_tensor_info = output_tensors[0].GetTensorTypeAndShapeInfo();
     size_t detection_size = detection_tensor_info.GetElementCount();
     std::vector<int64_t> detection_output_shape = detection_tensor_info.GetShape();
-    std::vector<float> detection_output(detection_array, detection_array + detection_size);
+    std::vector<float> detection_output;
+    readOutput(detection_array, detection_size, detection_output);
 
     float *protos_array = output_tensors[1].GetTensorMutableData<float>();
     auto protos_tensor_info = output_tensors[1].GetTensorTypeAndShapeInfo();
     size_t protos_size = protos_tensor_info.GetElementCount();
     std::vector<int64_t> protos_output_shape = protos_tensor_info.GetShape();
-    std::vector<float> protos_output(protos_array, protos_array + protos_size);
+    std::vector<float> protos_output;
+    readOutput(protos_array, protos_size, protos_output);
 
     batch_timing_.count++;
     batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
-    measureD2HProxy(detection_size + protos_size);
 #else
     throw std::runtime_error("ONNX Runtime not found");
 #endif
@@ -521,11 +541,11 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
         throw std::runtime_error("Model not loaded");
     }
 
-    measureH2DProxy(input_data.data(), input_data.size());
+    float *input_ptr = prepareInput(input_data.data(), input_data.size());
 
     auto _ten0 = std::chrono::steady_clock::now();
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory_info_, const_cast<float *>(input_data.data()), input_data.size(),
+        Ort::Value::CreateTensor<float>(inputMemInfo(), input_ptr, input_data.size(),
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
@@ -545,12 +565,12 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
     auto tensor_info = output_tensors.front().GetTensorTypeAndShapeInfo();
     size_t output_size = tensor_info.GetElementCount();
 
-    std::vector<float> output(float_array, float_array + output_size);
+    std::vector<float> output;
+    readOutput(float_array, output_size, output);
 
     // 分类路径：tensor/run 在此累加；count/preprocess 由 InferSingle 累加
     batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
     batch_timing_.run_ms += _run_ms;
-    measureD2HProxy(output_size);
     return output;
 #else
     throw std::runtime_error("ONNX Runtime not found");
@@ -576,42 +596,47 @@ void OnnxInference::ensureCudaInput(size_t float_count) {
 #endif
 }
 
-void OnnxInference::measureH2DProxy(const float *data, size_t count) {
-    // 仅在 cuda + JHDEEP_H2D_SPLIT=1 时做一次显式 cudaMemcpy 计时作 H2D 估算。
-    // 不改 Run 的输入（Run 仍用 CPU tensor，内部另做一次 H2D），故对推理零风险；
-    // infer ≈ run_ms - h2d_ms（run 含真实 H2D，与代理拷贝同尺寸故量级一致）。
-    if (device_ != "cuda" || !h2d_split_enabled()) return;
+bool OnnxInference::useGpuTensor() const {
+    return device_ == "cuda" && h2d_split_enabled();
+}
+
+#ifdef ONNXRUNTIME_FOUND
+const Ort::MemoryInfo &OnnxInference::inputMemInfo() const {
+    return input_on_gpu_ ? cuda_mem_info_ : memory_info_;
+}
+#endif
+
+float *OnnxInference::prepareInput(const float *data, size_t count) {
+    // 非 split：原样返回 CPU 指针供建 CPU tensor（ORT 内部自行 H2D）。
+    input_on_gpu_ = false;
+    if (!useGpuTensor()) return const_cast<float *>(data);
 #ifdef USE_CUDA
-    if (count == 0) return;
+    if (count == 0) return const_cast<float *>(data);
     ensureCudaInput(count);
-    if (!cuda_input_) return;   // cudaMalloc 失败则跳过，不影响推理
-    auto t0 = std::chrono::steady_clock::now();
-    cudaMemcpy(cuda_input_, data, count * sizeof(float), cudaMemcpyHostToDevice);
-    auto t1 = std::chrono::steady_clock::now();
-    batch_timing_.h2d_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+    if (!cuda_input_) return const_cast<float *>(data);   // cudaMalloc 失败回退 CPU 路径
+    batch_timing_.h2d_ms += timedCudaCopyAsync(cuda_input_, data, count * sizeof(float), cudaMemcpyHostToDevice);
     batch_timing_.h2d_split = true;
+    input_on_gpu_ = true;
+    return cuda_input_;
 #else
-    (void)data;
-    (void)count;
+    return const_cast<float *>(data);
 #endif
 }
 
-void OnnxInference::measureD2HProxy(size_t float_count) {
-    // 用输出尺寸做一次 cudaMemcpy(D2H) 计时作 D2H 估算。不改 Run（Run 内部另做一次真实
-    // D2H），推理零风险；infer ≈ run_ms - h2d_ms - d2h_ms。
-    if (device_ != "cuda" || !h2d_split_enabled()) return;
+void OnnxInference::readOutput(const float *src, size_t count, std::vector<float> &dst) {
+    dst.resize(count);
+    if (count == 0) return;
+    if (!input_on_gpu_) {
+        // src 为 CPU 指针（非 split：ORT 内部已 D2H 到 CPU），直接拷贝
+        std::copy(src, src + count, dst.begin());
+        return;
+    }
 #ifdef USE_CUDA
-    if (float_count == 0) return;
-    ensureCudaInput(float_count);
-    if (!cuda_input_) return;   // cudaMalloc 失败则跳过
-    if (host_scratch_.size() < float_count) host_scratch_.resize(float_count);
-    auto t0 = std::chrono::steady_clock::now();
-    cudaMemcpy(host_scratch_.data(), cuda_input_, float_count * sizeof(float), cudaMemcpyDeviceToHost);
-    auto t1 = std::chrono::steady_clock::now();
-    batch_timing_.d2h_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+    // src 为 GPU 指针（split：输入在 GPU，输出亦在 GPU），真实 D2H
+    batch_timing_.d2h_ms += timedCudaCopyAsync(dst.data(), src, count * sizeof(float), cudaMemcpyDeviceToHost);
     batch_timing_.h2d_split = true;
 #else
-    (void)float_count;
+    std::copy(src, src + count, dst.begin());
 #endif
 }
 

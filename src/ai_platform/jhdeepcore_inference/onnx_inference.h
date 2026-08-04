@@ -41,7 +41,10 @@ class OnnxInference : public BaseInference {
     std::unique_ptr<Ort::Session> session_;
     Ort::Env env_;
     Ort::SessionOptions session_options_;
-    Ort::MemoryInfo memory_info_;
+    Ort::MemoryInfo memory_info_;        // CPU allocator 描述（非 split 路径建 CPU tensor）
+    Ort::MemoryInfo cuda_mem_info_;      // Cuda allocator 描述（split 路径建 GPU tensor）
+    // 按 input_on_gpu_（由 prepareInput 设置）返 cuda_mem_info_ 或 memory_info_，保证 ptr 与 MemoryInfo 一致。
+    const Ort::MemoryInfo &inputMemInfo() const;
 
     std::string input_name_;
     std::vector<int64_t> input_shape_;
@@ -63,18 +66,23 @@ class OnnxInference : public BaseInference {
     void PreprocessForOnnx(const cv::Mat &image);
     std::vector<float> RunInference(const std::vector<float> &input_data);
 
-    // JHDEEP_H2D_SPLIT=1 且 device=cuda 时：把输入显式 cudaMemcpy 到缓存 GPU buffer
-    // 并计时，作为 H2D 估算累加进 batch_timing_.h2d_ms（不改 Run 的输入，推理零风险）。
-    void measureH2DProxy(const float *data, size_t count);
-    // JHDEEP_H2D_SPLIT=1 且 device=cuda 时：用输出尺寸做一次 cudaMemcpy(D2H) 计时，
-    // 作为 D2H 估算累加进 batch_timing_.d2h_ms。
-    void measureD2HProxy(size_t float_count);
+    // device=="cuda" && JHDEEP_H2D_SPLIT==1：输入走真实 GPU tensor 路径（H2D/run/D2H 三段
+    // 分开 cudaEvent 计时）。否则走原 CPU tensor 路径（Run 内部自行 H2D/D2H，不拆分）。
+    bool useGpuTensor() const;
+    // split 路径：真实 cudaMemcpyAsync(H2D)+cudaEvent 拷进 cuda_input_，累计 h2d_ms，返回 GPU 指针；
+    // 非 split：原样返回（const_cast）CPU 指针，供建 CPU tensor。
+    float *prepareInput(const float *data, size_t count);
+    // split 路径：真实 cudaMemcpyAsync(D2H)+cudaEvent 把 GPU 输出拷进 dst，累计 d2h_ms；
+    // 非 split：src 为 CPU 指针，直接 std::copy 进 dst。
+    void readOutput(const float *src, size_t count, std::vector<float> &dst);
     // 按需分配/扩容 cuda_input_（仅 USE_CUDA 下实际分配）
     void ensureCudaInput(size_t float_count);
 
-    float *cuda_input_ = nullptr;   // 缓存的 GPU 输入缓冲（H2D/D2H 估算用，throwaway）
+    float *cuda_input_ = nullptr;   // GPU 输入缓冲（split 路径作为 Run 的真实输入）
     size_t cuda_input_count_ = 0;
-    std::vector<float> host_scratch_;  // D2H 估算用的 CPU 目的缓冲（throwaway）
+    // 由 prepareInput 设置、inputMemInfo/readOutput 读取：本次输入是否实际落在 GPU。
+    // cudaMalloc 失败时 prepareInput 回退 CPU，此标志为 false，保证 ptr 与 MemoryInfo 一致。
+    bool input_on_gpu_ = false;
 };
 
 } // namespace inference

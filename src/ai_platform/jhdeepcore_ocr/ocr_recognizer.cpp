@@ -29,6 +29,29 @@ static bool h2dSplitEnabled() {
     return enabled;
 }
 
+static bool profileEnabled() {
+    static const bool enabled = []() {
+        const char *env = std::getenv("JHDEEP_PROFILE");
+        return env && std::string(env) == "1";
+    }();
+    return enabled;
+}
+
+// profiling 输出前缀：profile_<模型文件名去扩展名>，便于区分各模型产生的 chrome-trace JSON
+static auto profilePrefix(const std::string &model_path) {
+    size_t slash = model_path.find_last_of("/\\");
+    std::string base = (slash != std::string::npos) ? model_path.substr(slash + 1) : model_path;
+    size_t dot = base.find_last_of('.');
+    if (dot != std::string::npos) base = base.substr(0, dot);
+    if (base.empty()) base = "jhdeep";
+    base = "profile_" + base;
+#ifdef _WIN32
+    return std::wstring(base.begin(), base.end());
+#else
+    return base;
+#endif
+}
+
 // rec_session->Run() 计时守卫：cuda 设备用 cudaEvent（默认 stream 0 包住同步 Run），
 // cpu 用 steady_clock。事件按调用 create/destroy。与 onnx_inference.cpp 中的同名结构同义。
 // 注意：ORT CUDA EP kernel 跑在自有 stream，事件记在 stream 0（空闲）故测的是 Run 的 host 墙钟，
@@ -298,6 +321,11 @@ static void initSession(const std::string &model_path, bool use_gpu, int gpu_id,
 #else
     std::cout << "[INFO] Using CPU (CUDA not enabled)" << std::endl;
 #endif
+
+    if (profileEnabled()) {
+        sessionOptions.EnableProfiling(profilePrefix(model_path).c_str());
+        std::cerr << "[INFO] ORT profiling enabled (rec) -> profile_<model>_<timestamp>.json per Run" << std::endl;
+    }
 
 #ifdef _WIN32
     std::wstring wideModelPath(model_path.begin(), model_path.end());

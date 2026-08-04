@@ -36,6 +36,29 @@ bool h2d_split_enabled() {
     }();
     return enabled;
 }
+
+bool profile_enabled() {
+    static const bool enabled = []() {
+        const char *env = std::getenv("JHDEEP_PROFILE");
+        return env && std::string(env) == "1";
+    }();
+    return enabled;
+}
+
+// profiling 输出前缀：profile_<模型文件名去扩展名>，便于区分各模型产生的 chrome-trace JSON
+static auto profile_prefix(const std::string &model_path) {
+    size_t slash = model_path.find_last_of("/\\");
+    std::string base = (slash != std::string::npos) ? model_path.substr(slash + 1) : model_path;
+    size_t dot = base.find_last_of('.');
+    if (dot != std::string::npos) base = base.substr(0, dot);
+    if (base.empty()) base = "jhdeep";
+    base = "profile_" + base;
+#ifdef _WIN32
+    return std::wstring(base.begin(), base.end());
+#else
+    return base;
+#endif
+}
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
@@ -175,6 +198,11 @@ OnnxInference::OnnxInference(const std::string &model_path, const std::string &d
 #endif
     } else if (device_ == "cpu") {
         std::cout << "[INFO] ONNX Runtime: using optimized CPU for Mac M-series chips" << std::endl;
+    }
+
+    if (profile_enabled()) {
+        session_options_.EnableProfiling(profile_prefix(model_path_).c_str());
+        std::cerr << "[INFO] ORT profiling enabled -> profile_<model>_<timestamp>.json per Run" << std::endl;
     }
 #endif
 }

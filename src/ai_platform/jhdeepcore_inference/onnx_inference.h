@@ -48,6 +48,9 @@ class OnnxInference : public BaseInference {
     // 按 input_on_gpu_ 返回建输入 tensor 用的 MemoryInfo（split: cuda_allocator_ 的 GPU info；
     // 否则 memory_info_ 的 CPU）。CreateTensor 取 const OrtMemoryInfo*。
     const OrtMemoryInfo *inputMemInfoPtr() const;
+    // 执行 Run：split 用 IoBinding（BindInput GPU + BindOutput GPU，避免 ORT 把输出 D2H 回 CPU
+    // 致 readOutput 的 D2H 无效并污染 kernel_stream_；run_ms 也才是纯 kernel）；非 split 用简单 Run。
+    std::vector<Ort::Value> executeRun(Ort::Value &input_tensor, double &run_ms);
 
     std::string input_name_;
     std::vector<int64_t> input_shape_;

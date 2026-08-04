@@ -344,10 +344,8 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
-                                        output_names_cstr_.data(), output_names_cstr_.size());
-    double _run_ms = _run_rt.elapsed_ms();
+    double _run_ms = 0;
+    auto output_tensors = executeRun(input_tensor, _run_ms);
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -409,10 +407,8 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
-                                        output_names_cstr_.data(), output_names_cstr_.size());
-    double _run_ms = _run_rt.elapsed_ms();
+    double _run_ms = 0;
+    auto output_tensors = executeRun(input_tensor, _run_ms);
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -474,10 +470,8 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
-                                        output_names_cstr_.data(), output_names_cstr_.size());
-    double _run_ms = _run_rt.elapsed_ms();
+    double _run_ms = 0;
+    auto output_tensors = executeRun(input_tensor, _run_ms);
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -591,10 +585,8 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
                                         input_shape_.data(), input_shape_.size());
     auto _ten1 = std::chrono::steady_clock::now();
 
-    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
-    auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
-                                        output_names_cstr_.data(), output_names_cstr_.size());
-    double _run_ms = _run_rt.elapsed_ms();
+    double _run_ms = 0;
+    auto output_tensors = executeRun(input_tensor, _run_ms);
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -631,6 +623,26 @@ bool OnnxInference::useGpuTensor() const {
 const OrtMemoryInfo *OnnxInference::inputMemInfoPtr() const {
     if (input_on_gpu_ && cuda_allocator_) return cuda_allocator_->GetInfo();
     return memory_info_;
+}
+
+std::vector<Ort::Value> OnnxInference::executeRun(Ort::Value &input_tensor, double &run_ms) {
+    RunTimer _run_rt(device_ == "cuda", kernel_stream_);
+    if (input_on_gpu_ && cuda_allocator_) {
+        // split：IoBinding 把输出 bind 到 GPU（cuda_allocator_ 的 MemoryInfo），ORT 不再 D2H 输出，
+        // run_ms 才是纯 kernel；readOutput 的 D2H（从 GPU 输出）也才合法。
+        Ort::IoBinding binding(*session_);
+        binding.BindInput(input_names_cstr_[0], input_tensor);
+        for (size_t i = 0; i < output_names_cstr_.size(); ++i) {
+            binding.BindOutput(output_names_cstr_[i], cuda_allocator_->GetInfo());
+        }
+        session_->Run(Ort::RunOptions{nullptr}, binding);
+        run_ms = _run_rt.elapsed_ms();
+        return binding.GetOutputValues();
+    }
+    auto outputs = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
+                                 output_names_cstr_.data(), output_names_cstr_.size());
+    run_ms = _run_rt.elapsed_ms();
+    return outputs;
 }
 #endif
 

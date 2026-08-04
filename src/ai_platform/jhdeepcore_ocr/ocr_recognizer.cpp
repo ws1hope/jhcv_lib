@@ -548,11 +548,25 @@ class OCRRecognizerPrivate {
         auto _ten1 = std::chrono::steady_clock::now();
 
         RunTimer _run_rt(rec_device_ == "cuda", rec_kernel_stream_);
-        auto rec_outputs = rec_session->Run(
-            Ort::RunOptions{nullptr},
-            rec_input_names.data(), &rec_input_tensor, 1,
-            rec_output_names.data(), rec_output_names.size());
-        double _run_ms = _run_rt.elapsed_ms();
+        std::vector<Ort::Value> rec_outputs;
+        double _run_ms = 0;
+        if (input_on_gpu_ && rec_cuda_allocator_) {
+            // split：IoBinding 把输出 bind 到 GPU，避免 ORT D2H 输出致 readOutput D2H 无效污染 stream
+            Ort::IoBinding binding(*rec_session);
+            binding.BindInput(rec_input_names[0], rec_input_tensor);
+            for (size_t i = 0; i < rec_output_names.size(); ++i) {
+                binding.BindOutput(rec_output_names[i], rec_cuda_allocator_->GetInfo());
+            }
+            rec_session->Run(Ort::RunOptions{nullptr}, binding);
+            _run_ms = _run_rt.elapsed_ms();
+            rec_outputs = binding.GetOutputValues();
+        } else {
+            rec_outputs = rec_session->Run(
+                Ort::RunOptions{nullptr},
+                rec_input_names.data(), &rec_input_tensor, 1,
+                rec_output_names.data(), rec_output_names.size());
+            _run_ms = _run_rt.elapsed_ms();
+        }
 
         batch_timing_.count++;
         batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();

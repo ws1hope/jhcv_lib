@@ -218,7 +218,7 @@ public:
 
         std::vector<std::string> picture_path_array = FileHelper::splitStringByCsharp(image_path);
 
-        auto start = std::chrono::high_resolution_clock::now();
+        auto start = std::chrono::steady_clock::now();
         json array_result = json::array();
         std::vector<float> img_confs;
         std::vector<bool> has_detections;
@@ -274,7 +274,7 @@ public:
             saveCharCrops(pipeline_result, pic_number, t);
         }
 
-        auto end = std::chrono::high_resolution_clock::now();
+        auto end = std::chrono::steady_clock::now();
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
         size_t best_idx = 0;

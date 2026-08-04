@@ -136,7 +136,7 @@ void LuqianPipeline::fillTiming(LuqianPipelineResult& r, double total_ms)
 LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                                              const std::string& heat_number)
 {
-    auto infer_start = std::chrono::high_resolution_clock::now();
+    auto infer_start = std::chrono::steady_clock::now();
 
     LuqianPipelineResult result;
 
@@ -191,7 +191,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
     result.det_detections = det_res.detections;
 
     if (det_res.num_detections == 0) {
-        auto infer_end = std::chrono::high_resolution_clock::now();
+        auto infer_end = std::chrono::steady_clock::now();
         auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
         fillTiming(result, static_cast<double>(infer_ms));
         result.annotated_image = createAnnotatedImage(image, {});
@@ -635,7 +635,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         result.targets.push_back(target_result);
     }
 
-    auto infer_end = std::chrono::high_resolution_clock::now();
+    auto infer_end = std::chrono::steady_clock::now();
     auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
     fillTiming(result, static_cast<double>(infer_ms));
     if (verbose) {

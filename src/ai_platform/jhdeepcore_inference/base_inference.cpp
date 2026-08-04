@@ -26,14 +26,15 @@ bool pre_bench_enabled() {
 #endif
 
 // JHDEEP_BENCH=1 时按段打印预处理各步耗时；关闭时仅一次 now() 调用，开销可忽略。
+// 用 steady_clock（保证单调，不受系统时钟调整影响）测间隔。
 struct PreStepTimer {
     const char *tag;
-    std::chrono::high_resolution_clock::time_point t0;
-    explicit PreStepTimer(const char *t) : tag(t), t0(std::chrono::high_resolution_clock::now()) {}
+    std::chrono::steady_clock::time_point t0;
+    explicit PreStepTimer(const char *t) : tag(t), t0(std::chrono::steady_clock::now()) {}
     ~PreStepTimer() {
         if (!pre_bench_enabled()) return;
         double ms = std::chrono::duration<double, std::milli>(
-                        std::chrono::high_resolution_clock::now() - t0)
+                        std::chrono::steady_clock::now() - t0)
                         .count();
         std::cerr << "[BENCH] " << tag << ": " << ms << " ms" << std::endl;
     }

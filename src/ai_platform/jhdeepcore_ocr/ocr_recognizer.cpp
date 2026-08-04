@@ -29,6 +29,42 @@ static bool h2dSplitEnabled() {
     return enabled;
 }
 
+// rec_session->Run() 计时守卫：cuda 设备用 cudaEvent（默认 stream 包住同步 Run），
+// cpu 用 steady_clock。事件按调用 create/destroy。与 onnx_inference.cpp 中的同名结构同义。
+struct RunTimer {
+    bool use_events;
+    std::chrono::steady_clock::time_point t0;
+#ifdef USE_CUDA
+    cudaEvent_t start_ev, stop_ev;
+#endif
+    explicit RunTimer(bool use_cuda_events) : use_events(use_cuda_events) {
+#ifdef USE_CUDA
+        if (use_events) {
+            cudaEventCreate(&start_ev);
+            cudaEventCreate(&stop_ev);
+            cudaEventRecord(start_ev, 0);
+            return;
+        }
+#endif
+        t0 = std::chrono::steady_clock::now();
+    }
+    double elapsed_ms() {
+#ifdef USE_CUDA
+        if (use_events) {
+            cudaEventRecord(stop_ev, 0);
+            cudaEventSynchronize(stop_ev);
+            float ms = 0.0f;
+            cudaEventElapsedTime(&ms, start_ev, stop_ev);
+            cudaEventDestroy(start_ev);
+            cudaEventDestroy(stop_ev);
+            return static_cast<double>(ms);
+        }
+#endif
+        return std::chrono::duration<double, std::milli>(
+                   std::chrono::steady_clock::now() - t0).count();
+    }
+};
+
 static std::vector<std::string> parseYamlCharDict(const std::string &yaml_path,
                                                     std::vector<float> &out_mean,
                                                     std::vector<float> &out_std) {
@@ -299,7 +335,7 @@ class OCRRecognizerPrivate {
         std::cout << "[INFO] Rec model loaded: " << model_path << std::endl;
 
         {
-            auto t0 = std::chrono::high_resolution_clock::now();
+            RunTimer rt(rec_device_ == "cuda");
             std::vector<float> dummy(3 * 48 * 10, 0.0f);
             std::array<int64_t, 4> shape = {1, 3, 48, 10};
             Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -307,8 +343,7 @@ class OCRRecognizerPrivate {
             rec_session->Run(Ort::RunOptions{nullptr},
                 rec_input_names.data(), &tensor, 1,
                 rec_output_names.data(), rec_output_names.size());
-            auto t1 = std::chrono::high_resolution_clock::now();
-            float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
+            double ms = rt.elapsed_ms();
             std::cout << "[INFO] Rec model warmup done (" << ms << " ms)" << std::endl;
         }
 
@@ -385,9 +420,9 @@ class OCRRecognizerPrivate {
         if (count == 0) return;
         ensureCudaScratch(count);
         if (!rec_cuda_scratch_) return;
-        auto t0 = std::chrono::high_resolution_clock::now();
+        auto t0 = std::chrono::steady_clock::now();
         cudaMemcpy(rec_cuda_scratch_, data, count * sizeof(float), cudaMemcpyHostToDevice);
-        auto t1 = std::chrono::high_resolution_clock::now();
+        auto t1 = std::chrono::steady_clock::now();
         batch_timing_.h2d_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
         batch_timing_.h2d_split = true;
 #else
@@ -405,9 +440,9 @@ class OCRRecognizerPrivate {
         ensureCudaScratch(float_count);
         if (!rec_cuda_scratch_) return;
         if (rec_host_scratch_.size() < float_count) rec_host_scratch_.resize(float_count);
-        auto t0 = std::chrono::high_resolution_clock::now();
+        auto t0 = std::chrono::steady_clock::now();
         cudaMemcpy(rec_host_scratch_.data(), rec_cuda_scratch_, float_count * sizeof(float), cudaMemcpyDeviceToHost);
-        auto t1 = std::chrono::high_resolution_clock::now();
+        auto t1 = std::chrono::steady_clock::now();
         batch_timing_.d2h_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
         batch_timing_.h2d_split = true;
 #else
@@ -429,29 +464,29 @@ class OCRRecognizerPrivate {
         rec_img_w = std::max(rec_img_w, 10);
         rec_img_w = std::min(rec_img_w, rec_img_h * 10);
 
-        auto _pre0 = std::chrono::high_resolution_clock::now();
+        auto _pre0 = std::chrono::steady_clock::now();
         std::vector<float> rec_input = preprocessRec(text_image, rec_img_h, rec_img_w, rec_mean, rec_std);
-        auto _pre1 = std::chrono::high_resolution_clock::now();
+        auto _pre1 = std::chrono::steady_clock::now();
         measureH2DProxy(rec_input.data(), rec_input.size());
 
         std::array<int64_t, 4> rec_input_shape = {1, 3, rec_img_h, rec_img_w};
         Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        auto _ten0 = std::chrono::high_resolution_clock::now();
+        auto _ten0 = std::chrono::steady_clock::now();
         Ort::Value rec_input_tensor = Ort::Value::CreateTensor<float>(
             memInfo, rec_input.data(), rec_input.size(), rec_input_shape.data(), rec_input_shape.size());
-        auto _ten1 = std::chrono::high_resolution_clock::now();
+        auto _ten1 = std::chrono::steady_clock::now();
 
-        auto _run0 = std::chrono::high_resolution_clock::now();
+        RunTimer _run_rt(rec_device_ == "cuda");
         auto rec_outputs = rec_session->Run(
             Ort::RunOptions{nullptr},
             rec_input_names.data(), &rec_input_tensor, 1,
             rec_output_names.data(), rec_output_names.size());
-        auto _run1 = std::chrono::high_resolution_clock::now();
+        double _run_ms = _run_rt.elapsed_ms();
 
         batch_timing_.count++;
         batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();
         batch_timing_.tensor_ms += std::chrono::duration<double, std::milli>(_ten1 - _ten0).count();
-        batch_timing_.run_ms += std::chrono::duration<double, std::milli>(_run1 - _run0).count();
+        batch_timing_.run_ms += _run_ms;
 
         auto &rec_output = rec_outputs[0];
         auto rec_output_shape = rec_output.GetTensorTypeAndShapeInfo().GetShape();

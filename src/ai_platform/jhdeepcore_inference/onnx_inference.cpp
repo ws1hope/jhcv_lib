@@ -346,6 +346,7 @@ SegmentationResult OnnxInference::InferSingleSegmentation(const cv::Mat &image) 
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
+    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -407,6 +408,7 @@ DetectionResult OnnxInference::InferSingleDetection(const cv::Mat &image) {
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
+    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -468,6 +470,7 @@ InstanceSegmentationResult OnnxInference::InferSingleInstanceSegmentation(const 
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
+    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -581,6 +584,7 @@ std::vector<float> OnnxInference::RunInference(const std::vector<float> &input_d
     auto output_tensors = session_->Run(Ort::RunOptions{nullptr}, input_names_cstr_.data(), &input_tensor, 1,
                                         output_names_cstr_.data(), output_names_cstr_.size());
     double _run_ms = _run_rt.elapsed_ms();
+    maybeFlushProfile();
     if (bench_enabled()) {
         log_pure_inference(_run_ms);
     }
@@ -626,6 +630,16 @@ void OnnxInference::ensureCudaInput(size_t float_count) {
 
 bool OnnxInference::useGpuTensor() const {
     return device_ == "cuda" && h2d_split_enabled();
+}
+
+void OnnxInference::maybeFlushProfile() {
+#ifdef ONNXRUNTIME_FOUND
+    if (!profile_enabled() || profile_flushed_ || !session_) return;
+    Ort::AllocatorWithDefaultOptions alloc;
+    session_->EndProfilingAllocated(alloc);
+    profile_flushed_ = true;
+    std::cerr << "[INFO] ORT profile flushed to profile_<model>_<timestamp>.json (first Run recorded)" << std::endl;
+#endif
 }
 
 #ifdef ONNXRUNTIME_FOUND

@@ -83,6 +83,10 @@ class OnnxInference : public BaseInference {
     // 由 prepareInput 设置、inputMemInfo/readOutput 读取：本次输入是否实际落在 GPU。
     // cudaMalloc 失败时 prepareInput 回退 CPU，此标志为 false，保证 ptr 与 MemoryInfo 一致。
     bool input_on_gpu_ = false;
+    // profiling 一次性 flush：ORT session 级 EnableProfiling 需显式调 EndProfiling 才把 trace 写进
+    // 文件，否则运行中只有 0 字节占位。首次 Run 后 flush 一次（之后该 session 不再记录）。
+    bool profile_flushed_ = false;
+    void maybeFlushProfile();
 };
 
 } // namespace inference

@@ -445,6 +445,7 @@ class OCRRecognizerPrivate {
     // 由 prepareInput 设置、inputMemInfo/readOutput 读取：本次输入是否实际落在 GPU。
     // cudaMalloc 失败时 prepareInput 回退 CPU，此标志为 false，保证 ptr 与 MemoryInfo 一致。
     bool input_on_gpu_ = false;
+    bool rec_profile_flushed_ = false;
 
     void ensureCudaScratch(size_t float_count) {
 #ifdef USE_CUDA
@@ -537,6 +538,12 @@ class OCRRecognizerPrivate {
             rec_input_names.data(), &rec_input_tensor, 1,
             rec_output_names.data(), rec_output_names.size());
         double _run_ms = _run_rt.elapsed_ms();
+        if (profileEnabled() && !rec_profile_flushed_ && rec_session) {
+            Ort::AllocatorWithDefaultOptions alloc;
+            rec_session->EndProfilingAllocated(alloc);
+            rec_profile_flushed_ = true;
+            std::cerr << "[INFO] ORT profile flushed (rec): profile_<model>_<timestamp>.json" << std::endl;
+        }
 
         batch_timing_.count++;
         batch_timing_.preprocess_ms += std::chrono::duration<double, std::milli>(_pre1 - _pre0).count();

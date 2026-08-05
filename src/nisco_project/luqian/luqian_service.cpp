@@ -111,7 +111,8 @@ public:
             img_confs.push_back(computeImageConfidence(pipeline_result));
             has_detections.push_back(!pipeline_result.det_detections.empty());
 
-            // 各模型分段耗时写进日志（每张图一行）。split 时 run≈kernel（user_compute_stream 上事件 bracket kernel），infer=run_ms；非 split 时 run 含 ORT 内部 H2D/D2H，ten 预期≈0。
+            // 各模型分段耗时写进日志（每张图一行）。split 时 run 为 compute phase 时间跨度，
+            // gpu 为 H2D 起点到 D2H 终点；非 split 时 run 是 ORT Run 的 host 墙钟。
             {
                 const auto& T = pipeline_result.timing;
                 auto put = [&](const char* name, const InferenceTiming& t) {
@@ -121,6 +122,10 @@ public:
                         fout << " h2d=" << t.h2d_ms
                              << " d2h=" << t.d2h_ms
                              << " infer=" << t.run_ms;
+                        if (t.gpu_timing_valid) {
+                            fout << " gpu=" << t.gpu_total_ms
+                                 << " wall=" << t.wall_ms;
+                        }
                     } else {
                         fout << " ten=" << t.tensor_ms
                              << " run=" << t.run_ms;

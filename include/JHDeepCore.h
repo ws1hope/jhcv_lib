@@ -57,10 +57,13 @@ struct InferenceTiming {
     int count = 0;               // 本批次推理图片数
     double preprocess_ms = 0.0; // 图像预处理：letterbox/resize/归一化 + HWC->CHW
     double tensor_ms = 0.0;     // 构造 ORT 输入 tensor（包已有 buffer，预期≈0）
-    double run_ms = 0.0;        // session->Run（cudaEvent）。split 时事件记在 kernel_stream_（ORT 经 user_compute_stream 跑此 stream）bracket 住 kernel -> ≈ kernel GPU 时间（sync Run 仍含少量 host 开销）；非 split 事件记默认流=Run host 墙钟，含 ORT 内部 H2D+算子+D2H
-    double h2d_ms = 0.0;        // 真实 H2D 输入拷贝（cudaMemcpyAsync+cudaEvent，仅 JHDEEP_H2D_SPLIT=1 时测量，否则 0）
-    double d2h_ms = 0.0;        // 真实 D2H 输出回拷（cudaMemcpyAsync+cudaEvent，仅 JHDEEP_H2D_SPLIT=1 时测量，否则 0）
-    bool h2d_split = false;     // 本次是否做了 H2D/D2H 拆分测量（split 时 H2D/run/D2H 三段 disjoint；infer=run_ms 即 kernel 段）
+    double run_ms = 0.0;        // split：同一 user stream 上的 compute phase 时间跨度；非 split：session->Run host 墙钟
+    double h2d_ms = 0.0;        // pinned host -> GPU 的真实 H2D（仅有效 split 样本）
+    double d2h_ms = 0.0;        // GPU -> pinned host 的真实 D2H，包含全部输出（仅有效 split 样本）
+    double gpu_total_ms = 0.0;  // 首个 H2D event 到末个 D2H event 的 GPU 时间跨度（含阶段间空隙）
+    double wall_ms = 0.0;       // 输入 staging 开始到输出进入最终 host vector 的 host 墙钟
+    bool h2d_split = false;     // 兼容字段：至少有一个样本完成了有效的 H2D/compute/D2H 拆分
+    bool gpu_timing_valid = false; // stream/allocator/pinned buffer/event 全部有效且 CUDA 调用成功
     std::string device;         // 实际执行设备 "cuda"/"cpu"
 };
 

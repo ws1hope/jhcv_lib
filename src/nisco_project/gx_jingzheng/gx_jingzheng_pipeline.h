@@ -32,7 +32,7 @@ struct GxJingzhengSegInstance {
 };
 
 // 各模型分段耗时汇总（毫秒）。device 反映实际执行设备（cuda/cpu）。
-// split 时 run_ms≈kernel（user_compute_stream 上事件 bracket kernel），infer=run_ms；非 split 时 run_ms 含 ORT 内部 H2D/D2H。tensor_ms 预期≈0。
+// split 时 run_ms 为 user_compute_stream 上的 compute phase 时间跨度；非 split 时为 ORT Run host 墙钟。
 struct GxJingzhengTiming {
     InferenceTiming det;     // 定位检测
     InferenceTiming seg;     // 实例分割

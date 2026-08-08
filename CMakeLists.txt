@@ -59,24 +59,24 @@ elseif(APPLE)
     option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" OFF)
 
 else()
-    set(3RDPARTY_ROOT     "/usr/local")
-    set(OPENCV_ROOT       "${3RDPARTY_ROOT}")
-    set(ONNXRUNTIME_ROOT  "${3RDPARTY_ROOT}")
-    set(YAML_CPP_ROOT     "${3RDPARTY_ROOT}")
+    set(OPENCV_ROOT       "/opt/3rdparty/opencv")
+    set(ONNXRUNTIME_ROOT  "/opt/3rdparty/onnxruntime")
+    set(YAML_CPP_ROOT     "/usr")
 
     file(GLOB OpenCV_LIBS "${OPENCV_ROOT}/lib/libopencv_*.so")
     set(ONNX_CPU_LIBS     ${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so)
 
     set(INCLUDE_DIRS
-        ${OPENCV_ROOT}/include
-        ${ONNXRUNTIME_ROOT}/include
+        ${OPENCV_ROOT}/include/opencv4
+        ${ONNXRUNTIME_ROOT}/include/onnxruntime/core/session
         ${YAML_CPP_ROOT}/include
     )
     set(LIB_DIRS
         ${OPENCV_ROOT}/lib
-        ${YAML_CPP_ROOT}/lib
+        ${ONNXRUNTIME_ROOT}/lib
+        ${YAML_CPP_ROOT}/lib/x86_64-linux-gnu
     )
-    option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" OFF)
+    option(ENABLE_CUDA "Enable CUDA/TensorRT GPU support" ON)
 endif()
 
 # ========== CUDA ==========
@@ -91,6 +91,11 @@ if(ENABLE_CUDA)
         )
         list(APPEND INCLUDE_DIRS ${CUDA_ROOT}/include)
         list(APPEND LIB_DIRS ${CUDA_ROOT}/lib/x64)
+    else()
+        # Linux：CUDA toolkit 在 /usr/local/cuda（镜像自带）；代码 include 了 cuda_runtime_api.h，链 cudart
+        list(APPEND INCLUDE_DIRS /usr/local/cuda/include)
+        list(APPEND LIB_DIRS /usr/local/cuda/lib64)
+        set(ONNX_GPU_LIBS cudart)
     endif()
 else()
     message(STATUS "CUDA support: OFF (CPU-only mode)")

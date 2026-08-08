@@ -48,7 +48,9 @@ jhcv_lib/
 | yaml-cpp | 配置解析（静态链接，`YAML_CPP_STATIC_DEFINE`） |
 | CUDA 12.8 + TensorRT（可选） | 仅 Windows GPU 构建，开启 `ENABLE_CUDA` |
 
-**macOS / Linux**：依赖安装到 `/usr/local`（OpenCV、ONNX Runtime、yaml-cpp），可用 brew / apt 安装。
+**macOS**：依赖通常在 `/opt/homebrew` 或 `/usr/local`（OpenCV、ONNX Runtime、yaml-cpp），可用 brew 安装。
+
+**Linux（Ubuntu）**：CMake 默认读取 `/opt/3rdparty/opencv`、`/opt/3rdparty/onnxruntime`，CUDA 在 `/usr/local/cuda`；yaml-cpp 用系统路径 `/usr`。运行时需把上述 `lib` 加入 `LD_LIBRARY_PATH`（见 `.vscode/launch.json` 的 Ubuntu 配置）。
 
 **Windows**：第三方库统一放在 `G:/3thirdparty/`（opencv / onnxruntime-1.21.1-cuda12.4-sm86-sm89 / tensorrt / paddle_inference），CUDA 在 `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4`。运行时需把上述 DLL 加入 `PATH`（见 `.vscode/launch.json`）。
 
@@ -56,12 +58,26 @@ jhcv_lib/
 
 CMake ≥ 3.15，C++17。
 
-**macOS / Linux（CPU）**
+**macOS（CPU）**
 
 ```bash
-cmake -B build -S .
-cmake --build build -j8        # 或 make -C build -j8
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DENABLE_CUDA=OFF
+cmake --build build -j8
 ```
+
+**Ubuntu / Linux（可选 CUDA）**
+
+```bash
+# GPU（默认 ENABLE_CUDA=ON）
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DENABLE_CUDA=ON
+cmake --build build -j8
+
+# 纯 CPU
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DENABLE_CUDA=OFF
+cmake --build build -j8
+```
+
+可执行文件在 `build/bin/`（无 `Release/` 子目录，也无 `.exe` 后缀）。
 
 **Windows（MSVC v143 + 可选 CUDA）**
 
@@ -74,8 +90,18 @@ cmake --build build --config Release
 
 | 选项 | 默认 | 说明 |
 |---|---|---|
-| `ENABLE_CUDA` | Win=ON，mac/linux=OFF | 链接 CUDA/TensorRT，定义 `USE_CUDA`；关掉则纯 CPU |
+| `ENABLE_CUDA` | Win/Linux=ON，mac=OFF | 链接 CUDA（Linux 为 cudart；Windows 另含 TensorRT/ORT GPU），定义 `USE_CUDA`；关掉则纯 CPU |
 | `BUILD_TEST` | ON | 构建 `test/` 下所有可执行 |
+
+## VS Code 调试
+
+| 平台 | launch 配置示例 | preLaunchTask | 调试器 |
+|---|---|---|---|
+| Windows | `Debug YOLO (GPU)` | `build` | `cppvsdbg` |
+| macOS | `mac jhdeepcore_*` | `mac build all` | `cppdbg` + lldb |
+| Ubuntu | `Ubuntu Debug YOLO (GPU)` | `ubuntu build all` | `cppdbg` + gdb |
+
+本环境若没有系统 `gdb`，可用 CUDA 自带的 `/usr/local/cuda/bin/cuda-gdb`（`launch.json` 的 `miDebuggerPath` 已指向它）。有系统 gdb 时可改回 `"gdb"`。调试 YOLO 时需自行准备 `models/model.onnx` 与 `images/test.jpg`。
 
 **构建产物**（位于 `build/`）
 
@@ -234,3 +260,4 @@ cd deploy && bash docker_compose.sh
 
 - `models/`、`images/`、`docs/`、`result/`、`output/` 已在 `.gitignore`，不入库；测试与配置中引用的模型/图片需手动放置。
 - OpenCV 版本若变更，需同步更新 `CMakeLists.txt` 中 `opencv_world490.lib` 的版本号。
+- Linux 下 `jhcv_lib` / `third_party_lib` 已开启 `POSITION_INDEPENDENT_CODE`，以便静态库可被 `libpenma_rec_dll.so` 链接（避免 `recompile with -fPIC`）。

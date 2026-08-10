@@ -41,6 +41,7 @@ private:
         const std::vector<XintiangangTargetResult>& targets);
 
     std::unique_ptr<Detector> det_;
+    std::unique_ptr<Classifier> direction_cls_;  // 字符方向分类（可选，未配置则跳过）
     std::unique_ptr<OCRRecognizer> ocr_;
     XintiangangServerConfig config_;
 };

@@ -6,6 +6,7 @@ models:
   det_model: "models/xintiangang/best.onnx"
   ocr_model: "models/xintiangang/rec.onnx"
   ocr_label: "models/xintiangang/rec.yaml"
+  direction_cls_model: "models/xintiangang/cls.onnx"
 inference:
   device: "cpu"
 output:

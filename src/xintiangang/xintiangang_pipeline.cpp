@@ -17,6 +17,14 @@ XintiangangPipeline::XintiangangPipeline(const XintiangangServerConfig& config)
     det_ = std::make_unique<Detector>(config_.det_model, "", dev_id);
     std::cout << "[OK] Xintiangang detect model loaded: " << config_.det_model << std::endl;
 
+    // 字符方向分类：class_id 0=正向不翻转，1=翻转 180° 后再送 OCR；未配置 direction_cls_model 则跳过
+    if (!config_.direction_cls_model.empty()) {
+        direction_cls_ = std::make_unique<Classifier>(config_.direction_cls_model, "", dev_id);
+        std::cout << "[OK] Xintiangang direction cls model loaded: " << config_.direction_cls_model << std::endl;
+    } else {
+        std::cout << "[INFO] Xintiangang direction cls model not configured, skip direction classification" << std::endl;
+    }
+
     ocr_ = std::make_unique<OCRRecognizer>(config_.ocr_model, config_.ocr_label, dev_id);
     std::cout << "[OK] Xintiangang OCR model loaded: " << config_.ocr_model << std::endl;
 
@@ -72,7 +80,23 @@ XintiangangPipelineResult XintiangangPipeline::process(const cv::Mat& image, boo
             crop_bgr = crop;
         }
 
-        std::vector<cv::Mat> ocr_imgs = {crop_bgr};
+        // 字符方向分类：class_id 1 -> 翻转 180° 再送 OCR；0 或未启用方向分类 -> 原向送 OCR
+        cv::Mat ocr_in = crop_bgr;
+        if (direction_cls_) {
+            std::vector<cv::Mat> cls_imgs = {crop_bgr};
+            std::vector<ClassificationResult> cls_results;
+            direction_cls_->process(cls_imgs, cls_results);
+            int dir_flag = (!cls_results.empty() && cls_results[0].class_id == 1) ? 1 : 0;
+            if (dir_flag == 1) {
+                cv::flip(crop_bgr, ocr_in, -1);  // 翻转 180°
+            }
+            if (verbose) {
+                std::cout << "    direction_cls=" << dir_flag
+                          << (dir_flag == 1 ? " (flipped 180)" : "") << std::endl;
+            }
+        }
+
+        std::vector<cv::Mat> ocr_imgs = {ocr_in};
         std::vector<OCRResult> ocr_results;
         ocr_->process(ocr_imgs, ocr_results);
         OCRResult ocr_result = ocr_results.empty() ? OCRResult{} : ocr_results[0];
@@ -142,6 +166,12 @@ void XintiangangPipeline::warmup()
     std::vector<OCRResult> ocr_results;
     ocr_->process(dummy, ocr_results);
     std::cout << "[OK] OCR recognizer warmed up" << std::endl;
+
+    if (direction_cls_) {
+        std::vector<ClassificationResult> cls_results;
+        direction_cls_->process(dummy, cls_results);
+        std::cout << "[OK] Direction classifier warmed up" << std::endl;
+    }
 }
 
 } // namespace Pipeline

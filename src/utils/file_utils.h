@@ -104,6 +104,7 @@ struct XintiangangServerConfig {
     std::string det_model;       // 目标检测模型
     std::string ocr_model;       // OCR 识别模型
     std::string ocr_label;       // OCR 字典
+    std::string direction_cls_model;  // 字符方向分类模型（class_id 0=正向,1=翻转180°）；为空则不启用
     std::string device = "cuda";
 };
 

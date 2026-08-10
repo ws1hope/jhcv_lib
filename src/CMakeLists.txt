@@ -22,6 +22,8 @@ endif()
 
 set_target_properties(third_party_lib PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+    # Linux 上静态库要链进 .so，必须用 -fPIC
+    POSITION_INDEPENDENT_CODE ON
 )
 
 # ========== 源文件列表 ==========
@@ -253,6 +255,8 @@ set_target_properties(jhcv_lib PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    # Linux 上 penma_rec_dll(.so) 链接本静态库时需要 -fPIC
+    POSITION_INDEPENDENT_CODE ON
 )
 
 # ========== 安装规则 ==========

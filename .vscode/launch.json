@@ -1039,6 +1039,39 @@
                 "PYTHONUNBUFFERED": "1"
             },
             "python": "python3"
+        },
+        {
+            "name": "Ubuntu Debug YOLO (GPU)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/yolo_inference",
+            "args": [
+                "-m",
+                "${workspaceFolder}/models/model.onnx",
+                "-i",
+                "${workspaceFolder}/images/test.jpg",
+                "-o",
+                "${workspaceFolder}/images/result.jpg"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "${workspaceFolder}/build/bin:/opt/3rdparty/onnxruntime/lib:/opt/3rdparty/opencv/lib:/usr/local/cuda/lib64:${env:LD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/local/cuda/bin/cuda-gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "ubuntu build all"
         }
     ]
 }

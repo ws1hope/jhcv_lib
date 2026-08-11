@@ -111,36 +111,6 @@ public:
             img_confs.push_back(computeImageConfidence(pipeline_result));
             has_detections.push_back(!pipeline_result.det_detections.empty());
 
-            // 各模型分段耗时写进日志（每张图一行）。split 时 run 为 compute phase 时间跨度，
-            // gpu 为 H2D 起点到 D2H 终点；非 split 时 run 是 ORT Run 的 host 墙钟。
-            {
-                const auto& T = pipeline_result.timing;
-                auto put = [&](const char* name, const InferenceTiming& t) {
-                    fout << " " << name << "(n=" << t.count
-                         << " prep=" << t.preprocess_ms;
-                    if (t.h2d_split) {
-                        fout << " h2d=" << t.h2d_ms
-                             << " d2h=" << t.d2h_ms
-                             << " infer=" << t.run_ms;
-                        if (t.gpu_timing_valid) {
-                            fout << " gpu=" << t.gpu_total_ms
-                                 << " wall=" << t.wall_ms;
-                        }
-                    } else {
-                        fout << " ten=" << t.tensor_ms
-                             << " run=" << t.run_ms;
-                    }
-                    fout << ")";
-                };
-                fout << "[timing] pic=" << (pic_number + 1) << " device=" << T.device;
-                put("det", T.det);
-                put("seg", T.seg);
-                put("cls", T.cls);
-                put("ocr", T.ocr);
-                put("ocr2", T.ocr2);
-                fout << " total=" << T.total_ms << "ms" << std::endl;
-            }
-
             // 每个目标的两次识别(ocr1/ocr2)与最终结果(final)写入日志（ocr1/ocr2 不再绘于结果图）
             for (int ti = 0; ti < (int)pipeline_result.targets.size(); ti++) {
                 const auto& t = pipeline_result.targets[ti];
@@ -223,7 +193,7 @@ public:
 
         std::vector<std::string> picture_path_array = FileHelper::splitStringByCsharp(image_path);
 
-        auto start = std::chrono::steady_clock::now();
+        auto start = std::chrono::high_resolution_clock::now();
         json array_result = json::array();
         std::vector<float> img_confs;
         std::vector<bool> has_detections;
@@ -279,7 +249,7 @@ public:
             saveCharCrops(pipeline_result, pic_number, t);
         }
 
-        auto end = std::chrono::steady_clock::now();
+        auto end = std::chrono::high_resolution_clock::now();
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
         size_t best_idx = 0;

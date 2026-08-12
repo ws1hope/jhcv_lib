@@ -1,7 +1,6 @@
 #include "JHDeepCore.h"
 #include "jhdeepcore_inference/inference_factory.h"
 #include "jhdeepcore_inference/onnx_inference.h"
-#include <iostream>
 #include <stdexcept>
 
 namespace JHDeepCore {
@@ -13,7 +12,6 @@ public:
                     float conf_threshold, float iou_threshold)
     {
         std::string device_str = device_id >= 0 ? "cuda" : "cpu";
-        std::cerr << "[DEBUG] device_id=" << device_id << " -> device_str=" << device_str << std::endl;
         std::vector<std::string> names;
         if (!label_path.empty() && label_path != "none") names.push_back(label_path);
         inference_ = inference::InferenceFactory::CreateInference(model_path, device_str, names);
@@ -29,11 +27,6 @@ public:
         auto *onnx = dynamic_cast<inference::OnnxInference *>(inference_.get());
         if (!onnx) throw std::runtime_error("Unsupported inference type");
         results = onnx->InferBatchDetection(images);
-    }
-
-    InferenceTiming lastBatchTiming() const {
-        if (!inference_) return InferenceTiming{};
-        return inference_->lastBatchTiming();
     }
 
     size_t get_batch() const {
@@ -68,8 +61,6 @@ Detector::~Detector() = default;
 void Detector::process(std::vector<cv::Mat> &images, std::vector<DetectionResult> &results) {
     m_pHandle->process(images, results);
 }
-
-InferenceTiming Detector::lastBatchTiming() const { return m_pHandle->lastBatchTiming(); }
 
 size_t Detector::GetBatch() const { return m_pHandle->get_batch(); }
 size_t Detector::GetInputWidth() const { return m_pHandle->get_input_width(); }

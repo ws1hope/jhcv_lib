@@ -52,21 +52,6 @@ struct OCRResult {
     std::vector<OCRBox> boxes;
 };
 
-// 单次/批次推理的分段耗时统计（毫秒）
-struct InferenceTiming {
-    int count = 0;               // 本批次推理图片数
-    double preprocess_ms = 0.0; // 图像预处理：letterbox/resize/归一化 + HWC->CHW
-    double tensor_ms = 0.0;     // 构造 ORT 输入 tensor（包已有 buffer，预期≈0）
-    double run_ms = 0.0;        // split：同一 user stream 上的 compute phase 时间跨度；非 split：session->Run host 墙钟
-    double h2d_ms = 0.0;        // pinned host -> GPU 的真实 H2D（仅有效 split 样本）
-    double d2h_ms = 0.0;        // GPU -> pinned host 的真实 D2H，包含全部输出（仅有效 split 样本）
-    double gpu_total_ms = 0.0;  // 首个 H2D event 到末个 D2H event 的 GPU 时间跨度（含阶段间空隙）
-    double wall_ms = 0.0;       // 输入 staging 开始到输出进入最终 host vector 的 host 墙钟
-    bool h2d_split = false;     // 兼容字段：至少有一个样本完成了有效的 H2D/compute/D2H 拆分
-    bool gpu_timing_valid = false; // stream/allocator/pinned buffer/event 全部有效且 CUDA 调用成功
-    std::string device;         // 实际执行设备 "cuda"/"cpu"
-};
-
 // ======================== 跟踪模块 ========================
 
 /// 跟踪距离度量类型
@@ -123,7 +108,6 @@ class Classifier {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
-    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<ClassifierPrivate> m_pHandle;
@@ -144,7 +128,6 @@ class Detector {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
-    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<DetectorPrivate> m_pHandle;
@@ -184,7 +167,6 @@ class InstanceSegmenter {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
-    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<InstanceSegmenterPrivate> m_pHandle;
@@ -205,7 +187,6 @@ class OCRRecognizer {
     size_t GetBatch() const;
     size_t GetInputWidth() const;
     size_t GetInputHeight() const;
-    InferenceTiming lastBatchTiming() const;
 
   private:
     std::shared_ptr<OCRRecognizerPrivate> m_pHandle;

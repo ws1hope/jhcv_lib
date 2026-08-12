@@ -31,17 +31,6 @@ struct GxJingzhengSegInstance {
     float confidence = 0.f;
 };
 
-// 各模型分段耗时汇总（毫秒）。device 反映实际执行设备（cuda/cpu）。
-// split 时 run_ms 为 user_compute_stream 上的 compute phase 时间跨度；非 split 时为 ORT Run host 墙钟。
-struct GxJingzhengTiming {
-    InferenceTiming det;     // 定位检测
-    InferenceTiming seg;     // 实例分割
-    InferenceTiming cls;    // 方向分类
-    InferenceTiming ocr;    // OCR
-    double total_ms = 0.0;  // process() 总耗时（含非模型部分）
-    std::string device;     // 实际设备 cuda/cpu
-};
-
 struct GxJingzhengPipelineResult {
     std::string state_flag;       // "OK" / "NG"
     std::string branch;           // "zifu" / "gangbiao" / ""
@@ -50,7 +39,6 @@ struct GxJingzhengPipelineResult {
     std::string duanmian;         // 第一阶段 det 有输出 -> "yes" / "no"
     std::string ocr_text;
     cv::Mat annotated_image;
-    GxJingzhengTiming timing;     // 各模型分段耗时 + 总耗时 + 设备
 
     // det 第一阶段结果（用于可视化）
     std::vector<Detection> det_detections;
@@ -100,9 +88,6 @@ private:
     cv::Mat createAnnotatedImage(const cv::Mat& src_img,
                                   const GxJingzhengPipelineResult& result);
 
-    // 把本次 process() 累计的各模型耗时写进 result.timing
-    void fillTiming(GxJingzhengPipelineResult& r, double total_ms);
-
     GxJingzhengServerConfig config_;
     std::vector<std::string> seg_class_names_;   // 来自 seg_label
     int zifu_class_id_ = -1;
@@ -112,9 +97,6 @@ private:
     std::unique_ptr<InstanceSegmenter> seg_;
     std::unique_ptr<Classifier> direction_cls_;
     std::unique_ptr<OCRRecognizer> ocr_;
-
-    // 各模型分段耗时累加器：process() 起点复位，各模型调用后累加
-    InferenceTiming t_det_, t_seg_, t_cls_, t_ocr_;
 
     // gangbiao 分支复用
     std::unique_ptr<TiebiaoPipeline> tiebiao_pipeline_;

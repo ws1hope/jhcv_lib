@@ -1,45 +1,10 @@
 #include "jhdeepcore_inference/base_inference.h"
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <cstdlib>
-#include <iostream>
 #include <numeric>
 
 namespace JHDeepCore {
 namespace inference {
-
-namespace {
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4996)
-#endif
-bool pre_bench_enabled() {
-    static const bool enabled = []() {
-        const char *env = std::getenv("JHDEEP_BENCH");
-        return env && std::string(env) == "1";
-    }();
-    return enabled;
-}
-#if defined(_MSC_VER)
-#pragma warning(pop)
-#endif
-
-// JHDEEP_BENCH=1 时按段打印预处理各步耗时；关闭时仅一次 now() 调用，开销可忽略。
-// 用 steady_clock（保证单调，不受系统时钟调整影响）测间隔。
-struct PreStepTimer {
-    const char *tag;
-    std::chrono::steady_clock::time_point t0;
-    explicit PreStepTimer(const char *t) : tag(t), t0(std::chrono::steady_clock::now()) {}
-    ~PreStepTimer() {
-        if (!pre_bench_enabled()) return;
-        double ms = std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - t0)
-                        .count();
-        std::cerr << "[BENCH] " << tag << ": " << ms << " ms" << std::endl;
-    }
-};
-} // namespace
 
 BaseInference::BaseInference(const std::string &model_path, const std::string &device,
                              const std::vector<std::string> &class_names)
@@ -76,31 +41,21 @@ cv::Mat BaseInference::PreprocessImageCommon(const cv::Mat &image) {
     // 先 resize 再 cvtColor：通道交换是逐像素操作，与空间 resize 可交换；
     // 放到小图上做，避免对原图做一次全分辨率拷贝+通道交换（大图时 cvtColor 受访存带宽限制）。
     cv::Mat resized;
-    {
-        PreStepTimer _("Common.resize");
-        cv::resize(image, resized, resize_size);
-    }
+    cv::resize(image, resized, resize_size);
 
     cv::Mat rgb_image;
-    {
-        PreStepTimer _("Common.cvtColor");
-        if (resized.channels() == 3) {
-            cv::cvtColor(resized, rgb_image, cv::COLOR_BGR2RGB);
-        } else if (resized.channels() == 1) {
-            cv::cvtColor(resized, rgb_image, cv::COLOR_GRAY2RGB);
-        } else {
-            rgb_image = resized.clone();
-        }
+    if (resized.channels() == 3) {
+        cv::cvtColor(resized, rgb_image, cv::COLOR_BGR2RGB);
+    } else if (resized.channels() == 1) {
+        cv::cvtColor(resized, rgb_image, cv::COLOR_GRAY2RGB);
+    } else {
+        rgb_image = resized.clone();
     }
 
     cv::Mat normalized;
-    {
-        PreStepTimer _("Common.convertTo");
-        rgb_image.convertTo(normalized, CV_32F, 1.0 / 255.0);
-    }
+    rgb_image.convertTo(normalized, CV_32F, 1.0 / 255.0);
 
     if (!config_.mean.empty() && !config_.stddev.empty()) {
-        PreStepTimer _("Common.normStd");
         const int ch = normalized.channels();
         const int nmean = static_cast<int>(config_.mean.size());
         const int nstd = static_cast<int>(config_.stddev.size());
@@ -127,32 +82,21 @@ cv::Mat BaseInference::PreprocessImageDetection(const cv::Mat &image) {
     cv::Size target_size = config_.img_scale.width > 0 ? config_.img_scale : cv::Size(640, 640);
     // 先 Letterbox 再 cvtColor：通道交换与 resize/pad 可交换，放到小图(640x640)上做，
     // 避免对原图做全分辨率拷贝+通道交换（大图时 cvtColor 受访存带宽限制）。
-    cv::Mat letterboxed;
-    {
-        PreStepTimer _("Detection.letterbox");
-        letterboxed = Letterbox(image, target_size, letterbox_pad_, letterbox_gain_);
-    }
+    cv::Mat letterboxed = Letterbox(image, target_size, letterbox_pad_, letterbox_gain_);
 
     cv::Mat rgb_image;
-    {
-        PreStepTimer _("Detection.cvtColor");
-        if (letterboxed.channels() == 3) {
-            cv::cvtColor(letterboxed, rgb_image, cv::COLOR_BGR2RGB);
-        } else if (letterboxed.channels() == 1) {
-            cv::cvtColor(letterboxed, rgb_image, cv::COLOR_GRAY2RGB);
-        } else {
-            rgb_image = letterboxed.clone();
-        }
+    if (letterboxed.channels() == 3) {
+        cv::cvtColor(letterboxed, rgb_image, cv::COLOR_BGR2RGB);
+    } else if (letterboxed.channels() == 1) {
+        cv::cvtColor(letterboxed, rgb_image, cv::COLOR_GRAY2RGB);
+    } else {
+        rgb_image = letterboxed.clone();
     }
 
     cv::Mat normalized;
-    {
-        PreStepTimer _("Detection.convertTo");
-        rgb_image.convertTo(normalized, CV_32F, 1.0 / 255.0);
-    }
+    rgb_image.convertTo(normalized, CV_32F, 1.0 / 255.0);
 
     if (!config_.mean.empty() && !config_.stddev.empty()) {
-        PreStepTimer _("Detection.normStd");
         const int ch = normalized.channels();
         const int nmean = static_cast<int>(config_.mean.size());
         const int nstd = static_cast<int>(config_.stddev.size());

@@ -214,6 +214,34 @@ JHDeepCore::XintiangangServerConfig FileHelper::loadXintiangangConfig(const std:
     return cfg;
 }
 
+JHDeepCore::HuaxinServerConfig FileHelper::loadHuaxinConfig(const std::string& config_path)
+{
+    JHDeepCore::HuaxinServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+        cfg.url_path = node["server"]["url_path"].as<std::string>(cfg.url_path);
+    }
+
+    if (node["output"]) {
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+    }
+
+    if (node["models"]) {
+        cfg.det1_model = node["models"]["det1_model"].as<std::string>("");
+        cfg.det2_model = node["models"]["det2_model"].as<std::string>("");
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    return cfg;
+}
+
 JHDeepCore::ZbsltjServerConfig FileHelper::loadZbsltjConfig(const std::string& config_path)
 {
     JHDeepCore::ZbsltjServerConfig cfg;

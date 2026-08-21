@@ -279,6 +279,13 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                 char_bbox_local = char_bbox_local & cv::Rect(0, 0, billet_img.cols, billet_img.rows);
                 if (char_bbox_local.area() <= 0) continue;
 
+                int expand_x = 30;
+                if (char_bbox_local.width > char_bbox_local.height) {
+                    char_bbox_local.x = std::max(0, char_bbox_local.x - expand_x);
+                    char_bbox_local.width = std::min(billet_img.cols - char_bbox_local.x,
+                                                     char_bbox_local.width + expand_x * 2);
+                }
+
                 // 最小外接矩，得到字符倾角。不依赖 min_rect.angle：
                 // 不同 OpenCV 版本对 size.width/height 谁大、angle 符号约定不同
                 // (旧版 angle 在 [0,90) 且不保证 width>=height；新版归一为 width>=height, angle 在 [-45,45])，

@@ -65,20 +65,17 @@ public:
         // 多图：'#' 分隔的路径逐张处理
         std::vector<std::string> path_array = FileHelper::splitStringByCsharp(picture_path);
 
-        auto start = std::chrono::high_resolution_clock::now();
-
         json root;
         root["station_id"] = station_id;
         json all_results = json::array();
+        double total_inference_ms = 0.0;
         for (size_t i = 0; i < path_array.size(); i++) {
             all_results.push_back(
-                buildResult(path_array[i], station_id, (int)i + 1, false, fout));
+                buildResult(path_array[i], station_id, (int)i + 1, false, fout, total_inference_ms));
         }
         root["all_results"] = all_results;
 
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
-        root["time_cost"] = std::round(ms * 100.0) / 100.0;
+        root["time_cost"] = std::round(total_inference_ms * 100.0) / 100.0;
 
         std::cout << "[RESULT] " << root.dump() << std::endl;
         fout.close();
@@ -99,26 +96,24 @@ public:
 
         std::vector<std::string> path_array = FileHelper::splitStringByCsharp(image_path);
 
-        auto start = std::chrono::high_resolution_clock::now();
         std::ofstream fout;  // 本地测试不写日志
 
         json root;
         root["station_id"] = station_id;
         json all_results = json::array();
+        double total_inference_ms = 0.0;
         for (size_t i = 0; i < path_array.size(); i++) {
             all_results.push_back(
-                buildResult(path_array[i], station_id, (int)i + 1, true, fout));
+                buildResult(path_array[i], station_id, (int)i + 1, true, fout, total_inference_ms));
         }
         root["all_results"] = all_results;
 
-        auto end = std::chrono::high_resolution_clock::now();
-        double ms = std::chrono::duration<double, std::milli>(end - start).count();
-        root["time_cost"] = std::round(ms * 100.0) / 100.0;
+        root["time_cost"] = std::round(total_inference_ms * 100.0) / 100.0;
 
         std::cout << std::endl;
         std::cout << "=== Result ===" << std::endl;
         std::cout << root.dump(2) << std::endl;
-        std::cout << "total time: " << ms << " ms" << std::endl;
+        std::cout << "inference time: " << total_inference_ms << " ms" << std::endl;
 
         return 0;
     }
@@ -132,7 +127,8 @@ private:
     json buildResult(const std::string& picture_path,
                      const std::string& station_id,
                      int picture_id, bool verbose,
-                     std::ofstream& fout)
+                     std::ofstream& fout,
+                     double& total_inference_ms)
     {
         json item;
         item["picture_id"] = std::to_string(picture_id);
@@ -148,6 +144,7 @@ private:
         }
 
         Pipeline::HuaxinPipelineResult pr = pipeline_->process(src_img, verbose);
+        total_inference_ms += pr.inference_time_ms;
 
         // 结果图保存路径：输入图所在目录\results\station_<工位>\原文件名；
         // 本地测试直接存当前目录

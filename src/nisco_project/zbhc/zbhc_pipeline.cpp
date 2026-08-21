@@ -204,9 +204,10 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
         // ===== Step 4: 遍历每个坯料，送实例分割 + OCR =====
         for (int bi = 0; bi < det2_res.num_detections; bi++) {
             auto& billet_det = det2_res.detections[bi];
+            int expand_x = 30;
             cv::Rect billet_roi_local = InferHelper::safeROI(
-                billet_det.bbox.x, billet_det.bbox.y,
-                billet_det.bbox.width, billet_det.bbox.height,
+                billet_det.bbox.x - expand_x, billet_det.bbox.y,
+                billet_det.bbox.width + expand_x * 2, billet_det.bbox.height,
                 roi_img.cols, roi_img.rows);
             if (billet_roi_local.area() <= 0) continue;
 

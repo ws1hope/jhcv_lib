@@ -16,7 +16,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -39,7 +39,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -60,7 +60,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 },
                 {
                     "name": "JHDEEP_BENCH",
@@ -88,7 +88,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 },
                 {
                     "name": "JHDEEP_BENCH",
@@ -113,7 +113,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -137,7 +137,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -184,7 +184,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -210,7 +210,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -236,7 +236,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -255,7 +255,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -277,7 +277,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -296,7 +296,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -318,7 +318,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -480,7 +480,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -603,7 +603,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -625,7 +625,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -692,7 +692,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -710,7 +710,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 },
                 {
                     "name": "JHDEEP_H2D_SPLIT",
@@ -815,15 +815,15 @@
             "args": [
                 "--test",
                 "-c", "test/huaxin/config.yaml",
-                "-i", "images/huaxin/test.jpg",
+                "-i", "images/huaxin/20260815005941753_0.jpg",
                 "-H", "2560123",
-                "-s", "1"
+                "-s", "0"
             ],
             "cwd": "${workspaceFolder}",
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -841,7 +841,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -988,7 +988,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -1010,7 +1010,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -1028,7 +1028,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -1050,7 +1050,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",
@@ -1143,7 +1143,7 @@
             "environment": [
                 {
                     "name": "PATH",
-                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.4-sm86-sm89/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.4/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
                 }
             ],
             "console": "integratedTerminal",

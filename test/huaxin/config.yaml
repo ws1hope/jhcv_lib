@@ -7,6 +7,6 @@ models:
   det1_model: "models/huaxin/liaoguan_detect.onnx"
   det2_model: "models/huaxin/liaoguan_zifu_detect.onnx"
 inference:
-  device: "cpu"
+  device: "gpu"
 output:
   log_dir: "D:\\CharacterDetect\\log"

@@ -1,6 +1,7 @@
 #include "huaxin_pipeline.h"
 
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 
 #include <opencv2/imgcodecs.hpp>
@@ -26,6 +27,8 @@ HuaxinPipeline::HuaxinPipeline(const HuaxinServerConfig& config)
 HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image, bool verbose)
 {
     HuaxinPipelineResult result;
+
+    auto t0 = std::chrono::high_resolution_clock::now();
 
     // ---- 第一个检测模型 ----
     std::vector<cv::Mat> det1_imgs = {image};
@@ -58,6 +61,8 @@ HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image, bool verbose)
 
     if (leftmost < 0) {
         // 第一个模型无输出，直接出结果图
+        auto t1 = std::chrono::high_resolution_clock::now();
+        result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         result.annotated_image = createAnnotatedImage(image, result);
         return result;
     }
@@ -69,6 +74,8 @@ HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image, bool verbose)
         sel.bbox.x, sel.bbox.y, sel.bbox.width, sel.bbox.height,
         image.cols, image.rows);
     if (roi.area() <= 0) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         result.annotated_image = createAnnotatedImage(image, result);
         return result;
     }
@@ -90,6 +97,10 @@ HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image, bool verbose)
     std::vector<cv::Mat> det2_imgs = {crop};
     std::vector<DetectionResult> det2_results;
     det2_->process(det2_imgs, det2_results);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
     DetectionResult det2_result = det2_results.empty() ? DetectionResult{} : det2_results[0];
 
     // 按从左到右排序，拼接结果符合阅读顺序
@@ -172,16 +183,20 @@ cv::Mat HuaxinPipeline::createAnnotatedImage(
 
 void HuaxinPipeline::warmup()
 {
-    std::cout << "[INFO] Warming up huaxin models..." << std::endl;
+    std::cout << "[INFO] Warming up huaxin models (10 iterations)..." << std::endl;
     std::vector<cv::Mat> dummy = {cv::Mat(640, 640, CV_8UC3, cv::Scalar(0, 0, 0))};
 
-    std::vector<DetectionResult> det1_results;
-    det1_->process(dummy, det1_results);
-    std::cout << "[OK] Det1 warmed up" << std::endl;
+    for (int i = 0; i < 10; i++) {
+        std::vector<DetectionResult> det1_results;
+        det1_->process(dummy, det1_results);
+    }
+    std::cout << "[OK] Det1 warmed up (10 iterations)" << std::endl;
 
-    std::vector<DetectionResult> det2_results;
-    det2_->process(dummy, det2_results);
-    std::cout << "[OK] Det2 warmed up" << std::endl;
+    for (int i = 0; i < 10; i++) {
+        std::vector<DetectionResult> det2_results;
+        det2_->process(dummy, det2_results);
+    }
+    std::cout << "[OK] Det2 warmed up (10 iterations)" << std::endl;
 }
 
 } // namespace Pipeline

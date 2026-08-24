@@ -26,6 +26,7 @@ struct HuaxinPipelineResult {
     std::vector<HuaxinDet2Target> det2_targets; // 第二个检测模型的输出（已映射回原图）
     std::string all_results;                  // 铸坯端面识别结果（det2 类别名从左到右拼接）
     cv::Mat annotated_image;                  // 画框 + 文字的结果图
+    double inference_time_ms = 0.0;           // 纯模型推理耗时（det1 + det2）
 };
 
 // 目标检测 -> 最左框裁剪 -> 第二个目标检测

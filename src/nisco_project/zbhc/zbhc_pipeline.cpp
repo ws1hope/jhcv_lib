@@ -279,11 +279,14 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                 char_bbox_local = char_bbox_local & cv::Rect(0, 0, billet_img.cols, billet_img.rows);
                 if (char_bbox_local.area() <= 0) continue;
 
-                int expand_x = 30;
+const int pad_x = 30, pad_y = 5;
                 if (char_bbox_local.width > char_bbox_local.height) {
-                    char_bbox_local.x = std::max(0, char_bbox_local.x - expand_x);
+                    char_bbox_local.x = std::max(0, char_bbox_local.x - pad_x);
+                    char_bbox_local.y = std::max(0, char_bbox_local.y - pad_y);
                     char_bbox_local.width = std::min(billet_img.cols - char_bbox_local.x,
-                                                     char_bbox_local.width + expand_x * 2);
+                                                      char_bbox_local.width + pad_x * 2);
+                    char_bbox_local.height = std::min(billet_img.rows - char_bbox_local.y,
+                                                       char_bbox_local.height + pad_y * 2);
                 }
 
                 // 最小外接矩，得到字符倾角。不依赖 min_rect.angle：
@@ -345,14 +348,15 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
                 cv::warpAffine(padded_mask, leveled_mask, rotM, padded_mask.size(),
                                cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
 
-                // 旋转后重新紧裁：用旋转后的 mask 取轴对齐外接框去掉 padding，
-                // 否则 padding 会被方向分类/OCR/可视化当作字符的一部分，导致字符被等比缩小
+                // 旋转后重新裁切：用旋转后的 mask 取轴对齐外接框，并保留检测框外扩余量
+                // (pad_x/pad_y)。若紧贴 mask 会裁掉外扩区域，导致红框框不全字符时
+                // OCR 也拿不到完整字符。padding 会在方向分类/OCR 时作为字符周边上下文保留。
                 cv::Rect tight = cv::boundingRect(leveled_mask);
                 int m = 2;
-                tight.x = std::max(0, tight.x - m);
-                tight.y = std::max(0, tight.y - m);
-                tight.width = std::min(leveled_img.cols - tight.x, tight.width + 2 * m);
-                tight.height = std::min(leveled_img.rows - tight.y, tight.height + 2 * m);
+                tight.x = std::max(0, tight.x - pad_x);
+                tight.y = std::max(0, tight.y - pad_y);
+                tight.width = std::min(leveled_img.cols - tight.x, tight.width + pad_x * 2);
+                tight.height = std::min(leveled_img.rows - tight.y, tight.height + pad_y * 2);
                 if (tight.area() <= 0) continue;
                 cv::Mat leveled = leveled_img(tight).clone();
 

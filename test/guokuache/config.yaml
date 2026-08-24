@@ -1,0 +1,14 @@
+server:
+  service_name: "guokuache"
+  host: "127.0.0.1"
+  port: 8088
+models:
+  det1_model: "models/xintiangang/guokuache/det1.onnx"
+  det2_model: "models/xintiangang/guokuache/det2.onnx"
+  ocr_model: "models/xintiangang/guokuache/rec.onnx"
+  ocr_label: "models/xintiangang/guokuache/rec.yaml"
+inference:
+  device: "cpu"
+output:
+  result_dir: "D:\\CharacterDetect\\result"
+  log_dir: "D:\\CharacterDetect\\log"

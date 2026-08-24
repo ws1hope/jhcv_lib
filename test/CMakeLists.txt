@@ -41,6 +41,9 @@ add_executable(xintiangang ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/main.cpp)
 # ========== Huaxin 双目标检测(最左框)铸坯端面识别服务 ==========
 add_executable(huaxin ${CMAKE_CURRENT_SOURCE_DIR}/huaxin/main.cpp)
 
+# ========== Guokuache 双目标检测(最左框)+Z型排序 OCR 服务 ==========
+add_executable(guokuache ${CMAKE_CURRENT_SOURCE_DIR}/guokuache/main.cpp)
+
 # ========== ZBSLTJ 喷码识别服务 ==========
 add_executable(zbsltj ${CMAKE_CURRENT_SOURCE_DIR}/zbsltj/main.cpp)
 
@@ -79,6 +82,7 @@ set(TEST_TARGETS
     luqian
     xintiangang
     huaxin
+    guokuache
     zbsltj
     gx_jingzheng
     homography_test
@@ -150,6 +154,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/huaxin/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== Guokuache 双目标检测(最左框)+Z型排序 OCR 服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/guokuache/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

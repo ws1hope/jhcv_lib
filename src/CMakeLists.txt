@@ -102,10 +102,16 @@ set(JIUYANG_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/jiuyang/jiuyang_pipeline.cpp
 )
 
-# xintiangang 模块 - 目标检测+OCR 识别服务
+# xintiangang 模块 - luqian(原 xintiangang) 目标检测+OCR 识别服务
 set(XINTIANGANG_SOURCES
-    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/xintiangang_pipeline.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/xintiangang_service.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/luqian/xintiangang_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/luqian/xintiangang_service.cpp
+)
+
+# guokuache 模块 - 双目标检测(最左框)+Z型排序 OCR 识别服务
+set(GUOKUACHE_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/guokuache/guokuache_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/guokuache/guokuache_service.cpp
 )
 
 # huaxin 模块 - 双目标检测(最左框)铸坯端面识别服务
@@ -159,6 +165,7 @@ set(ALL_SOURCES
     ${NISCO_PROJECT_SOURCES}
     ${JIUYANG_SOURCES}
     ${XINTIANGANG_SOURCES}
+    ${GUOKUACHE_SOURCES}
     ${HUAXIN_SOURCES}
     ${UTILS_SOURCES}
     ${CV_HOMOGRAPHY_SOURCES}
@@ -191,6 +198,8 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/section_angle
     ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang
+    ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/luqian
+    ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/guokuache
     ${CMAKE_CURRENT_SOURCE_DIR}/huaxin
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
@@ -229,6 +238,7 @@ if(MSVC)
         ${NISCO_PROJECT_SOURCES}
         ${JIUYANG_SOURCES}
         ${XINTIANGANG_SOURCES}
+        ${GUOKUACHE_SOURCES}
         ${HUAXIN_SOURCES}
         ${UTILS_SOURCES}
         ${CV_HOMOGRAPHY_SOURCES}

@@ -1,0 +1,25 @@
+server:
+  service_name: "fujian"
+  host: "0.0.0.0"
+  port: 8089
+
+output:
+  result_dir: "D:\\FujianResult"
+  log_dir: "D:\\FujianLog"
+  roi_crop_dir: "D:\\FujianRoiCrop"      # 为空时不保存 ROI 裁剪图
+  char_crop_dir: "D:\\FujianCharCrop"    # 为空时不保存字符裁剪图
+
+inference:
+  device: "cuda"
+
+stations:
+  - station_id: 5
+    det_model_path: "models/fujian/5/zifu.onnx"
+    rec_model_path: "models/fujian/5/ocr.onnx"
+    rec_label_path: "models/fujian/5/ocr.yaml"
+    roi1: [[953, 861], [1563, 1157]]
+    roi2: [[2551, 811], [3121, 1079]]
+    roi3: [[805, 937], [1307, 1181]]
+    roi4: [[2537, 907], [3047, 1157]]
+    roi5: [[2551, 811], [3121, 1079]]
+

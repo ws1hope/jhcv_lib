@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -132,6 +133,28 @@ struct GuokuacheServerConfig {
     std::string device = "cuda";
 };
 
+// fujian 单工位配置：模型 + ROI 列表（heat_num 定位数字决定用第几个，数量不限）
+struct FujianStationConfig {
+    int station_id = 0;
+    std::string det_model_path;   // 实例分割模型（检出字符实例）
+    std::string rec_model_path;   // OCR 识别模型
+    std::string rec_label_path;   // OCR 解码字典
+    // [[x1,y1],[x2,y2]] 两点正矩形 -> x,y,w,h，按 roi1、roi2… 顺序加载
+    std::vector<std::array<int, 4>> rois;
+};
+
+struct FujianServerConfig {
+    std::string service_name = "fujian";
+    std::string host = "0.0.0.0";
+    int port = 8089;
+    std::string result_dir = "D:\\FujianResult";
+    std::string log_dir = "D:\\FujianLog";
+    std::string roi_crop_dir;     // 为空时不保存 ROI 裁剪图
+    std::string char_crop_dir;    // 为空时不保存字符裁剪图
+    std::string device = "cuda";
+    std::vector<FujianStationConfig> stations;
+};
+
 struct ZbsltjServerConfig {
     std::string service_name = "zbsltj";
     std::string host = "127.0.0.1";
@@ -201,6 +224,8 @@ public:
     static JHDeepCore::HuaxinServerConfig loadHuaxinConfig(const std::string& config_path);
 
     static JHDeepCore::GuokuacheServerConfig loadGuokuacheConfig(const std::string& config_path);
+
+    static JHDeepCore::FujianServerConfig loadFujianConfig(const std::string& config_path);
 
     static JHDeepCore::ZbsltjServerConfig loadZbsltjConfig(const std::string& config_path);
 

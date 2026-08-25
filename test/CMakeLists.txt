@@ -50,6 +50,9 @@ add_executable(zbsltj ${CMAKE_CURRENT_SOURCE_DIR}/zbsltj/main.cpp)
 # ========== gx_jingzheng 服务 ==========
 add_executable(gx_jingzheng ${CMAKE_CURRENT_SOURCE_DIR}/gx_jingzheng/main.cpp)
 
+# ========== Fujian 多工位 ROI 实例分割+OCR 服务 ==========
+add_executable(fujian ${CMAKE_CURRENT_SOURCE_DIR}/fujian/main.cpp)
+
 # ========== 单应矩阵测试 ==========
 add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
 
@@ -85,6 +88,7 @@ set(TEST_TARGETS
     guokuache
     zbsltj
     gx_jingzheng
+    fujian
     homography_test
     jiuyang
     jiuyang_bend_test
@@ -178,6 +182,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/gx_jingzheng/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== Fujian 多工位 ROI 实例分割+OCR 服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/fujian/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

@@ -1,5 +1,7 @@
 #include "file_utils.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -267,6 +269,64 @@ JHDeepCore::GuokuacheServerConfig FileHelper::loadGuokuacheConfig(const std::str
 
     if (node["inference"]) {
         cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    return cfg;
+}
+
+JHDeepCore::FujianServerConfig FileHelper::loadFujianConfig(const std::string& config_path)
+{
+    JHDeepCore::FujianServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+    }
+
+    if (node["output"]) {
+        cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+        cfg.roi_crop_dir = node["output"]["roi_crop_dir"].as<std::string>(cfg.roi_crop_dir);
+        cfg.char_crop_dir = node["output"]["char_crop_dir"].as<std::string>(cfg.char_crop_dir);
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    // 解析 [[x1,y1],[x2,y2]] 两点正矩形 -> x,y,w,h
+    auto parseRoi = [](const YAML::Node& n, std::array<int, 4>& out) {
+        if (!n || !n.IsSequence() || n.size() != 2) return;
+        YAML::Node p1 = n[0];
+        YAML::Node p2 = n[1];
+        if (!p1.IsSequence() || p1.size() != 2 || !p2.IsSequence() || p2.size() != 2) return;
+        int x1 = p1[0].as<int>(), y1 = p1[1].as<int>();
+        int x2 = p2[0].as<int>(), y2 = p2[1].as<int>();
+        out[0] = std::min(x1, x2);
+        out[1] = std::min(y1, y2);
+        out[2] = std::abs(x2 - x1);
+        out[3] = std::abs(y2 - y1);
+    };
+
+    if (node["stations"] && node["stations"].IsSequence()) {
+        for (const auto& st : node["stations"]) {
+            JHDeepCore::FujianStationConfig sc;
+            sc.station_id = st["station_id"].as<int>(0);
+            sc.det_model_path = st["det_model_path"].as<std::string>("");
+            sc.rec_model_path = st["rec_model_path"].as<std::string>("");
+            sc.rec_label_path = st["rec_label_path"].as<std::string>("");
+            // roi1、roi2… 递增键名连续解析，直到缺失为止（数量不限）
+            for (int ri = 1; ; ++ri) {
+                std::string key = "roi" + std::to_string(ri);
+                if (!st[key]) break;
+                std::array<int, 4> roi = {0, 0, 0, 0};
+                parseRoi(st[key], roi);
+                sc.rois.push_back(roi);
+            }
+            cfg.stations.push_back(sc);
+        }
     }
 
     return cfg;

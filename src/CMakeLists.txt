@@ -92,6 +92,8 @@ set(NISCO_PROJECT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/zbsltj/zbsltj_service.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/gx_jingzheng/gx_jingzheng_pipeline.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/gx_jingzheng/gx_jingzheng_service.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/fujian/fujian_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/fujian/fujian_service.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/section_angle/section_angle_geometry.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/section_angle/section_angle_checker.cpp
 )
@@ -195,6 +197,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/luqian
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/zbsltj
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/gx_jingzheng
+    ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/fujian
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/section_angle
     ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang

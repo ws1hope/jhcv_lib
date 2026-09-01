@@ -98,24 +98,29 @@ public:
     }
 
 private:
-    // 单图处理，返回扁平 JSON：
-    //   图像解析失败 -> read_picture_flag=NG, rec_state_flag=NG, all_results=""
-    //   解析成功有结果 -> read_picture_flag=OK, rec_state_flag=OK, all_results=OCR 文本
-    //     （单个结果为字符串，多个结果为字符串列表）
-    //   解析成功无结果 -> read_picture_flag=OK, rec_state_flag=NG, all_results=""
+    // 单图处理，返回 zbhc 式数组格式：
+    //   all_results 为数组，其每个元素包含该图的识别结果：
+    //     read_picture_flag - 图像解析是否成功 OK/NG
+    //     rec_state_flag    - 识别是否成功 OK/NG
+    //     rec_results       - 各目标 OCR 文本数组（无结果时为空数组）
+    //     picture_path      - 结果图保存路径
     json buildResult(const std::string& picture_path,
                      int station_id, bool verbose,
                      std::ofstream& fout)
     {
         json root;
         root["station_id"] = std::to_string(station_id);
+        json all_results = json::array();
+        json item;
 
         cv::Mat src_img = cv::imread(picture_path);
         if (!src_img.data) {
-            root["read_picture_flag"] = "NG";
-            root["rec_state_flag"] = "NG";
-            root["all_results"] = "";
-            root["picture_path"] = picture_path;
+            item["read_picture_flag"] = "NG";
+            item["rec_state_flag"] = "NG";
+            item["rec_results"] = json::array();
+            item["picture_path"] = picture_path;
+            all_results.push_back(item);
+            root["all_results"] = all_results;
             fout << "detect failed! empty image: " << picture_path << std::endl;
             return root;
         }
@@ -154,20 +159,12 @@ private:
             cv::imwrite(save_path, src_img);
         }
 
-        root["read_picture_flag"] = "OK";
-
-        if (texts.empty()) {
-            root["rec_state_flag"] = "NG";
-            root["all_results"] = "";
-        } else if (texts.size() == 1) {
-            root["rec_state_flag"] = "OK";
-            root["all_results"] = texts[0];
-        } else {
-            root["rec_state_flag"] = "OK";
-            root["all_results"] = texts;
-        }
-
-        root["picture_path"] = save_path;
+        item["read_picture_flag"] = "OK";
+        item["rec_state_flag"] = texts.empty() ? "NG" : "OK";
+        item["rec_results"] = texts;
+        item["picture_path"] = save_path;
+        all_results.push_back(item);
+        root["all_results"] = all_results;
 
         if (verbose) {
             std::cout << "[INFO] Annotated image saved: " << save_path << std::endl;

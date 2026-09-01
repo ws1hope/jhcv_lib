@@ -1,0 +1,31 @@
+server:
+  service_name: tedai_juanqu
+  host: 127.0.0.1
+  port: 8100
+  url_path: /tedai_panjuan_detect
+
+output:
+  result_dir: E:\JuanquGenzong\location
+  log_dir: E:\JuanquGenzong\log
+
+inference:
+  device: cuda
+  # 各相机三区域（输送线内/输送线外/集卷）多边形与起终点配置
+  liuzhi_roi_file: models/tedai_juanqu/camera_liuzhi_roi.json
+  # camera 5 下卷 2 号工位分类模型
+  classify_model: models/tedai_juanqu/out2_classify.onnx
+
+# 每相机一个专属检测模型（与旧服务 model_path_panjuan_count_2 按下标对应）
+cameras:
+  - camera_id: 0
+    det_model: models/tedai_juanqu/panjuan_best_location.onnx
+  - camera_id: 1
+    det_model: models/tedai_juanqu/dk1.onnx
+  - camera_id: 2
+    det_model: models/tedai_juanqu/dk_hou.onnx
+  - camera_id: 3
+    det_model: models/tedai_juanqu/tedai_panjuan_2_3.onnx
+  - camera_id: 4
+    det_model: models/tedai_juanqu/chujuan1.onnx
+  - camera_id: 5
+    det_model: models/tedai_juanqu/chujuan2.onnx

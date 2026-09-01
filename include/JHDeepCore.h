@@ -2,6 +2,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 #include <memory>
@@ -361,6 +362,28 @@ class FujianService {
 
   private:
     std::shared_ptr<FujianServicePrivate> m_pHandle;
+};
+
+// 特带卷曲多相机盘卷定位 HTTP 服务（旧 /tedai_panjuan_detect 协议兼容）。
+// 入口只做协议适配；算法在 TedaiJuanquPipeline（算法核心入库）。
+class TedaiJuanquServicePrivate;
+class TedaiJuanquService {
+  public:
+    explicit TedaiJuanquService(const std::string &config_path);
+    ~TedaiJuanquService();
+
+    TedaiJuanquService(const TedaiJuanquService &) = delete;
+    TedaiJuanquService &operator=(const TedaiJuanquService &) = delete;
+
+    const struct TedaiJuanquServerConfig &config() const;
+
+    // metadata_json：multipart 的 metadata 字段内容（JSON 字符串）；
+    // files：file_key -> 图片二进制。返回旧协议 JSON 字符串。
+    std::string handleRequest(const std::string &metadata_json,
+                              const std::map<std::string, std::string> &files);
+
+  private:
+    std::shared_ptr<TedaiJuanquServicePrivate> m_pHandle;
 };
 
 struct SectionAngleItem {

@@ -1060,6 +1060,132 @@
             "preLaunchTask": "mac build all"
         },
         {
+            // 特带卷曲多相机盘卷定位 HTTP 服务（POST /tedai_panjuan_detect）
+            // 模型与 camera_liuzhi_roi.json 放 models/tedai_juanqu/（config.yaml 相对仓库根目录）
+            "name": "tedai_juanqu - HTTP server",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/tedai_juanqu.exe",
+            "args": [
+                "-c", "test/tedai_juanqu/config.yaml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            // 离线回放：metadata.json + 按文件名存放的图片目录（黄金数据对比用）
+            "name": "tedai_juanqu - local test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/tedai_juanqu.exe",
+            "args": [
+                "--test",
+                "-c", "test/tedai_juanqu/config.yaml",
+                "-m", "images/tedai_juanqu/metadata.json",
+                "-d", "images/tedai_juanqu"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            // 盘卷出口跟踪 DLL 冒烟测试：模型 panjuan_best_location.onnx 在 cwd 下加载
+            "name": "reel_track_dll_test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/reel_track_dll_test.exe",
+            "args": [
+                "test_juanqu1.jpg"
+            ],
+            "cwd": "${workspaceFolder}/models/tedai_juanqu",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/runtime/cudnn/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "mac tedai_juanqu - HTTP server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/tedai_juanqu",
+            "args": [
+                "-c", "test/tedai_juanqu/config.yaml"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/opt/homebrew/lib:/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
+            // 离线回放（mac）：metadata.json + 图片目录需自备
+            "name": "mac tedai_juanqu - local test",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/tedai_juanqu",
+            "args": [
+                "--test",
+                "-c", "test/tedai_juanqu/config.yaml",
+                "-m", "images/tedai_juanqu/metadata.json",
+                "-d", "images/tedai_juanqu"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "/opt/homebrew/lib:/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
+            // 盘卷出口跟踪 DLL 冒烟测试（mac）：模型在 models/tedai_juanqu/ 下
+            "name": "mac reel_track_dll_test",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/reel_track_dll_test",
+            "args": [
+                "test_juanqu1.jpg"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/models/tedai_juanqu",
+            "environment": [
+                {
+                    "name": "DYLD_LIBRARY_PATH",
+                    "value": "${workspaceFolder}/build:/opt/homebrew/lib:/usr/local/lib:${env:DYLD_LIBRARY_PATH}"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mac build all"
+        },
+        {
             "name": "zbsltj - HTTP server",
             "type": "cppvsdbg",
             "request": "launch",

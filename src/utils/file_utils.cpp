@@ -332,6 +332,41 @@ JHDeepCore::FujianServerConfig FileHelper::loadFujianConfig(const std::string& c
     return cfg;
 }
 
+JHDeepCore::TedaiJuanquServerConfig FileHelper::loadTedaiJuanquConfig(const std::string& config_path)
+{
+    JHDeepCore::TedaiJuanquServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+        cfg.url_path = node["server"]["url_path"].as<std::string>(cfg.url_path);
+    }
+
+    if (node["output"]) {
+        cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+        cfg.liuzhi_roi_file = node["inference"]["liuzhi_roi_file"].as<std::string>(cfg.liuzhi_roi_file);
+        cfg.classify_model = node["inference"]["classify_model"].as<std::string>("");
+    }
+
+    if (node["cameras"] && node["cameras"].IsSequence()) {
+        for (const auto& cam : node["cameras"]) {
+            JHDeepCore::TedaiJuanquCameraConfig cc;
+            cc.camera_id = cam["camera_id"].as<int>(0);
+            cc.det_model = cam["det_model"].as<std::string>("");
+            cfg.cameras.push_back(cc);
+        }
+    }
+
+    return cfg;
+}
+
 JHDeepCore::ZbsltjServerConfig FileHelper::loadZbsltjConfig(const std::string& config_path)
 {
     JHDeepCore::ZbsltjServerConfig cfg;

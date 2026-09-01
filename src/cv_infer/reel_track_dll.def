@@ -1,0 +1,7 @@
+LIBRARY reel_track_dll
+EXPORTS
+    MV_SDK_ReelExportTargetTrack_Init
+    MV_SDK_ReelExportTargetTrack_Detect_2
+    MV_SDK_Free
+    MV_SDK_ReelExportTargetTrack_Destroy
+    MV_SDK_GetLastError

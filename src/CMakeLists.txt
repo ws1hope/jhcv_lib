@@ -94,6 +94,11 @@ set(NISCO_PROJECT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/gx_jingzheng/gx_jingzheng_service.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/fujian/fujian_pipeline.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/fujian/fujian_service.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/reel_legacy_infer.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/reel_rules.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/reel_track_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/tedai_juanqu_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/tedai_juanqu_service.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/section_angle/section_angle_geometry.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/section_angle/section_angle_checker.cpp
 )
@@ -198,6 +203,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/zbsltj
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/gx_jingzheng
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/fujian
+    ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/tedai_juanqu
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/section_angle
     ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang
@@ -322,3 +328,33 @@ endif()
 
 install(TARGETS penma_rec_dll DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_LIST_DIR}/cv_infer/penma_rec_dll.h DESTINATION include)
+
+# ========== reel_track_dll 动态库（特带卷曲盘卷出口跟踪，C# P/Invoke） ==========
+add_library(reel_track_dll SHARED
+    ${CMAKE_CURRENT_LIST_DIR}/cv_infer/reel_track_dll.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/cv_infer/reel_track_dll.h
+)
+
+set_target_properties(reel_track_dll PROPERTIES
+    PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+if(WIN32)
+    set_target_properties(reel_track_dll PROPERTIES
+        LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_LIST_DIR}/cv_infer/reel_track_dll.def\""
+    )
+endif()
+
+if(MSVC)
+    set_property(TARGET reel_track_dll PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+target_link_libraries(reel_track_dll PRIVATE jhcv_lib ${OpenCV_LIBS} ${ONNX_CPU_LIBS})
+
+if(ENABLE_CUDA)
+    target_link_libraries(reel_track_dll PRIVATE ${ONNX_GPU_LIBS})
+endif()
+
+install(TARGETS reel_track_dll DESTINATION bin)
+install(FILES ${CMAKE_CURRENT_LIST_DIR}/cv_infer/reel_track_dll.h DESTINATION include)

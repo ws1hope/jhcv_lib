@@ -168,6 +168,25 @@ struct ZbsltjServerConfig {
     std::string device = "cuda";
 };
 
+// tedai_juanqu 单相机配置：每相机一个专属检测模型（旧服务按 camera_id 下标选模型）
+struct TedaiJuanquCameraConfig {
+    int camera_id = 0;
+    std::string det_model;
+};
+
+struct TedaiJuanquServerConfig {
+    std::string service_name = "tedai_juanqu";
+    std::string host = "127.0.0.1";
+    int port = 8100;
+    std::string url_path = "/tedai_panjuan_detect";  // HTTP POST 端点
+    std::string result_dir = "E:\\JuanquGenzong\\location";
+    std::string log_dir = "E:\\JuanquGenzong\\log";
+    std::string liuzhi_roi_file = "camera_liuzhi_roi.json";  // 各相机三区域多边形配置
+    std::string classify_model;  // camera 5 下卷工位分类模型（out2_classify.onnx）
+    std::string device = "cuda";
+    std::vector<TedaiJuanquCameraConfig> cameras;
+};
+
 struct ZbsltjConfig {
     std::string billet_det_model;
     std::string char_seg_model;
@@ -226,6 +245,8 @@ public:
     static JHDeepCore::GuokuacheServerConfig loadGuokuacheConfig(const std::string& config_path);
 
     static JHDeepCore::FujianServerConfig loadFujianConfig(const std::string& config_path);
+
+    static JHDeepCore::TedaiJuanquServerConfig loadTedaiJuanquConfig(const std::string& config_path);
 
     static JHDeepCore::ZbsltjServerConfig loadZbsltjConfig(const std::string& config_path);
 

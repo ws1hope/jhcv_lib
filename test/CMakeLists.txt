@@ -53,6 +53,9 @@ add_executable(gx_jingzheng ${CMAKE_CURRENT_SOURCE_DIR}/gx_jingzheng/main.cpp)
 # ========== Fujian 多工位 ROI 实例分割+OCR 服务 ==========
 add_executable(fujian ${CMAKE_CURRENT_SOURCE_DIR}/fujian/main.cpp)
 
+# ========== Tedai Juanqu 多相机盘卷定位服务 ==========
+add_executable(tedai_juanqu ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/main.cpp)
+
 # ========== 单应矩阵测试 ==========
 add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
 
@@ -89,6 +92,7 @@ set(TEST_TARGETS
     zbsltj
     gx_jingzheng
     fujian
+    tedai_juanqu
     homography_test
     jiuyang
     jiuyang_bend_test
@@ -194,6 +198,14 @@ if(MSVC)
     )
 endif()
 
+# ========== Tedai Juanqu 多相机盘卷定位服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
 # ========== jiuyang 语义分割测试 ==========
 if(MSVC)
     set_source_files_properties(
@@ -236,5 +248,21 @@ if(MSVC)
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 set_target_properties(penma_rec_dll_test PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+# ========== reel_track_dll 测试（特带卷曲盘卷出口跟踪 DLL） ==========
+add_executable(reel_track_dll_test ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/dll_test.cpp)
+target_include_directories(reel_track_dll_test PRIVATE ${CMAKE_SOURCE_DIR}/src/cv_infer)
+target_link_libraries(reel_track_dll_test PRIVATE reel_track_dll ${OpenCV_LIBS})
+if(MSVC)
+    set_property(TARGET reel_track_dll_test PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/dll_test.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+set_target_properties(reel_track_dll_test PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )

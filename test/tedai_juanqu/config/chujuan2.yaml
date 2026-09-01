@@ -1,0 +1,7 @@
+task_type: detection
+img_scale: [640, 640]
+class_names: [panjuan, abnormal]
+mean: [0, 0, 0]
+std: [255, 255, 255]
+conf_threshold: 0.25
+iou_threshold: 0.45

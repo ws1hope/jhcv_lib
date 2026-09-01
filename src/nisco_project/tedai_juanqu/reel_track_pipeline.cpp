@@ -29,12 +29,9 @@ bool boxMatchCmpYUp(const reelBoxMatch &a, const reelBoxMatch &b)
 
 } // namespace
 
-bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu,
-                             int xmin_thresh, int xmax_thresh,
-                             int ymin_thresh, int ymax_thresh)
+bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu)
 {
-    detector_ = std::make_unique<LegacyReelDetector>(
-        model_path, use_gpu, xmin_thresh, xmax_thresh, ymin_thresh, ymax_thresh);
+    detector_ = std::make_unique<ReelDetector>(model_path, use_gpu);
     if (!detector_->valid()) {
         std::cerr << "[ERROR] reel track detector init failed: " << model_path
                   << std::endl;

@@ -99,7 +99,7 @@ bool TedaiJuanquPipeline::loadLiuzhiRois()
     return !camera_params_.empty();
 }
 
-LegacyReelDetector *TedaiJuanquPipeline::detector(int camera_id)
+ReelDetector *TedaiJuanquPipeline::detector(int camera_id)
 {
     auto it = detectors_.find(camera_id);
     if (it != detectors_.end()) return it->second.get();
@@ -118,20 +118,19 @@ LegacyReelDetector *TedaiJuanquPipeline::detector(int camera_id)
         return nullptr;
     }
 
-    auto det = std::make_unique<LegacyReelDetector>(
-        model_path, config_.device == "cuda", 0, 5000, 0, 5000);
+    auto det = std::make_unique<ReelDetector>(model_path, config_.device == "cuda");
     if (!det->valid()) {
         std::cerr << "[ERROR] tedai_juanqu: camera " << camera_id
                   << " detector init failed: " << model_path << std::endl;
         detectors_[camera_id] = nullptr;
         return nullptr;
     }
-    LegacyReelDetector *raw = det.get();
+    ReelDetector *raw = det.get();
     detectors_[camera_id] = std::move(det);
     return raw;
 }
 
-LegacyReelClassifier *TedaiJuanquPipeline::classifier()
+ReelClassifier *TedaiJuanquPipeline::classifier()
 {
     if (classifier_loaded_) return classifier_.get();
     classifier_loaded_ = true;
@@ -140,8 +139,8 @@ LegacyReelClassifier *TedaiJuanquPipeline::classifier()
         std::cerr << "[ERROR] tedai_juanqu: classify_model not configured" << std::endl;
         return nullptr;
     }
-    auto cls = std::make_unique<LegacyReelClassifier>(config_.classify_model,
-                                                      config_.device == "cuda");
+    auto cls = std::make_unique<ReelClassifier>(config_.classify_model,
+                                                config_.device == "cuda");
     if (!cls->valid()) {
         std::cerr << "[ERROR] tedai_juanqu: classifier init failed: "
                   << config_.classify_model << std::endl;
@@ -219,7 +218,7 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     cv::Mat src_clone = src.clone();  // camera 5 分类用干净原图（旧版 src_img_clone）
 
     std::vector<ReelDetObject> vec_obj;
-    LegacyReelDetector *det = detector(camera_id);
+    ReelDetector *det = detector(camera_id);
     if (!det || !det->detect(src, vec_obj)) {
         vec_obj.clear();
     }
@@ -256,7 +255,7 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     // 结果等价，这里每帧推理一次）
     int classify_result_id = -1;
     if (camera_id == 5) {
-        LegacyReelClassifier *cls = classifier();
+        ReelClassifier *cls = classifier();
         if (cls && cls->valid()) {
             cv::Rect roi(cv::Point(720, 375), cv::Point(1210, 820));
             cv::Rect image_bounds(0, 0, src_clone.cols, src_clone.rows);
@@ -498,7 +497,7 @@ void TedaiJuanquPipeline::detectReelExport(int camera_id, cv::Mat &src,
     if ((roi3 & image_bounds) == roi3) src_copy(roi3) = cv::Scalar(255, 255, 255);
 
     std::vector<ReelDetObject> vec_obj;
-    LegacyReelDetector *det = detector(camera_id);
+    ReelDetector *det = detector(camera_id);
     if (!det || !det->detect(src_copy, vec_obj)) {
         vec_obj.clear();
     }

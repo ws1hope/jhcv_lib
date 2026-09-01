@@ -224,14 +224,19 @@ extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_In
 {
     // Legacy contract: always returns 0. Load failure is reported via
     // MV_SDK_GetLastError and Detect_2 returning NULL.
+    // The four threshold params are kept for ABI compatibility only: the legacy
+    // area filter (always 0..5000, a no-op) no longer exists on ai_platform.
+    (void)xmin_thresh;
+    (void)xmax_thresh;
+    (void)ymin_thresh;
+    (void)ymax_thresh;
     try {
         std::lock_guard<std::mutex> lock(g_mutex);
         delete g_pipeline;  // repeated Init releases the old instance (fixes
         g_pipeline = nullptr;  // the legacy session leak)
         std::unique_ptr<JHDeepCore::Pipeline::ReelTrackPipeline> pipeline(
             new JHDeepCore::Pipeline::ReelTrackPipeline());
-        if (!pipeline->init(kModelPath, true, xmin_thresh, xmax_thresh,
-                            ymin_thresh, ymax_thresh)) {
+        if (!pipeline->init(kModelPath, true)) {
             SetLastErrorMessage(std::string("model init failed: ") + kModelPath);
             return 0;
         }

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -46,7 +47,9 @@ static bool readFileContent(const std::string &path, std::string &content)
     return true;
 }
 
-// 本地测试：从 metadata 文件与图片目录构造 (metadata, files)
+// 本地测试：从 metadata 文件与图片目录构造 (metadata, files)。
+// 若设置了环境变量 JHDEEP_LOOP=N（N>1），同一批数据连续跑 N 次
+// （每轮 handleRequest 内部会打印 [TIME] pipeline process，用于压测找最快）。
 static int runLocalTest(JHDeepCore::TedaiJuanquService &service,
                         const std::string &meta_path, const std::string &image_dir)
 {
@@ -74,15 +77,31 @@ static int runLocalTest(JHDeepCore::TedaiJuanquService &service,
         files[file_key] = content;
     }
 
-    auto start = std::chrono::high_resolution_clock::now();
-    std::string result = service.handleRequest(metadata, files);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto total_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    int loop = 1;
+    if (const char *env = getenv("JHDEEP_LOOP")) {
+        int n = atoi(env);
+        if (n > 0) loop = n;
+    }
+    if (loop > 1) {
+        std::cout << "[INFO] JHDEEP_LOOP=" << loop
+                  << ", repeating same request (watch [TIME] pipeline process)"
+                  << std::endl;
+    }
 
-    std::cout << "=== Result ===" << std::endl;
+    std::string result;
+    for (int i = 0; i < loop; i++) {
+        if (loop > 1) std::cout << "--- iteration " << (i + 1) << "/" << loop
+                                << " ---" << std::endl;
+        auto start = std::chrono::high_resolution_clock::now();
+        result = service.handleRequest(metadata, files);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto total_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        std::cout << "total time: " << total_ms << " ms" << std::endl;
+    }
+
+    std::cout << "=== Result (last iteration) ===" << std::endl;
     std::cout << result << std::endl;
-    std::cout << "total time: " << total_ms << " ms" << std::endl;
     return 0;
 }
 
@@ -134,8 +153,19 @@ int main(int argc, char *argv[])
     auto duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "[INFO] Service init time: " << duration.count() << " ms" << std::endl;
-    std::cout << "[INFO] Cameras: " << service.config().cameras.size()
-              << " (models lazy-loaded on first request)" << std::endl;
+    std::cout << "[INFO] Cameras: " << service.config().cameras.size() << std::endl;
+
+    // Eager model warmup (load + one dummy inference per model) so the first
+    // real request does not pay the session/CUDA initialization cost.
+    auto warmup_start = std::chrono::high_resolution_clock::now();
+    bool warmup_ok = service.warmup();
+    auto warmup_end = std::chrono::high_resolution_clock::now();
+    std::cout << "[INFO] Model warmup: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     warmup_end - warmup_start)
+                     .count()
+              << " ms" << (warmup_ok ? "" : " (some models failed, see log)")
+              << std::endl;
 
     if (test_mode) {
         return runLocalTest(service, test_meta, test_dir);

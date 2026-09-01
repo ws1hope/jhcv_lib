@@ -1,5 +1,6 @@
 task_type: classification
-# img_scale 需与模型实际输入一致（按模型调整，此处为常用 224）
-img_scale: [224, 224]
+# img_scale 需与模型实际输入一致（out2_classify.onnx 输入为 [B,3,512,512]）
+img_scale: [512, 512]
 mean: [123.675, 116.28, 103.53]
 std: [58.395, 57.12, 57.375]
+

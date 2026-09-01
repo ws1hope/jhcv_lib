@@ -34,6 +34,17 @@ class TedaiJuanquPipeline {
     // 一批多相机帧 -> 各相机结果（按 camera_id 升序）
     std::vector<ReelCameraOutput> process(const std::vector<ReelFrameInput> &frames);
 
+    // 预热：按 config 预加载全部相机检测模型与分类模型并各跑一次假推理
+    // （触发 ONNX session 创建与 CUDA kernel/显存初始化），避免首个请求
+    // 承担加载耗时。任一模型失败只记日志不中断（与懒加载失败行为一致），
+    // 全部成功返回 true。
+    bool warmup();
+
+    // 本次 process() 内所有相机 ReelDetector::detect / camera5 分类的累计耗时(ms)，
+    // 供上层输出每请求一条汇总（process() 每次调用开始时清零）。
+    double detectMs() const { return detect_total_ms_; }
+    double classifyMs() const { return classify_total_ms_; }
+
   private:
     ReelDetector *detector(int camera_id);  // 按相机懒加载并缓存
     ReelClassifier *classifier();           // 懒加载并缓存
@@ -57,6 +68,8 @@ class TedaiJuanquPipeline {
     std::map<int, std::unique_ptr<ReelDetector>> detectors_;
     std::unique_ptr<ReelClassifier> classifier_;
     bool classifier_loaded_ = false;
+    double detect_total_ms_ = 0;    // 本次 process() 内所有相机检测推理累计 ms
+    double classify_total_ms_ = 0;  // 本次 process() 内 camera5 分类推理累计 ms
 };
 
 } // namespace Pipeline

@@ -5,8 +5,8 @@ server:
   url_path: /tedai_panjuan_detect
 
 output:
-  result_dir: E:\JuanquGenzong\location
-  log_dir: E:\JuanquGenzong\log
+  result_dir: result/juanqu/location
+  log_dir: result/juanqu/log
 
 inference:
   device: cuda
@@ -16,16 +16,17 @@ inference:
   classify_model: models/tedai_juanqu/out2_classify.onnx
 
 # 每相机一个专属检测模型（与旧服务 model_path_panjuan_count_2 按下标对应）
+# 本地单模型冒烟测试：6 个相机统一用 det.onnx（正式部署时改回各自专属模型）
 cameras:
   - camera_id: 0
-    det_model: models/tedai_juanqu/panjuan_best_location.onnx
+    det_model: models/tedai_juanqu/det.onnx
   - camera_id: 1
-    det_model: models/tedai_juanqu/dk1.onnx
+    det_model: models/tedai_juanqu/det.onnx
   - camera_id: 2
-    det_model: models/tedai_juanqu/dk_hou.onnx
+    det_model: models/tedai_juanqu/det.onnx
   - camera_id: 3
-    det_model: models/tedai_juanqu/tedai_panjuan_2_3.onnx
+    det_model: models/tedai_juanqu/det.onnx
   - camera_id: 4
-    det_model: models/tedai_juanqu/chujuan1.onnx
+    det_model: models/tedai_juanqu/det.onnx
   - camera_id: 5
-    det_model: models/tedai_juanqu/chujuan2.onnx
+    det_model: models/tedai_juanqu/det.onnx

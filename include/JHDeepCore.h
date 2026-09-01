@@ -382,6 +382,10 @@ class TedaiJuanquService {
     std::string handleRequest(const std::string &metadata_json,
                               const std::map<std::string, std::string> &files);
 
+    // 预热：预加载全部相机检测模型与分类模型并各跑一次假推理，
+    // 避免首个请求承担模型加载耗时。失败只记日志，全部成功返回 true。
+    bool warmup();
+
   private:
     std::shared_ptr<TedaiJuanquServicePrivate> m_pHandle;
 };

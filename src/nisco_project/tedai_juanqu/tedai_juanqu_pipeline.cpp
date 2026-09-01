@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -150,10 +151,46 @@ ReelClassifier *TedaiJuanquPipeline::classifier()
     return classifier_.get();
 }
 
+bool TedaiJuanquPipeline::warmup()
+{
+    bool all_ok = true;
+
+    // 假推理输入：小黑图即可，检测/分类预处理会各自 letterbox/resize 到
+    // 模型输入尺寸，推理本身才是预热目标（session、CUDA kernel、显存）。
+    cv::Mat dummy(64, 64, CV_8UC3, cv::Scalar(0, 0, 0));
+
+    for (const auto &cam : config_.cameras) {
+        ReelDetector *det = detector(cam.camera_id);
+        if (det == nullptr) {
+            all_ok = false;
+            continue;
+        }
+        std::vector<ReelDetObject> objects;
+        if (!det->detect(dummy, objects)) {
+            all_ok = false;
+        }
+    }
+
+    if (!config_.classify_model.empty()) {
+        ReelClassifier *cls = classifier();
+        if (cls == nullptr) {
+            all_ok = false;
+        } else {
+            cls->detect(dummy);  // 结果丢弃，仅触发推理初始化
+        }
+    }
+
+    return all_ok;
+}
+
 std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
     const std::vector<ReelFrameInput> &frames)
 {
     std::vector<ReelCameraOutput> results;
+
+    // 每请求一次汇总：推理计时清零
+    detect_total_ms_ = 0;
+    classify_total_ms_ = 0;
 
     // 按 camera_id 升序处理（跨相机去重依赖：camera 3 依赖 camera 2、
     // camera 5 依赖 camera 3 的本请求结果）
@@ -219,9 +256,14 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
 
     std::vector<ReelDetObject> vec_obj;
     ReelDetector *det = detector(camera_id);
-    if (!det || !det->detect(src, vec_obj)) {
+    auto t_det0 = std::chrono::high_resolution_clock::now();
+    bool det_ok = det && det->detect(src, vec_obj);
+    auto t_det1 = std::chrono::high_resolution_clock::now();
+    if (!det_ok) {
         vec_obj.clear();
     }
+    detect_total_ms_ +=
+        std::chrono::duration<double, std::milli>(t_det1 - t_det0).count();
 
     // 三区域多边形（Point 用于绘制，PointD 用于判定）
     std::vector<cv::Point> polygon1, polygon2, polygon3;
@@ -261,7 +303,11 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
             cv::Rect image_bounds(0, 0, src_clone.cols, src_clone.rows);
             cv::Rect safe_roi = roi & image_bounds;
             cv::Mat cropped = src_clone(safe_roi);
+            auto t_cls0 = std::chrono::high_resolution_clock::now();
             auto cls_result = cls->detect(cropped);
+            auto t_cls1 = std::chrono::high_resolution_clock::now();
+            classify_total_ms_ +=
+                std::chrono::duration<double, std::milli>(t_cls1 - t_cls0).count();
             if (cls_result.valid) {
                 classify_result_id = cls_result.class_id;
                 cv::putText(src, std::to_string(cls_result.class_id),
@@ -498,9 +544,14 @@ void TedaiJuanquPipeline::detectReelExport(int camera_id, cv::Mat &src,
 
     std::vector<ReelDetObject> vec_obj;
     ReelDetector *det = detector(camera_id);
-    if (!det || !det->detect(src_copy, vec_obj)) {
+    auto t_det0 = std::chrono::high_resolution_clock::now();
+    bool det_ok = det && det->detect(src_copy, vec_obj);
+    auto t_det1 = std::chrono::high_resolution_clock::now();
+    if (!det_ok) {
         vec_obj.clear();
     }
+    detect_total_ms_ +=
+        std::chrono::duration<double, std::milli>(t_det1 - t_det0).count();
 
     // 正常盘卷过滤：classid==0 且宽>50、高>30；异常盘卷 classid==1（本流程不输出）
     const int set_reel_width_thresh = 50;
@@ -638,10 +689,14 @@ std::string TedaiJuanquPipeline::saveResultImage(int camera_id, const cv::Mat &i
         lt->tm_hour, lt->tm_min, lt->tm_sec, (int)ms.count(), camera_id);
 
     if (!image.empty()) {
-        std::vector<int> compression_params;
-        compression_params.push_back(cv::IMWRITE_JPEG_QUALITY);
-        compression_params.push_back(75);
-        cv::imwrite(save_name, image, compression_params);
+        // 压测开关：JHDEEP_NO_SAVE=1 跳过结果图写盘（测纯算法/推理耗时）
+        const char *no_save = getenv("JHDEEP_NO_SAVE");
+        if (no_save == nullptr || std::string(no_save) == "0") {
+            std::vector<int> compression_params;
+            compression_params.push_back(cv::IMWRITE_JPEG_QUALITY);
+            compression_params.push_back(75);
+            cv::imwrite(save_name, image, compression_params);
+        }
     }
     return save_name;
 }

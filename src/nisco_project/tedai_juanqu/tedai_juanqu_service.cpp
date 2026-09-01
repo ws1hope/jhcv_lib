@@ -4,8 +4,10 @@
 #include "file_utils.h"
 #include "json.hpp"
 
+#include <chrono>
 #include <ctime>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <opencv2/imgcodecs.hpp>
@@ -119,6 +121,8 @@ class TedaiJuanquServicePrivate {
 
     const TedaiJuanquServerConfig &config() const { return config_; }
 
+    bool warmup() { return pipeline_->warmup(); }
+
     // metadata_json：multipart 的 metadata 字段内容（JSON 字符串）
     // files：file_key -> 图片二进制
     std::string handleRequest(const std::string &metadata_json,
@@ -181,7 +185,20 @@ class TedaiJuanquServicePrivate {
             frames.push_back(std::move(fr));
         }
 
+        auto t0 = std::chrono::high_resolution_clock::now();
         std::vector<Pipeline::ReelCameraOutput> results = pipeline_->process(frames);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double process_ms =
+            std::chrono::duration<double, std::milli>(t1 - t0).count();
+        std::cout << "[TIME] pipeline process: " << process_ms << " ms" << std::endl;
+        fout << "[TIME] pipeline process: " << process_ms << " ms" << std::endl;
+
+        std::cout << "[TIME] detect: " << pipeline_->detectMs()
+                  << " ms | classify: " << pipeline_->classifyMs() << " ms"
+                  << std::endl;
+        fout << "[TIME] detect: " << pipeline_->detectMs()
+             << " ms | classify: " << pipeline_->classifyMs() << " ms"
+             << std::endl;
 
         for (const auto &cam : results) {
             appendCameraResult(root["all_results"], cam);
@@ -227,6 +244,11 @@ std::string TedaiJuanquService::handleRequest(
     const std::map<std::string, std::string> &files)
 {
     return m_pHandle->handleRequest(metadata_json, files);
+}
+
+bool TedaiJuanquService::warmup()
+{
+    return m_pHandle->warmup();
 }
 
 } // namespace JHDeepCore

@@ -1,4 +1,4 @@
-// reel_track_dll.h - C ABI of reel_track_dll.dll (reel export target tracking).
+// reel_track_dll.h - C ABI of JHMVDetect.dll (reel export target tracking).
 //
 // ABI-compatible with the legacy JHMVDetect.dll exports used by C# P/Invoke:
 //   MV_SDK_ReelExportTargetTrack_Init      (model init)
@@ -26,7 +26,11 @@
 // Platform export macros: MSVC uses __declspec(dllexport) + __stdcall
 // (legacy ABI); other compilers (mac/linux clang/gcc) use default visibility.
 #if defined(_WIN32)
+#ifdef REEL_TRACK_DLL_EXPORTS
 #define REEL_TRACK_API __declspec(dllexport)
+#else
+#define REEL_TRACK_API __declspec(dllimport)
+#endif
 #define REEL_TRACK_STDCALL __stdcall
 #else
 #define REEL_TRACK_API __attribute__((visibility("default")))
@@ -89,26 +93,27 @@ typedef struct OutputResultReelExportTargetTrack {
 // MV_SDK_GetLastError. Model path is "panjuan_best_location.onnx" relative
 // to the process working directory (legacy behavior). Calling Init again
 // releases the previous instance first.
-int MV_SDK_ReelExportTargetTrack_Init(int xmin_thresh, int xmax_thresh,
-                                      int ymin_thresh, int ymax_thresh);
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_Init(
+    int xmin_thresh, int xmax_thresh, int ymin_thresh, int ymax_thresh);
 
 // Per-frame detect. Returns a malloc'd image buffer (annotated frame) that
 // MUST be released with MV_SDK_Free; NULL on error; the caller's inputImage
 // pointer if the buffer cannot be converted (see trap 1 above).
-unsigned char* MV_SDK_ReelExportTargetTrack_Detect_2(
+REEL_TRACK_API unsigned char* REEL_TRACK_STDCALL
+MV_SDK_ReelExportTargetTrack_Detect_2(
     unsigned char* inputImage, int nWidth, int nHeight, int nBandNum,
     InputParamsReelExportTargetTrack input_params,
     OutputResultReelExportTargetTrack* output_params);
 
 // Free buffers returned by MV_SDK_ReelExportTargetTrack_Detect_2.
 // Never use Marshal.FreeHGlobal / FreeCoTaskMem on those buffers.
-void MV_SDK_Free(unsigned char* pBuffer);
+REEL_TRACK_API void REEL_TRACK_STDCALL MV_SDK_Free(unsigned char* pBuffer);
 
 // Release model/session and reset internal alarm state (new export).
-int MV_SDK_ReelExportTargetTrack_Destroy(void);
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_Destroy(void);
 
 // Copy the last error message into buf; returns copied length (0 if none).
-int MV_SDK_GetLastError(char* buf, int buf_size);
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastError(char* buf, int buf_size);
 
 #ifdef __cplusplus
 }  // extern "C"

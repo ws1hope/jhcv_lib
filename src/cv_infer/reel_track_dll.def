@@ -1,4 +1,4 @@
-LIBRARY reel_track_dll
+LIBRARY JHMVDetect
 EXPORTS
     MV_SDK_ReelExportTargetTrack_Init
     MV_SDK_ReelExportTargetTrack_Detect_2

@@ -329,13 +329,25 @@ endif()
 install(TARGETS penma_rec_dll DESTINATION bin)
 install(FILES ${CMAKE_CURRENT_LIST_DIR}/cv_infer/penma_rec_dll.h DESTINATION include)
 
-# ========== reel_track_dll 动态库（特带卷曲盘卷出口跟踪，C# P/Invoke） ==========
+# ========== JHMVDetect.dll 动态库（特带卷曲盘卷出口跟踪，C# P/Invoke） ==========
 add_library(reel_track_dll SHARED
     ${CMAKE_CURRENT_LIST_DIR}/cv_infer/reel_track_dll.cpp
     ${CMAKE_CURRENT_LIST_DIR}/cv_infer/reel_track_dll.h
 )
 
+target_compile_definitions(reel_track_dll PRIVATE REEL_TRACK_DLL_EXPORTS)
+
+# reel_track_dll.cpp includes nisco_project / ai_platform headers containing
+# non-ASCII (Chinese) comments, so it needs /utf-8 despite living in cv_infer.
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_LIST_DIR}/cv_infer/reel_track_dll.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
 set_target_properties(reel_track_dll PROPERTIES
+    OUTPUT_NAME "JHMVDetect"
     PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 

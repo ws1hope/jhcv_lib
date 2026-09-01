@@ -41,6 +41,15 @@ void SetLastErrorMessage(const std::string &msg)
     g_last_error = msg;
 }
 
+// const char* overload: call sites inside the SEH wrapper of Detect_2 must
+// not create std::string temporaries (objects with destructors trigger
+// C2712 when the function also uses __try).
+void SetLastErrorMessage(const char *msg)
+{
+    std::lock_guard<std::mutex> lock(g_error_mutex);
+    g_last_error = msg;
+}
+
 void WriteDebugLog(const std::string &msg)
 {
     static std::mutex log_mutex;

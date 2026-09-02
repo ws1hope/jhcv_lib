@@ -146,11 +146,17 @@ class TedaiJuanquServicePrivate {
         root["read_message_flag"] = "OK";
         root["all_results"] = ojson::array();
 
+        auto log_and_dump = [&]() {
+            std::string result = root.dump();
+            fout << "response json: " << result << std::endl;
+            return result;
+        };
+
         if (!meta_ok || items.empty()) {
             // 旧协议：metadata 解析失败或无有效图片 -> NG + 空 all_results
             root["read_message_flag"] = "NG";
             fout << "no valid pictures, read_message_flag=NG" << std::endl;
-            return root.dump();
+            return log_and_dump();
         }
 
         // 相机编号校验：范围 [0,5] 且不重复
@@ -171,19 +177,26 @@ class TedaiJuanquServicePrivate {
         if (is_error_id) {
             root["read_message_flag"] = "NG";
             fout << "invalid camera id, read_message_flag=NG" << std::endl;
-            return root.dump();
+            return log_and_dump();
         }
 
         // 解码图片（解码失败为空 Mat，按旧服务 read_picture_flag=0 处理）
-        std::vector<Pipeline::ReelFrameInput> frames;
-        for (const auto &ri : items) {
-            Pipeline::ReelFrameInput fr;
-            fr.camera_id = ri.camera_id;
-            const std::string &content = files.at(ri.file_key);
-            std::vector<uchar> buffer(content.begin(), content.end());
-            fr.image = cv::imdecode(buffer, cv::IMREAD_COLOR);
-            frames.push_back(std::move(fr));
-        }
+        auto td0 = std::chrono::high_resolution_clock::now();
+        std::vector<Pipeline::ReelFrameInput> frames(items.size());
+        cv::parallel_for_(cv::Range(0, (int)items.size()), [&](const cv::Range &r) {
+            for (int i = r.start; i < r.end; ++i) {
+                const std::string &content = files.at(items[i].file_key);
+                cv::Mat buf(1, (int)content.size(), CV_8UC1,
+                            const_cast<char *>(content.data()));
+                frames[i].camera_id = items[i].camera_id;
+                frames[i].image = cv::imdecode(buf, cv::IMREAD_COLOR);
+            }
+        });
+        auto td1 = std::chrono::high_resolution_clock::now();
+        double decode_ms =
+            std::chrono::duration<double, std::milli>(td1 - td0).count();
+        std::cout << "[TIME] decode: " << decode_ms << " ms" << std::endl;
+        fout << "[TIME] decode: " << decode_ms << " ms" << std::endl;
 
         auto t0 = std::chrono::high_resolution_clock::now();
         std::vector<Pipeline::ReelCameraOutput> results = pipeline_->process(frames);
@@ -205,7 +218,7 @@ class TedaiJuanquServicePrivate {
         }
 
         fout << "detect finished, cameras=" << results.size() << std::endl;
-        return root.dump();
+        return log_and_dump();
     }
 
   private:

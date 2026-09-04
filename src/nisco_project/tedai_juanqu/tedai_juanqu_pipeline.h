@@ -12,6 +12,21 @@
 namespace JHDeepCore {
 namespace Pipeline {
 
+// 单相机一次 process() 内的分步耗时明细（ms），供上层打印对比差异
+struct ReelStepTiming {
+    int camera_id = 0;
+    double clone_ms = 0;        // 内部克隆（cam0 白遮副本 + cam5 分类裁剪图）
+    double detect_ms = 0;       // 检测推理
+    double classify_ms = 0;     // cam5 分类推理
+    double post_assign_ms = 0;  // 多边形成图 + 点判定
+    double post_sort_ms = 0;    // 排序
+    double post_dedup_ms = 0;   // 跨区域去重
+    double post_transform_ms = 0;  // cam3 透视变换
+    double post_draw_ms = 0;    // 绘制
+    double save_ms = 0;         // 保存任务入队耗时（实际编码+写盘并发进行）
+    double total_ms = 0;        // 单相机循环体总耗时
+};
+
 // 特带卷曲多相机盘卷定位编排（旧 HTTP 服务算法核心的迁移）。
 //
 // 迁移约定（详见 docs/jhcv_lib集成方案.md §0 冻结决策）：
@@ -31,8 +46,10 @@ class TedaiJuanquPipeline {
     // 加载 camera_liuzhi_roi.json（构造时调用，失败返回 false）
     bool loadLiuzhiRois();
 
-    // 一批多相机帧 -> 各相机结果（按 camera_id 升序）
-    std::vector<ReelCameraOutput> process(const std::vector<ReelFrameInput> &frames);
+    // 一批多相机帧 -> 各相机结果（按 camera_id 升序）。
+    // frames 非 const：请求内解码图直接用于绘制（不再整帧 clone）；
+    // 结果图保存为相机级并行任务，返回前全部落盘（调用方读到文件即已写完）。
+    std::vector<ReelCameraOutput> process(std::vector<ReelFrameInput> &frames);
 
     // 预热：按 config 预加载全部相机检测模型与分类模型并各跑一次假推理
     // （触发 ONNX session 创建与 CUDA kernel/显存初始化），避免首个请求
@@ -45,6 +62,9 @@ class TedaiJuanquPipeline {
     double detectMs() const { return detect_total_ms_; }
     double classifyMs() const { return classify_total_ms_; }
 
+    // 本次 process() 的分步耗时明细（按 camera_id 升序，process() 每次调用开始时清空）
+    const std::vector<ReelStepTiming> &lastTimings() const { return last_timings_; }
+
   private:
     ReelDetector *detector(int camera_id);  // 按相机懒加载并缓存
     ReelClassifier *classifier();           // 懒加载并缓存
@@ -53,11 +73,11 @@ class TedaiJuanquPipeline {
     void detectReelLocation(int camera_id, cv::Mat &src, const ReelRoiParams &params,
                             const ReelCameraOutput *prev_result,
                             const ReelRoiParams *prev_params,
-                            ReelCameraOutput &out);
+                            ReelCameraOutput &out, ReelStepTiming &st);
 
     // camera 0：白色遮挡 + 正常/异常盘卷过滤 + 两区域判定
     void detectReelExport(int camera_id, cv::Mat &src, const ReelRoiParams &params,
-                          ReelCameraOutput &out);
+                          ReelCameraOutput &out, ReelStepTiming &st);
 
     // 结果图保存：<result_dir>\camera_%02d\YYYYMMDD\YYYYMMDDHHMMSSmmm_%02d.jpg（质量 75）
     std::string saveResultImage(int camera_id, const cv::Mat &image);
@@ -70,6 +90,7 @@ class TedaiJuanquPipeline {
     bool classifier_loaded_ = false;
     double detect_total_ms_ = 0;    // 本次 process() 内所有相机检测推理累计 ms
     double classify_total_ms_ = 0;  // 本次 process() 内 camera5 分类推理累计 ms
+    std::vector<ReelStepTiming> last_timings_;  // 本次 process() 分步耗时明细
 };
 
 } // namespace Pipeline

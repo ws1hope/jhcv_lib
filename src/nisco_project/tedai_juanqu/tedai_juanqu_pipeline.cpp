@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <future>
 #include <iostream>
 
 namespace JHDeepCore {
@@ -119,7 +120,8 @@ ReelDetector *TedaiJuanquPipeline::detector(int camera_id)
         return nullptr;
     }
 
-    auto det = std::make_unique<ReelDetector>(model_path, config_.device == "cuda");
+    auto det = std::make_unique<ReelDetector>(model_path, config_.device == "cuda",
+                                              camera_id);
     if (!det->valid()) {
         std::cerr << "[ERROR] tedai_juanqu: camera " << camera_id
                   << " detector init failed: " << model_path << std::endl;
@@ -184,25 +186,33 @@ bool TedaiJuanquPipeline::warmup()
 }
 
 std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
-    const std::vector<ReelFrameInput> &frames)
+    std::vector<ReelFrameInput> &frames)
 {
     std::vector<ReelCameraOutput> results;
 
     // 每请求一次汇总：推理计时清零
     detect_total_ms_ = 0;
     classify_total_ms_ = 0;
+    last_timings_.clear();
 
     // 按 camera_id 升序处理（跨相机去重依赖：camera 3 依赖 camera 2、
     // camera 5 依赖 camera 3 的本请求结果）
-    std::map<int, const ReelFrameInput *> frames_by_id;
-    for (const auto &fr : frames) {
+    std::map<int, ReelFrameInput *> frames_by_id;
+    for (auto &fr : frames) {
         frames_by_id[fr.camera_id] = &fr;
     }
 
     std::map<int, ReelCameraOutput> done;  // 本请求内已处理相机结果
+    // 保存任务（与 results 同序），返回前统一 get() 保证文件已落盘
+    std::vector<std::pair<size_t, std::future<std::string>>> save_futures;
+
     for (const auto &kv : frames_by_id) {
         int camera_id = kv.first;
-        const ReelFrameInput *fr = kv.second;
+        ReelFrameInput *fr = kv.second;
+
+        ReelStepTiming st;
+        st.camera_id = camera_id;
+        auto t_iter0 = std::chrono::high_resolution_clock::now();
 
         ReelCameraOutput out;
         out.camera_id = camera_id;
@@ -211,9 +221,10 @@ std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
         if (fr->image.empty() || params_it == camera_params_.end()) {
             out.read_picture_flag = 0;
         } else {
-            cv::Mat src = fr->image.clone();  // 旧线程在副本上绘制并保存
+            // 请求内解码图直接用于绘制（frames 生命周期覆盖本调用，无需整帧 clone）
+            cv::Mat &src = fr->image;
             if (camera_id == 0) {
-                detectReelExport(camera_id, src, params_it->second, out);
+                detectReelExport(camera_id, src, params_it->second, out, st);
             } else {
                 const ReelCameraOutput *prev_result = nullptr;
                 const ReelRoiParams *prev_params = nullptr;
@@ -233,14 +244,33 @@ std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
                     }
                 }
                 detectReelLocation(camera_id, src, params_it->second,
-                                   prev_result, prev_params, out);
+                                   prev_result, prev_params, out, st);
             }
             out.read_picture_flag = 1;
-            out.result_pic_path = saveResultImage(camera_id, src);
+            // 保存任务并行执行（编码+写盘），本线程继续处理下一相机
+            auto t_save0 = std::chrono::high_resolution_clock::now();
+            size_t result_index = results.size();
+            save_futures.emplace_back(result_index,
+                std::async(std::launch::async, [this, camera_id, src]() {
+                    return saveResultImage(camera_id, src);
+                }));
+            auto t_save1 = std::chrono::high_resolution_clock::now();
+            st.save_ms =
+                std::chrono::duration<double, std::milli>(t_save1 - t_save0).count();
         }
+
+        auto t_iter1 = std::chrono::high_resolution_clock::now();
+        st.total_ms =
+            std::chrono::duration<double, std::milli>(t_iter1 - t_iter0).count();
 
         done[camera_id] = out;
         results.push_back(out);
+        last_timings_.push_back(st);
+    }
+
+    // 等全部保存完成：响应返回前结果图必须已落盘
+    for (auto &kv_save : save_futures) {
+        results[kv_save.first].result_pic_path = kv_save.second.get();
     }
 
     return results;
@@ -250,9 +280,20 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
                                              const ReelRoiParams &params,
                                              const ReelCameraOutput *prev_result,
                                              const ReelRoiParams *prev_params,
-                                             ReelCameraOutput &out)
+                                              ReelCameraOutput &out, ReelStepTiming &st)
 {
-    cv::Mat src_clone = src.clone();  // camera 5 分类用干净原图（旧版 src_img_clone）
+    // camera 5 分类用干净图：绘制前先裁小 ROI（替代旧版整帧 src_clone，省一次全图拷贝）
+    cv::Mat cam5_clean_crop;
+    if (camera_id == 5) {
+        auto t_crop0 = std::chrono::high_resolution_clock::now();
+        cv::Rect roi(cv::Point(720, 375), cv::Point(1210, 820));
+        cv::Rect image_bounds(0, 0, src.cols, src.rows);
+        cv::Rect safe_roi = roi & image_bounds;
+        cam5_clean_crop = src(safe_roi).clone();
+        auto t_crop1 = std::chrono::high_resolution_clock::now();
+        st.clone_ms +=
+            std::chrono::duration<double, std::milli>(t_crop1 - t_crop0).count();
+    }
 
     std::vector<ReelDetObject> vec_obj;
     ReelDetector *det = detector(camera_id);
@@ -264,6 +305,10 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     }
     detect_total_ms_ +=
         std::chrono::duration<double, std::milli>(t_det1 - t_det0).count();
+    st.detect_ms =
+        std::chrono::duration<double, std::milli>(t_det1 - t_det0).count();
+
+    auto t_assign0 = std::chrono::high_resolution_clock::now();
 
     // 三区域多边形（Point 用于绘制，PointD 用于判定）
     std::vector<cv::Point> polygon1, polygon2, polygon3;
@@ -299,14 +344,13 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     if (camera_id == 5) {
         ReelClassifier *cls = classifier();
         if (cls && cls->valid()) {
-            cv::Rect roi(cv::Point(720, 375), cv::Point(1210, 820));
-            cv::Rect image_bounds(0, 0, src_clone.cols, src_clone.rows);
-            cv::Rect safe_roi = roi & image_bounds;
-            cv::Mat cropped = src_clone(safe_roi);
+            cv::Mat cropped = cam5_clean_crop;
             auto t_cls0 = std::chrono::high_resolution_clock::now();
             auto cls_result = cls->detect(cropped);
             auto t_cls1 = std::chrono::high_resolution_clock::now();
             classify_total_ms_ +=
+                std::chrono::duration<double, std::milli>(t_cls1 - t_cls0).count();
+            st.classify_ms =
                 std::chrono::duration<double, std::milli>(t_cls1 - t_cls0).count();
             if (cls_result.valid) {
                 classify_result_id = cls_result.class_id;
@@ -359,12 +403,17 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
             }
         }
     }
+    auto t_assign1 = std::chrono::high_resolution_clock::now();
+    st.post_assign_ms =
+        std::chrono::duration<double, std::milli>(t_assign1 - t_assign0).count() -
+        st.classify_ms;  // classify 已单独计时，从 assign 块中剔除
 
     int inside_count = (int)inside_rects.size();
     int outside_count = (int)outside_rects.size();
     int collect_count = (int)collect_rects.size();
 
     // 排序（相机专属规则）
+    auto t_sort0 = std::chrono::high_resolution_clock::now();
     if (camera_id == 1) {
         std::sort(inside_rects.begin(), inside_rects.end(), reelRectCmpYUp);
     } else if (camera_id == 2) {
@@ -372,8 +421,12 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     } else if (camera_id == 3) {
         std::sort(inside_rects.begin(), inside_rects.end(), reelRectCmpXUp);
     }
+    auto t_sort1 = std::chrono::high_resolution_clock::now();
+    st.post_sort_ms =
+        std::chrono::duration<double, std::milli>(t_sort1 - t_sort0).count();
 
     // 跨区域重复盘卷过滤
+    auto t_dedup0 = std::chrono::high_resolution_clock::now();
     int guolv_flag = 0;
     int guolv_flag_outside = 0;
     if (camera_id > 1) {
@@ -388,8 +441,12 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
                 prev_params->inside_qishi, params.outside_qishi, guolv_flag_outside);
         }
     }
+    auto t_dedup1 = std::chrono::high_resolution_clock::now();
+    st.post_dedup_ms =
+        std::chrono::duration<double, std::milli>(t_dedup1 - t_dedup0).count();
 
     // ---- 绘制（与旧服务一致的样式） ----
+    auto t_draw0 = std::chrono::high_resolution_clock::now();
     cv::Scalar color_center(0, 255, 0);
     cv::Scalar color_rec(255, 0, 0);
     for (int i = 0; i < inside_count && i < (int)inside_rects.size(); ++i) {
@@ -471,6 +528,9 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
         cv::putText(src, class_string, cv::Point(box.x + 5, box.y - 10),
                     cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 0, 0), 2, 0);
     }
+    auto t_draw1 = std::chrono::high_resolution_clock::now();
+    st.post_draw_ms =
+        std::chrono::duration<double, std::milli>(t_draw1 - t_draw0).count();
 
     // 数量截断（旧结构体数组上限 50）
     if (inside_count > kMaxPanjuanCount) inside_count = kMaxPanjuanCount;
@@ -478,6 +538,7 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     if (collect_count > kMaxPanjuanCount) collect_count = kMaxPanjuanCount;
 
     // camera 3：桥下-转弯区域（y<525 且 x<500）透视变换到物理毫米坐标
+    auto t_tr0 = std::chrono::high_resolution_clock::now();
     if (camera_id == 3) {
         const int convert_area_max_y = 525;
         const int convert_area_max_x = 500;
@@ -516,6 +577,9 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
         transformed.insert(transformed.end(), remaining.begin(), remaining.end());
         inside_rects = transformed;
     }
+    auto t_tr1 = std::chrono::high_resolution_clock::now();
+    st.post_transform_ms =
+        std::chrono::duration<double, std::milli>(t_tr1 - t_tr0).count();
 
     for (int i = 0; i < inside_count && i < (int)inside_rects.size(); i++) {
         out.inside.push_back(inside_rects[i]);
@@ -530,17 +594,25 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
 
 void TedaiJuanquPipeline::detectReelExport(int camera_id, cv::Mat &src,
                                            const ReelRoiParams &params,
-                                           ReelCameraOutput &out)
+                                           ReelCameraOutput &out, ReelStepTiming &st)
 {
     // 白色遮挡三个固定区域（旧版硬编码，防止误检盘卷中的钢卷和废钢）
+    auto t_clone0 = std::chrono::high_resolution_clock::now();
     cv::Mat src_copy = src.clone();
+    auto t_clone1 = std::chrono::high_resolution_clock::now();
+    st.clone_ms +=
+        std::chrono::duration<double, std::milli>(t_clone1 - t_clone0).count();
     cv::Rect roi1(816, 493, 550, 290);
     cv::Rect roi2(722, 790, 570, 310);
     cv::Rect roi3(600, 280, 310, 200);
     cv::Rect image_bounds(0, 0, src_copy.cols, src_copy.rows);
+    auto t_white0 = std::chrono::high_resolution_clock::now();
     if ((roi1 & image_bounds) == roi1) src_copy(roi1) = cv::Scalar(255, 255, 255);
     if ((roi2 & image_bounds) == roi2) src_copy(roi2) = cv::Scalar(255, 255, 255);
     if ((roi3 & image_bounds) == roi3) src_copy(roi3) = cv::Scalar(255, 255, 255);
+    auto t_white1 = std::chrono::high_resolution_clock::now();
+    st.post_assign_ms +=
+        std::chrono::duration<double, std::milli>(t_white1 - t_white0).count();
 
     std::vector<ReelDetObject> vec_obj;
     ReelDetector *det = detector(camera_id);
@@ -552,6 +624,10 @@ void TedaiJuanquPipeline::detectReelExport(int camera_id, cv::Mat &src,
     }
     detect_total_ms_ +=
         std::chrono::duration<double, std::milli>(t_det1 - t_det0).count();
+    st.detect_ms =
+        std::chrono::duration<double, std::milli>(t_det1 - t_det0).count();
+
+    auto t_assign0 = std::chrono::high_resolution_clock::now();
 
     // 正常盘卷过滤：classid==0 且宽>50、高>30；异常盘卷 classid==1（本流程不输出）
     const int set_reel_width_thresh = 50;
@@ -605,14 +681,22 @@ void TedaiJuanquPipeline::detectReelExport(int camera_id, cv::Mat &src,
             }
         }
     }
+    auto t_assign1 = std::chrono::high_resolution_clock::now();
+    st.post_assign_ms +=
+        std::chrono::duration<double, std::milli>(t_assign1 - t_assign0).count();
 
     int inside_count = (int)inside_rects.size();
     int outside_count = (int)outside_rects.size();
 
+    auto t_sort0 = std::chrono::high_resolution_clock::now();
     std::sort(inside_rects.begin(), inside_rects.end(), reelRectCmpYUp);
     std::sort(outside_rects.begin(), outside_rects.end(), reelRectCmpYUp);
+    auto t_sort1 = std::chrono::high_resolution_clock::now();
+    st.post_sort_ms =
+        std::chrono::duration<double, std::milli>(t_sort1 - t_sort0).count();
 
     // 绘制（旧版样式：inside 文本在框右上）
+    auto t_draw0 = std::chrono::high_resolution_clock::now();
     cv::Scalar color_center(0, 255, 0);
     cv::Scalar color_rec(255, 0, 0);
     for (int i = 0; i < inside_count && i < (int)inside_rects.size(); ++i) {
@@ -656,6 +740,9 @@ void TedaiJuanquPipeline::detectReelExport(int camera_id, cv::Mat &src,
         cv::putText(src, class_string, cv::Point(box.x + 5, box.y - 10),
                     cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 0, 0), 2, 0);
     }
+    auto t_draw1 = std::chrono::high_resolution_clock::now();
+    st.post_draw_ms =
+        std::chrono::duration<double, std::milli>(t_draw1 - t_draw0).count();
 
     if (inside_count > kMaxPanjuanCount) inside_count = kMaxPanjuanCount;
     if (outside_count > kMaxPanjuanCount) outside_count = kMaxPanjuanCount;
@@ -674,7 +761,9 @@ std::string TedaiJuanquPipeline::saveResultImage(int camera_id, const cv::Mat &i
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                   now.time_since_epoch()) % 1000;
     std::time_t t = std::chrono::system_clock::to_time_t(now);
-    std::tm *lt = std::localtime(&t);
+    std::tm lt_tm{};
+    localtime_s(&lt_tm, &t);  // 保存任务多线程并行，localtime 非线程安全
+    std::tm *lt = &lt_tm;
 
     std::string folder =
         cv::format("%s\\camera_%02d", config_.result_dir.c_str(), camera_id);

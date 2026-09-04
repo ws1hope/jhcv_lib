@@ -28,7 +28,7 @@ namespace Pipeline {
 //   判定、跨帧匹配、去重、绘制、JSON 输出）的中心点语义保持不变。
 class ReelDetector {
   public:
-    ReelDetector(const std::string &model_path, bool use_gpu,
+    ReelDetector(const std::string &model_path, bool use_gpu, int camera_id = -1,
                  float conf_threshold = 0.25f, float iou_threshold = 0.45f);
 
     bool valid() const { return valid_; }
@@ -39,6 +39,7 @@ class ReelDetector {
 
   private:
     bool valid_ = false;
+    int camera_id_ = -1;
     std::unique_ptr<Detector> detector_;
 };
 

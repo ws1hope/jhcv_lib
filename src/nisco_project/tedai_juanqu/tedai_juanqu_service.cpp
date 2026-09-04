@@ -109,6 +109,22 @@ void appendCameraResult(ojson &all_results, const Pipeline::ReelCameraOutput &ca
     all_results.push_back(root2);
 }
 
+// 分步耗时明细 -> 逐行文本（stdout 与请求日志共用）
+std::string formatTimingLines(const std::vector<Pipeline::ReelStepTiming> &timings)
+{
+    std::string out;
+    for (const auto &st : timings) {
+        out += cv::format(
+            "[TIME][cam=%d] clone=%.2f detect=%.2f classify=%.2f "
+            "assign=%.2f sort=%.2f dedup=%.2f transform=%.2f draw=%.2f "
+            "save=%.2f total=%.2f ms\n",
+            st.camera_id, st.clone_ms, st.detect_ms, st.classify_ms,
+            st.post_assign_ms, st.post_sort_ms, st.post_dedup_ms,
+            st.post_transform_ms, st.post_draw_ms, st.save_ms, st.total_ms);
+    }
+    return out;
+}
+
 } // namespace
 
 class TedaiJuanquServicePrivate {
@@ -212,6 +228,11 @@ class TedaiJuanquServicePrivate {
         fout << "[TIME] detect: " << pipeline_->detectMs()
              << " ms | classify: " << pipeline_->classifyMs() << " ms"
              << std::endl;
+
+        // 分步耗时明细（stdout 与请求日志各打一份，便于对比差异）
+        std::string timing_lines = formatTimingLines(pipeline_->lastTimings());
+        std::cout << timing_lines;
+        fout << timing_lines;
 
         for (const auto &cam : results) {
             appendCameraResult(root["all_results"], cam);

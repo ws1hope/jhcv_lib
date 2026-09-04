@@ -1,5 +1,6 @@
 #include "reel_infer.h"
 
+#include <chrono>
 #include <iostream>
 #include <vector>
 
@@ -9,7 +10,8 @@ namespace Pipeline {
 // ---------- ReelDetector ----------
 
 ReelDetector::ReelDetector(const std::string &model_path, bool use_gpu,
-                           float conf_threshold, float iou_threshold)
+                           int camera_id, float conf_threshold, float iou_threshold)
+    : camera_id_(camera_id)
 {
     try {
         // ai_platform 约定：device_id >= 0 -> cuda，< 0 -> cpu
@@ -31,6 +33,7 @@ bool ReelDetector::detect(const cv::Mat &frame, std::vector<ReelDetObject> &obje
 
     std::vector<cv::Mat> images{frame};
     std::vector<DetectionResult> results;
+    auto tin0 = std::chrono::high_resolution_clock::now();
     try {
         detector_->process(images, results);
     } catch (const std::exception &e) {
@@ -38,6 +41,13 @@ bool ReelDetector::detect(const cv::Mat &frame, std::vector<ReelDetObject> &obje
                   << std::endl;
         return false;
     }
+    double infer_ms = std::chrono::duration<double, std::milli>(
+                          std::chrono::high_resolution_clock::now() - tin0)
+                          .count();
+    std::string cam_label =
+        camera_id_ >= 0 ? "(cam " + std::to_string(camera_id_) + ")" : "";
+    std::cout << "[TIME] reel detect" << cam_label << ": " << infer_ms << " ms"
+              << std::endl;
     if (results.empty()) return false;
 
     for (const auto &det : results[0].detections) {

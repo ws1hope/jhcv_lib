@@ -29,10 +29,10 @@ All third-party libs live under `G:/3thirdparty/`:
 | Dependency | Path |
 |---|---|
 | OpenCV 4.90 | `G:/3thirdparty/opencv/build` |
-| ONNX Runtime | `G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64` |
+| ONNX Runtime | `G:/3thirdparty/onnxruntime-1.18.0-cuda12.2-win-x64` |
 | TensorRT | `G:/3thirdparty/tensorrt` |
 | Paddle Inference | `G:/3thirdparty/paddle_inference` |
-| CUDA | `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8` |
+| CUDA | `C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2` |
 
 Runtime DLLs from these dirs must be on `PATH` to run any executable. See `.vscode/launch.json` for the required PATH entries.
 

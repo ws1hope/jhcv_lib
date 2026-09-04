@@ -27,8 +27,8 @@
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/src",
                 "G:/3thirdparty/opencv/build/include",
-                "G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/include",
-                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/include",
+                "G:/3thirdparty/onnxruntime-1.18.0-cuda12.2-win-x64/include",
+                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.2/include",
                 "G:/3thirdparty/tensorrt/include"
             ],
             "defines": [

@@ -62,17 +62,13 @@ public:
              << " heat:" << heat_number
              << " path:" << picture_path << std::endl;
 
-        // 多图：'#' 分隔的路径逐张处理
-        std::vector<std::string> path_array = FileHelper::splitStringByCsharp(picture_path);
-
+        // 单张图片：picture_path 整体作为图片路径，不按任何字符拆分
         json root;
         root["station_id"] = station_id;
         json all_results = json::array();
         double total_inference_ms = 0.0;
-        for (size_t i = 0; i < path_array.size(); i++) {
-            all_results.push_back(
-                buildResult(path_array[i], station_id, (int)i + 1, false, fout, total_inference_ms));
-        }
+        all_results.push_back(
+            buildResult(picture_path, station_id, 1, false, fout, total_inference_ms));
         root["all_results"] = all_results;
 
         root["time_cost"] = std::round(total_inference_ms * 100.0) / 100.0;
@@ -94,18 +90,14 @@ public:
         std::cout << "  device:  " << config_.device << std::endl;
         std::cout << std::endl;
 
-        std::vector<std::string> path_array = FileHelper::splitStringByCsharp(image_path);
-
         std::ofstream fout;  // 本地测试不写日志
 
         json root;
         root["station_id"] = station_id;
         json all_results = json::array();
         double total_inference_ms = 0.0;
-        for (size_t i = 0; i < path_array.size(); i++) {
-            all_results.push_back(
-                buildResult(path_array[i], station_id, (int)i + 1, true, fout, total_inference_ms));
-        }
+        all_results.push_back(
+            buildResult(image_path, station_id, 1, true, fout, total_inference_ms));
         root["all_results"] = all_results;
 
         root["time_cost"] = std::round(total_inference_ms * 100.0) / 100.0;

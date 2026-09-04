@@ -1,7 +1,7 @@
 server:
-  service_name: "guokuache"
+  service_name: "xintiangang/character_recognition"
   host: "127.0.0.1"
-  port: 8088
+  port: 8080
 models:
   det1_model: "models/xintiangang/guokuache/det1.onnx"
   det2_model: "models/xintiangang/guokuache/det2.onnx"

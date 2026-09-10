@@ -8,5 +8,23 @@ models:
   det2_model: "models/huaxin/liaoguan_zifu_detect.onnx"
 inference:
   device: "gpu"
+# 有效检测范围（按工位区分）：station_id 匹配请求中的 station_id。
+# 多边形顶点为图像坐标（N 点多边形，>=3 点才启用）；
+# 第一个检测模型最左定位框的中心点在多边形内才送入第二个检测模型。
+# 不配置本段或 station_id 无匹配则不做范围过滤（默认行为）。
+valid_roi:
+  stations:
+    - station_id: "1#EAF1"
+      points:
+        - [911, 510]
+        - [2403, 515]
+        - [2398, 2076]
+        - [921, 2074]
+    - station_id: "1#EAF2"
+      points:
+        - [737, 453]
+        - [2142, 450]
+        - [2123, 1998]
+        - [741, 1996]
 output:
   log_dir: "D:\\CharacterDetect\\log"

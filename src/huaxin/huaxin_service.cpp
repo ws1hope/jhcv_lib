@@ -135,7 +135,7 @@ private:
             return item;
         }
 
-        Pipeline::HuaxinPipelineResult pr = pipeline_->process(src_img, verbose);
+        Pipeline::HuaxinPipelineResult pr = pipeline_->process(src_img, station_id, verbose);
         total_inference_ms += pr.inference_time_ms;
 
         // 结果图保存路径：输入图所在目录\results\station_<工位>\原文件名；

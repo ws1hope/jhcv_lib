@@ -109,6 +109,12 @@ struct XintiangangServerConfig {
     std::string device = "cuda";
 };
 
+// 单个工位的有效检测范围：station_id -> N 点多边形顶点（图像坐标）
+struct HuaxinValidRoi {
+    std::string station_id;
+    std::vector<std::array<int, 2>> points;  // >=3 点才启用
+};
+
 struct HuaxinServerConfig {
     std::string service_name = "huaxin";
     std::string host = "0.0.0.0";
@@ -118,6 +124,9 @@ struct HuaxinServerConfig {
     std::string det1_model;      // 第一个目标检测模型（定位，取最左框）
     std::string det2_model;      // 第二个目标检测模型（铸坯端面识别）
     std::string device = "cuda";
+    // 有效检测范围（按工位区分，station_id 匹配请求里的 station_id）：
+    // 只有最左框中心点在对应多边形内时才送入 det2
+    std::vector<HuaxinValidRoi> valid_rois;
 };
 
 struct GuokuacheServerConfig {

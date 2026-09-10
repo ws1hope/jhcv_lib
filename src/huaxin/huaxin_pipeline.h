@@ -24,6 +24,7 @@ struct HuaxinPipelineResult {
     int leftmost_index = -1;                  // 送入第二个模型的框在 det1_detections 中的下标
     cv::Rect leftmost_roi;                    // 送入第二个模型的框在原图上的 ROI
     std::vector<HuaxinDet2Target> det2_targets; // 第二个检测模型的输出（已映射回原图）
+    bool det2_skipped = false;                  // 因最左框中心点不在有效检测范围内而跳过 det2
     std::string all_results;                  // 铸坯端面识别结果（det2 类别名从左到右拼接）
     cv::Mat annotated_image;                  // 画框 + 文字的结果图
     double inference_time_ms = 0.0;           // 纯模型推理耗时（det1 + det2）
@@ -34,7 +35,10 @@ class HuaxinPipeline {
 public:
     explicit HuaxinPipeline(const HuaxinServerConfig& config);
 
-    HuaxinPipelineResult process(const cv::Mat& image, bool verbose = false);
+    // station_id 用于从 config 中选定对应工位的有效检测范围多边形
+    HuaxinPipelineResult process(const cv::Mat& image,
+                                 const std::string& station_id,
+                                 bool verbose = false);
 
 private:
     void warmup();
@@ -45,6 +49,7 @@ private:
     std::unique_ptr<Detector> det1_;  // 第一个检测模型（定位）
     std::unique_ptr<Detector> det2_;  // 第二个检测模型（端面识别）
     HuaxinServerConfig config_;
+    std::vector<cv::Point> active_roi_poly_;  // 当前工位生效的有效检测范围多边形（空则不过滤）
 };
 
 } // namespace Pipeline

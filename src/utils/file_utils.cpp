@@ -241,6 +241,22 @@ JHDeepCore::HuaxinServerConfig FileHelper::loadHuaxinConfig(const std::string& c
         cfg.device = node["inference"]["device"].as<std::string>("cuda");
     }
 
+    // 有效检测范围（按工位区分）：stations 列表（station_id + points）
+    if (node["valid_roi"] && node["valid_roi"]["stations"] && node["valid_roi"]["stations"].IsSequence()) {
+        for (const auto& st : node["valid_roi"]["stations"]) {
+            JHDeepCore::HuaxinValidRoi vr;
+            vr.station_id = st["station_id"].as<std::string>("");
+            if (st["points"] && st["points"].IsSequence()) {
+                for (const auto& p : st["points"]) {
+                    if (p.IsSequence() && p.size() == 2) {
+                        vr.points.push_back({p[0].as<int>(), p[1].as<int>()});
+                    }
+                }
+            }
+            cfg.valid_rois.push_back(vr);
+        }
+    }
+
     return cfg;
 }
 

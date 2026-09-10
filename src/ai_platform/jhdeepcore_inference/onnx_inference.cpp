@@ -1,4 +1,5 @@
 #include "jhdeepcore_inference/onnx_inference.h"
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 
@@ -337,18 +338,15 @@ void OnnxInference::PreprocessForOnnx(const cv::Mat &image) {
     int channels = img->channels();
     int height = img->rows;
     int width = img->cols;
-    int hw = height * width;
+    size_t hw = static_cast<size_t>(height) * static_cast<size_t>(width);
 
-    // 按行遍历，每个像素一次访问写完所有通道
-    for (int h = 0; h < height; ++h) {
-        const cv::Vec3f *row = img->ptr<cv::Vec3f>(h);
-        for (int w = 0; w < width; ++w) {
-            const cv::Vec3f &pixel = row[w];
-            int spatial = h * width + w;
-            input_buffer_[spatial] = pixel[0];
-            input_buffer_[hw + spatial] = pixel[1];
-            input_buffer_[2 * hw + spatial] = pixel[2];
-        }
+    // HWC -> NCHW：split 按通道拆成连续平面（内部 SIMD），再逐通道 memcpy 拼回 flat buffer，
+    // 取代逐像素标量散写（数值逐位一致）
+    std::vector<cv::Mat> ch;
+    cv::split(*img, ch);
+    float *dst = input_buffer_.data();
+    for (int k = 0; k < channels; ++k) {
+        memcpy(dst + k * hw, ch[k].ptr<float>(), hw * sizeof(float));
     }
 }
 

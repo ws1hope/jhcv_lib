@@ -443,6 +443,32 @@ DetectionResult BaseInference::ProcessDetectionOutput(const std::vector<float> &
         }
     }
 
+    // NMS 前先只保留置信度最高的 K 个候选，封顶 NMSBoxes 的 O(n^2) 开销。
+    // 最终输出框必然来自高分候选集，K 远大于实际目标数时不改变业务结果。
+    const size_t kTopK = 300;
+    if (confidences.size() > kTopK) {
+        std::vector<size_t> order(confidences.size());
+        std::iota(order.begin(), order.end(), 0);
+        std::partial_sort(order.begin(), order.begin() + static_cast<ptrdiff_t>(kTopK), order.end(),
+                          [&](size_t a, size_t b) { return confidences[a] > confidences[b]; });
+
+        std::vector<cv::Rect> k_boxes;
+        std::vector<float> k_conf;
+        std::vector<int> k_class;
+        k_boxes.reserve(kTopK);
+        k_conf.reserve(kTopK);
+        k_class.reserve(kTopK);
+        for (size_t i = 0; i < kTopK; ++i) {
+            size_t j = order[i];
+            k_boxes.push_back(boxes[j]);
+            k_conf.push_back(confidences[j]);
+            k_class.push_back(class_ids[j]);
+        }
+        boxes = std::move(k_boxes);
+        confidences = std::move(k_conf);
+        class_ids = std::move(k_class);
+    }
+
     std::vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, conf_threshold_, iou_threshold_, indices);
 

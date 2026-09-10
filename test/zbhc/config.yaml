@@ -11,6 +11,8 @@ models:
   direction_cls_model: "models/zbhc/zifu_fx_cls.onnx"
 inference:
   device: "cpu"
+  # 最终识别串第 3 位(index 2)识别为 '8' 时改为 '5'
+  third_char_8_to_5: false
 output:
   result_dir: "D:\\CharacterDetect"
   split_dir: "D:\\ZbhcSplit"

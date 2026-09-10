@@ -146,6 +146,7 @@ JHDeepCore::ZbhcServerConfig FileHelper::loadZbhcConfig(const std::string& confi
 
     if (node["inference"]) {
         cfg.device = node["inference"]["device"].as<std::string>("cuda");
+        cfg.third_char_8_to_5 = node["inference"]["third_char_8_to_5"].as<bool>(false);
     }
 
     return cfg;

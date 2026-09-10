@@ -76,6 +76,8 @@ struct ZbhcServerConfig {
     std::string ocr_label;
     std::string direction_cls_model;
     std::string device = "cuda";
+    // 最终识别串第 3 位(index 2)识别为 '8' 时改为 '5'（false 默认关闭）
+    bool third_char_8_to_5 = false;
 };
 
 struct LuqianServerConfig {

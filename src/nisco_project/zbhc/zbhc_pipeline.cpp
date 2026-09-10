@@ -518,6 +518,10 @@ const int pad_x = 30, pad_y = 5;
             if (billet_ocr.size() >= 3) {
                 billet_ocr.insert(billet_ocr.size() - 3, "#");
             }
+            // 可配置纠错：最终识别串第 3 位(index 2)识别为 '8' 时改为 '5'
+            if (config_.third_char_8_to_5 && billet_ocr.size() >= 3 && billet_ocr[2] == '8') {
+                billet_ocr[2] = '5';
+            }
             billet_result.ocr_text = billet_ocr;
 
             // 坯料置信度 = 各已识别字符(ocr_text 非空)置信度的最小值

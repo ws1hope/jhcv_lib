@@ -983,8 +983,8 @@
             "args": [
                 "--test",
                 "-c", "test/fujian/config.yaml",
-                "-i", "images/fujian/test.jpg",
-                "-H", "2650123412",
+                "-i", "images/fujian/20260909023731.jpg",
+                "-H", "E07208",
                 "-s", "5"
             ],
             "cwd": "${workspaceFolder}",

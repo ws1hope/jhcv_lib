@@ -147,15 +147,21 @@ FujianPipelineResult FujianPipeline::process(const cv::Mat& image, const cv::Rec
         }
         result.full_text = heat_number;
         result.annotated_image = createAnnotatedImage(image, result);
-        // 炉号分两行显示：11 位第一行 6 位，其他第一行 5 位，其余放第二行
-        int first_line = (heat_number.size() == 11) ? 6 : 5;
-        std::string line1 = heat_number.substr(0, first_line);
-        cv::putText(result.annotated_image, line1, cv::Point(10, 70),
-                    cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 0, 255), 6);
-        if (heat_number.size() > (size_t)first_line) {
-            std::string line2 = heat_number.substr(first_line);
-            cv::putText(result.annotated_image, line2, cv::Point(10, 145),
+        // 炉号分两行显示：11 位第一行 6 位，其他第一行 5 位，其余放第二行；
+        // 6 位炉号整串单行显示
+        if (heat_number.size() == 6) {
+            cv::putText(result.annotated_image, heat_number, cv::Point(10, 70),
                         cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 0, 255), 6);
+        } else {
+            int first_line = (heat_number.size() == 11) ? 6 : 5;
+            std::string line1 = heat_number.substr(0, first_line);
+            cv::putText(result.annotated_image, line1, cv::Point(10, 70),
+                        cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 0, 255), 6);
+            if (heat_number.size() > (size_t)first_line) {
+                std::string line2 = heat_number.substr(first_line);
+                cv::putText(result.annotated_image, line2, cv::Point(10, 145),
+                            cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 0, 255), 6);
+            }
         }
         return result;
     }

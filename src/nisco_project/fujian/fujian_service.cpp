@@ -98,11 +98,61 @@ public:
     }
 
 private:
-    // heat_num 定位数字决定 roi：10 位取倒数第 2 位，11 位取倒数第 3 位；
-    // 数字 1-N -> rois[N-1]，N 为配置的 ROI 数量。其他长度/数字返回 -1
+    // 清洗炉号：去除 BOM(U+FEFF)/全角空格(U+3000)/零宽空格(U+200B) 的 UTF-8 三字节序列、
+    // ASCII 控制字符与空白，小写字母归一为大写
+    static std::string sanitizeHeatNumber(const std::string& in)
+    {
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size();) {
+            unsigned char c = (unsigned char)in[i];
+            if (c == 0xEF && i + 2 < in.size() &&
+                (unsigned char)in[i + 1] == 0xBB && (unsigned char)in[i + 2] == 0xBF) {
+                i += 3; continue;  // U+FEFF BOM
+            }
+            if (c == 0xE3 && i + 2 < in.size() &&
+                (unsigned char)in[i + 1] == 0x80 && (unsigned char)in[i + 2] == 0x80) {
+                i += 3; continue;  // U+3000 全角空格
+            }
+            if (c == 0xE2 && i + 2 < in.size() &&
+                (unsigned char)in[i + 1] == 0x80 && (unsigned char)in[i + 2] == 0x8B) {
+                i += 3; continue;  // U+200B 零宽空格
+            }
+            if (c <= 0x20 || c == 0x7F) { ++i; continue; }  // 控制字符 + ASCII 空白
+            if (c >= 'a' && c <= 'z') out.push_back((char)(c - 'a' + 'A'));
+            else out.push_back((char)c);
+            ++i;
+        }
+        return out;
+    }
+
+    // 逐字节 hex，用于失败日志诊断不可见字符
+    static std::string toHex(const std::string& s)
+    {
+        static const char* digits = "0123456789ABCDEF";
+        std::string hex;
+        hex.reserve(s.size() * 3);
+        for (unsigned char c : s) {
+            hex.push_back(digits[c >> 4]);
+            hex.push_back(digits[c & 0x0F]);
+            hex.push_back(' ');
+        }
+        return hex;
+    }
+
+    // heat_num 定位 roi：6 位取首字母（A-F -> rois[1..6]）；
+    // 10 位取倒数第 2 位，11 位取倒数第 3 位；数字 1-N -> rois[N-1]。
+    // N 为配置的 ROI 数量。其他长度/字符返回 -1
     static int selectRoiIndex(const std::string& heat_number, size_t roi_count)
     {
         size_t len = heat_number.size();
+        if (len == 6) {
+            char c = heat_number[0];
+            if (c < 'A' || c > 'F') return -1;
+            int idx = c - 'A' + 1;  // A->1, B->2, ... F->6
+            if ((size_t)idx > roi_count) return -1;
+            return idx;
+        }
         if (len != 10 && len != 11) return -1;
         size_t pos = (len == 10) ? len - 2 : len - 3;
         char c = heat_number[pos];
@@ -155,10 +205,15 @@ private:
         }
         const FujianStationConfig* st = &config_.stations[0];
 
-        int roi_index = selectRoiIndex(heat_number, st->rois.size());
+        // 清洗炉号（去 BOM/空白/控制字符，小写转大写），匹配、结果、文件名统一用清洗值
+        std::string heat = sanitizeHeatNumber(heat_number);
+
+        int roi_index = selectRoiIndex(heat, st->rois.size());
         if (roi_index < 0) {
-            fout << "cannot select roi from heat_number: " << heat_number
-                 << " (roi count: " << st->rois.size() << ")" << std::endl;
+            fout << "cannot select roi from heat_number: " << heat
+                 << " (roi count: " << st->rois.size()
+                 << ", len: " << heat.size()
+                 << ", hex: " << toHex(heat) << ")" << std::endl;
             return ngResult(picture_path);
         }
         const std::array<int, 4>& roi_arr = st->rois[roi_index - 1];
@@ -174,7 +229,7 @@ private:
         // station_id 重复加载同一份模型）
         Pipeline::FujianPipeline* pipeline = getPipeline(st->station_id, *st);
         Pipeline::FujianPipelineResult pr = pipeline->process(src_img, roi, roi_index,
-                                                              heat_number, verbose);
+                                                              heat, verbose);
 
         time_t currtime = time(NULL);
         tm* t = localtime(&currtime);
@@ -198,7 +253,7 @@ private:
                 config_.result_dir.c_str(), station_id,
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
-                t->tm_hour, t->tm_min, t->tm_sec, heat_number.c_str());
+                t->tm_hour, t->tm_min, t->tm_sec, heat.c_str());
         }
 
         if (!pr.annotated_image.empty()) {
@@ -208,9 +263,11 @@ private:
         }
 
         item["state_flag"] = pr.full_text.empty() ? "NG" : "OK";
-        // result 加 '#' 分隔：11 位在第 6 位后，其他在第 5 位后
+        // result 加 '#' 分隔：11 位在第 6 位后，其他在第 5 位后；6 位不加 '#'（整串）
         std::string result_text = pr.full_text;
-        if (result_text.size() > 5) {
+        if (result_text.size() == 6) {
+            // 6 位炉号不加 '#' 分隔
+        } else if (result_text.size() > 5) {
             result_text.insert(result_text.size() == 11 ? 6 : 5, "#");
         }
         item["result"] = result_text;

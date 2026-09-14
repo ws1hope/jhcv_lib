@@ -26,7 +26,7 @@ static void printHelp(const char* progName)
     std::cout << "  -c, --config   Path to config YAML file (default: config.yaml)" << std::endl;
     std::cout << "  --test         Run in local test mode (single image inference)" << std::endl;
     std::cout << "  -i, --image    Image path for local test" << std::endl;
-    std::cout << "  -H, --heat     Heat number for local test (10/11 digits, selects roi1-roiN)" << std::endl;
+    std::cout << "  -H, --heat     Heat number for local test (10/11 digits or 6-digit A-F prefix, selects roi1-roiN)" << std::endl;
     std::cout << "  -s, --station  Station ID for local test" << std::endl;
     std::cout << "  -h, --help     Show this help" << std::endl;
 }

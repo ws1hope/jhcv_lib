@@ -607,7 +607,7 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
         if (text_y + 20 > annotated.rows) break;
         std::string text = "billet" + std::to_string(bi + 1) + ": " + billets[bi].ocr_text;
         cv::putText(annotated, text, cv::Point(20, text_y),
-                    cv::FONT_HERSHEY_SIMPLEX, 3.6, cv::Scalar(0, 0, 255), 9);
+                    cv::FONT_HERSHEY_SIMPLEX, 3.6, cv::Scalar(0, 255, 0), 9);
         text_y += 150;
     }
 

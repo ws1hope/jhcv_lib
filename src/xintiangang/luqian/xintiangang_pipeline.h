@@ -22,6 +22,7 @@ struct XintiangangTargetResult {
 // 单图 pipeline 结果
 struct XintiangangPipelineResult {
     std::vector<Detection> detections;
+    std::vector<cv::Mat> det_crops;        // 每个检测框在原图上的裁剪图
     std::vector<XintiangangTargetResult> targets;
     std::string all_results;       // 所有目标 OCR 结果按从左到右拼接
     cv::Mat annotated_image;       // 画框 + OCR 文字的结果图

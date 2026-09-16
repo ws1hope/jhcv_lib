@@ -159,6 +159,33 @@ private:
             cv::imwrite(save_path, src_img);
         }
 
+        // 保存第一个检测模型全部框裁剪图（crop_dir 为空则不保存）
+        if (!config_.crop_dir.empty() && !pr.det1_crops.empty()) {
+            if (verbose) {
+                for (int i = 0; i < (int)pr.det1_crops.size(); i++) {
+                    std::string crop_path = cv::format("det1_crop_%02d.jpg", i);
+                    cv::imwrite(crop_path, pr.det1_crops[i]);
+                }
+            } else {
+                time_t currtime = time(NULL);
+                tm* t = localtime(&currtime);
+                std::string cropFolder = cv::format("%s\\station_%02d\\%d%02d%02d",
+                    config_.crop_dir.c_str(), station_id,
+                    t->tm_year + 1900, t->tm_mon + 1, t->tm_mday);
+                FileHelper::ensureDirectoryExists(cropFolder);
+                for (int i = 0; i < (int)pr.det1_crops.size(); i++) {
+                    std::string crop_path = cv::format(
+                        "%s\\station_%02d\\%d%02d%02d\\%d%02d%02d%02d%02d%02d_det1_%02d.jpg",
+                        config_.crop_dir.c_str(), station_id,
+                        t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                        t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                        t->tm_hour, t->tm_min, t->tm_sec, i);
+                    cv::imwrite(crop_path, pr.det1_crops[i]);
+                    fout << "det1 crop saved: " << crop_path << std::endl;
+                }
+            }
+        }
+
         item["read_picture_flag"] = "OK";
         item["rec_state_flag"] = texts.empty() ? "NG" : "OK";
         item["rec_results"] = texts;

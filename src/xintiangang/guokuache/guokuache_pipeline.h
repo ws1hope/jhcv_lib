@@ -24,6 +24,7 @@ struct GuokuachePipelineResult {
     std::vector<Detection> det1_detections;   // 第一个检测模型全部输出
     int selected_index = -1;                  // 送入第二个模型的 det1 框下标（最左框）
     cv::Rect selected_roi;                    // 该框在原图上的 ROI
+    std::vector<cv::Mat> det1_crops;          // 第一个检测模型全部框在原图上的裁剪图
     std::vector<GuokuacheTargetResult> targets;  // det2 框按 Z 型排列 + OCR 结果
     cv::Mat annotated_image;                  // 画框 + OCR 文字的结果图
 };

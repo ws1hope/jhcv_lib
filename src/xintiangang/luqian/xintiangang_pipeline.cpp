@@ -73,6 +73,8 @@ XintiangangPipelineResult XintiangangPipeline::process(const cv::Mat& image, boo
         cv::Mat crop = image(roi).clone();
         if (crop.empty()) continue;
 
+        result.det_crops.push_back(crop);
+
         cv::Mat crop_bgr;
         if (crop.channels() == 1) {
             cv::cvtColor(crop, crop_bgr, cv::COLOR_GRAY2BGR);

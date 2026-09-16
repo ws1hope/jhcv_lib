@@ -201,6 +201,7 @@ JHDeepCore::XintiangangServerConfig FileHelper::loadXintiangangConfig(const std:
     if (node["output"]) {
         cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
         cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+        cfg.crop_dir = node["output"]["crop_dir"].as<std::string>(cfg.crop_dir);
     }
 
     if (node["models"]) {
@@ -275,6 +276,7 @@ JHDeepCore::GuokuacheServerConfig FileHelper::loadGuokuacheConfig(const std::str
     if (node["output"]) {
         cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
         cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+        cfg.crop_dir = node["output"]["crop_dir"].as<std::string>(cfg.crop_dir);
     }
 
     if (node["models"]) {

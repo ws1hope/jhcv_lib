@@ -83,6 +83,17 @@ GuokuachePipelineResult GuokuachePipeline::process(const cv::Mat& image, bool ve
     std::vector<Detection> dets1 = det1_result.detections;
     result.det1_detections = dets1;
 
+    // 第一个检测模型全部框在原图上的裁剪图（供保存）
+    for (const auto& d : dets1) {
+        cv::Rect d1_roi = InferHelper::safeROI(
+            d.bbox.x, d.bbox.y, d.bbox.width, d.bbox.height,
+            image.cols, image.rows);
+        if (d1_roi.area() <= 0) continue;
+        cv::Mat d1_crop = image(d1_roi).clone();
+        if (d1_crop.empty()) continue;
+        result.det1_crops.push_back(d1_crop);
+    }
+
     if (verbose) {
         std::cout << "[DEBUG] det1 detections: " << dets1.size() << std::endl;
         for (int i = 0; i < (int)dets1.size(); i++) {

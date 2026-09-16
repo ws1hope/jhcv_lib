@@ -104,6 +104,7 @@ struct XintiangangServerConfig {
     int port = 8086;
     std::string result_dir = "D:\\CharacterDetect\\result";
     std::string log_dir = "D:\\CharacterDetect\\log";
+    std::string crop_dir;        // 为空时不保存检测框裁剪图
     std::string det_model;       // 目标检测模型
     std::string ocr_model;       // OCR 识别模型
     std::string ocr_label;       // OCR 字典
@@ -137,6 +138,7 @@ struct GuokuacheServerConfig {
     int port = 8088;
     std::string result_dir = "D:\\CharacterDetect\\result";
     std::string log_dir = "D:\\CharacterDetect\\log";
+    std::string crop_dir;        // 为空时不保存 det1 框裁剪图
     std::string det1_model;      // 第一个目标检测模型（定位，取最左框）
     std::string det2_model;      // 第二个目标检测模型（检出框按 Z 型排序后逐框送 OCR）
     std::string ocr_model;       // OCR 识别模型

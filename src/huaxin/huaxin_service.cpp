@@ -115,7 +115,7 @@ private:
     //   state_flag  - 图像解析是否成功 OK/NG
     //   detail_state - 识别是否成功 OK/NG（解析失败时为 NG）
     //   result      - 铸坯端面识别结果，失败或无结果为 ""
-    //   picture_path - 结果图保存路径（输入图目录\results\station_<id>\<原文件名>）
+    //   picture_path - 结果图保存路径（输入图目录\results\station_<id>\<OK|NG>\<原文件名>）
     json buildResult(const std::string& picture_path,
                      const std::string& station_id,
                      int picture_id, bool verbose,
@@ -138,7 +138,15 @@ private:
         Pipeline::HuaxinPipelineResult pr = pipeline_->process(src_img, station_id, verbose);
         total_inference_ms += pr.inference_time_ms;
 
-        // 结果图保存路径：输入图所在目录\results\station_<工位>\原文件名；
+        if (!pr.all_results.empty()) {
+            item["detail_state"] = "OK";
+            item["result"] = pr.all_results;
+        } else {
+            item["detail_state"] = "NG";
+            item["result"] = "";
+        }
+
+        // 结果图保存路径：输入图所在目录\results\station_<工位>\<OK|NG>\原文件名；
         // 本地测试直接存当前目录
         std::string save_path;
         if (verbose) {
@@ -147,7 +155,8 @@ private:
             size_t pos = picture_path.find_last_of("\\/");
             std::string dir = (pos == std::string::npos) ? "." : picture_path.substr(0, pos);
             std::string name = (pos == std::string::npos) ? picture_path : picture_path.substr(pos + 1);
-            std::string folder = dir + "\\results\\station_" + station_id;
+            std::string folder = dir + "\\results\\station_" + station_id
+                                 + "\\" + item["detail_state"].get<std::string>();
             FileHelper::ensureDirectoryExists(folder);
             save_path = folder + "\\" + name;
         }
@@ -159,14 +168,6 @@ private:
         }
 
         item["state_flag"] = "OK";
-
-        if (!pr.all_results.empty()) {
-            item["detail_state"] = "OK";
-            item["result"] = pr.all_results;
-        } else {
-            item["detail_state"] = "NG";
-            item["result"] = "";
-        }
 
         item["picture_path"] = save_path;
 

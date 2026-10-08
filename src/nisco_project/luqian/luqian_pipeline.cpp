@@ -204,8 +204,38 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             return seg_res.detections[a].bbox.y < seg_res.detections[b].bbox.y;
         });
 
-        // 重排为"最宽 -> 最窄 -> 其他(原 y 顺序)"，再送入 OCR
-        if (seg_indices.size() > 1) {
+        // 三实例特判：中心 X 两两差均 < 100 时跳过重排，用宽度判方向。
+        // 方向 = 最宽框顶 Y 在最窄框顶 Y 之上 ? 0 : 180。
+        int direction_override = -1;   // -1=未触发, 0/180=已定方向
+        bool three_stack = false;
+        if (seg_indices.size() == 3) {
+            auto cx = [&](int idx) {
+                const auto& b = seg_res.detections[idx].bbox;
+                return static_cast<double>(b.x) + b.width / 2.0;
+            };
+            const int i0 = seg_indices[0], i1 = seg_indices[1], i2 = seg_indices[2];
+            if (std::abs(cx(i0) - cx(i1)) < 100.0 &&
+                std::abs(cx(i0) - cx(i2)) < 100.0 &&
+                std::abs(cx(i1) - cx(i2)) < 100.0) {
+                three_stack = true;
+                int widest = i0, narrowest = i0;
+                for (int k = 1; k < 3; ++k) {
+                    const int w = seg_res.detections[seg_indices[k]].bbox.width;
+                    if (w > seg_res.detections[widest].bbox.width)    widest    = seg_indices[k];
+                    if (w < seg_res.detections[narrowest].bbox.width) narrowest = seg_indices[k];
+                }
+                direction_override =
+                    (seg_res.detections[widest].bbox.y < seg_res.detections[narrowest].bbox.y) ? 0 : 180;
+                // 倒置时真实阅读顺序为图像自下而上：反转为 y 降序，
+                // 使后续裁剪收集、逐字翻转 OCR、拼接、炉号对齐均按阅读顺序进行
+                if (direction_override == 180) {
+                    std::reverse(seg_indices.begin(), seg_indices.end());
+                }
+            }
+        }
+
+        // 重排为"最宽 -> 最窄 -> 其他(原 y 顺序)"，再送入 OCR（三实例特判触发时跳过）
+        if (!three_stack && seg_indices.size() > 1) {
             int widest = 0, narrowest = 0;
             for (int i = 1; i < (int)seg_indices.size(); ++i) {
                 int wi = seg_res.detections[seg_indices[i]].bbox.width;
@@ -368,7 +398,13 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         }
 
         bool any_flipped;
-        if (use_geometric) {
+        if (direction_override >= 0) {
+            any_flipped = (direction_override == 180);
+            if (verbose) {
+                std::cout << "[DEBUG]   target[" << di << "] direction: "
+                     << direction_override << " (3-stack width rule)" << std::endl;
+            }
+        } else if (use_geometric) {
             any_flipped = geometricAnyFlipped();
             if (verbose) {
                 std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)

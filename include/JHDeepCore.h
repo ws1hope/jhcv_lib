@@ -301,7 +301,8 @@ class XintiangangService {
     std::string handleRequest(const std::string &req_body);
     int runLocalTest(const std::string &image_path,
                      const std::string &heat_number,
-                     int station_id);
+                     int station_id,
+                     const std::string &out_dir = "");
 
   private:
     std::shared_ptr<XintiangangServicePrivate> m_pHandle;

@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
 
@@ -61,7 +62,7 @@ public:
         std::vector<std::string> path_array = FileHelper::splitStringByCsharp(picture_path);
         std::string first_path = path_array.empty() ? picture_path : path_array[0];
 
-        json root = buildResult(first_path, station_id, false, fout);
+        json root = buildResult(first_path, station_id, false, fout, "");
 
         std::cout << "[RESULT] " << root.dump() << std::endl;
         fout.close();
@@ -71,13 +72,19 @@ public:
 
     int runLocalTest(const std::string& image_path,
                      const std::string& heat_number,
-                     int station_id)
+                     int station_id,
+                     const std::string& out_dir)
     {
+        // 本地测试结果输出目录：未指定时用当前目录下的 xintiangang_result/
+        std::string local_out_dir = out_dir.empty() ? "xintiangang_result" : out_dir;
+        FileHelper::ensureDirectoryExists(local_out_dir);
+
         std::cout << "=== Local Test Mode ===" << std::endl;
         std::cout << "  image:   " << image_path << std::endl;
         std::cout << "  heat:    " << heat_number << std::endl;
         std::cout << "  station: " << station_id << std::endl;
         std::cout << "  device:  " << config_.device << std::endl;
+        std::cout << "  out_dir: " << local_out_dir << std::endl;
         std::cout << std::endl;
 
         std::vector<std::string> path_array = FileHelper::splitStringByCsharp(image_path);
@@ -85,7 +92,7 @@ public:
 
         auto start = std::chrono::high_resolution_clock::now();
         std::ofstream fout;  // 本地测试不写日志
-        json root = buildResult(first_path, station_id, true, fout);
+        json root = buildResult(first_path, station_id, true, fout, local_out_dir);
         auto end = std::chrono::high_resolution_clock::now();
         auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
@@ -94,7 +101,8 @@ public:
         std::cout << root.dump(2) << std::endl;
         std::cout << "total time: " << total_ms << " ms" << std::endl;
 
-        return 0;
+        // 读取失败（图片不存在/不可解码）返回 1，便于批量测试汇总
+        return (root.value("read_picture_flag", "") == "NG") ? 1 : 0;
     }
 
 private:
@@ -104,7 +112,8 @@ private:
     //   解析成功无结果 -> read_picture_flag=OK, rec_state_flag=NG, all_results=""
     json buildResult(const std::string& picture_path,
                      int station_id, bool verbose,
-                     std::ofstream& fout)
+                     std::ofstream& fout,
+                     const std::string& out_dir)
     {
         json root;
         root["station_id"] = std::to_string(station_id);
@@ -124,7 +133,9 @@ private:
         // 结果图保存路径：本地测试用当前目录，服务端用 result_dir
         std::string save_path;
         if (verbose) {
-            save_path = "xintiangang_result.jpg";
+            std::string stem = std::filesystem::path(picture_path).stem().string();
+            if (stem.empty()) stem = "result";
+            save_path = out_dir + "/" + stem + "_result.jpg";
         } else {
             time_t currtime = time(NULL);
             tm* t = localtime(&currtime);
@@ -150,8 +161,11 @@ private:
         // 保存目标检测模型全部框裁剪图（crop_dir 为空则不保存）
         if (!config_.crop_dir.empty() && !pr.det_crops.empty()) {
             if (verbose) {
+                std::string stem = std::filesystem::path(picture_path).stem().string();
+                if (stem.empty()) stem = "result";
                 for (int i = 0; i < (int)pr.det_crops.size(); i++) {
-                    std::string crop_path = cv::format("det_crop_%02d.jpg", i);
+                    std::string crop_path = cv::format("%s/%s_det_%02d.jpg",
+                        out_dir.c_str(), stem.c_str(), i);
                     cv::imwrite(crop_path, pr.det_crops[i]);
                 }
             } else {
@@ -216,9 +230,10 @@ std::string XintiangangService::handleRequest(const std::string& req_body)
 
 int XintiangangService::runLocalTest(const std::string& image_path,
                                      const std::string& heat_number,
-                                     int station_id)
+                                     int station_id,
+                                     const std::string& out_dir)
 {
-    return m_pHandle->runLocalTest(image_path, heat_number, station_id);
+    return m_pHandle->runLocalTest(image_path, heat_number, station_id, out_dir);
 }
 
 } // namespace JHDeepCore

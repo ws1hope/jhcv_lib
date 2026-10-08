@@ -1,4 +1,7 @@
 #include <stdio.h>
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -19,16 +22,55 @@ static void printHelp(const char* progName)
     std::cout << "Server mode (default):" << std::endl;
     std::cout << "  " << progName << " -c config.yaml" << std::endl;
     std::cout << std::endl;
-    std::cout << "Local test mode:" << std::endl;
-    std::cout << "  " << progName << " --test -c config.yaml -i image.jpg -H heat -s station" << std::endl;
+    std::cout << "Local test mode (single image or whole folder):" << std::endl;
+    std::cout << "  " << progName << " --test -c config.yaml -i image.jpg  -H heat -s station" << std::endl;
+    std::cout << "  " << progName << " --test -c config.yaml -i image_dir -H heat -s station" << std::endl;
     std::cout << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  -c, --config   Path to config YAML file (default: config.yaml)" << std::endl;
-    std::cout << "  --test         Run in local test mode (single image inference)" << std::endl;
-    std::cout << "  -i, --image    Image path for local test" << std::endl;
+    std::cout << "  --test         Run in local test mode" << std::endl;
+    std::cout << "  -i, --image    Image file or directory for local test" << std::endl;
     std::cout << "  -H, --heat     Heat number for local test" << std::endl;
     std::cout << "  -s, --station  Station ID for local test" << std::endl;
+    std::cout << "  -o, --outdir   Result output directory (default: xintiangang_result)" << std::endl;
     std::cout << "  -h, --help     Show this help" << std::endl;
+}
+
+static bool isImageFile(const std::filesystem::path& path)
+{
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    static const char* kImageExts[] = {
+        ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"
+    };
+    for (const char* image_ext : kImageExts) {
+        if (ext == image_ext) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// -i 允许传单个文件或目录；目录时收集其中的图片并排序
+static std::vector<std::string> collectImagePaths(const std::string& input_path)
+{
+    std::vector<std::string> paths;
+    const std::filesystem::path input(input_path);
+
+    if (std::filesystem::is_directory(input)) {
+        for (const auto& entry : std::filesystem::directory_iterator(input)) {
+            if (entry.is_regular_file() && isImageFile(entry.path())) {
+                paths.push_back(entry.path().string());
+            }
+        }
+        std::sort(paths.begin(), paths.end());
+    } else if (std::filesystem::is_regular_file(input)) {
+        paths.push_back(input_path);
+    }
+
+    return paths;
 }
 
 int main(int argc, char* argv[])
@@ -38,6 +80,7 @@ int main(int argc, char* argv[])
     std::string test_image;
     std::string test_heat = "";
     int test_station = 0;
+    std::string test_outdir = "";
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -51,6 +94,8 @@ int main(int argc, char* argv[])
             test_heat = argv[++i];
         } else if ((arg == "-s" || arg == "--station") && i + 1 < argc) {
             test_station = std::stoi(argv[++i]);
+        } else if ((arg == "-o" || arg == "--outdir") && i + 1 < argc) {
+            test_outdir = argv[++i];
         } else if (arg == "-h" || arg == "--help") {
             printHelp(argv[0]);
             return 0;
@@ -58,7 +103,7 @@ int main(int argc, char* argv[])
     }
 
     if (test_mode && test_image.empty()) {
-        std::cerr << "[ERROR] --test mode requires -i <image_path>" << std::endl;
+        std::cerr << "[ERROR] --test mode requires -i <image_path_or_dir>" << std::endl;
         printHelp(argv[0]);
         return 1;
     }
@@ -86,7 +131,38 @@ int main(int argc, char* argv[])
     std::cout << "[INFO] Device: " << service.config().device << std::endl;
 
     if (test_mode) {
-        return service.runLocalTest(test_image, test_heat, test_station);
+        std::vector<std::string> images = collectImagePaths(test_image);
+        if (images.empty()) {
+            std::cerr << "[ERROR] no image found in: " << test_image << std::endl;
+            return 1;
+        }
+
+        std::cout << "[INFO] Local test: " << images.size()
+                  << " image(s) from " << test_image
+                  << ", out_dir="
+                  << (test_outdir.empty() ? "xintiangang_result" : test_outdir)
+                  << std::endl;
+
+        int ok_count = 0;
+        int failed_count = 0;
+        for (size_t i = 0; i < images.size(); i++) {
+            std::cout << "----------------------------------------" << std::endl;
+            std::cout << "[" << (i + 1) << "/" << images.size() << "] "
+                      << images[i] << std::endl;
+            int rc = service.runLocalTest(images[i], test_heat, test_station, test_outdir);
+            if (rc == 0) {
+                ok_count++;
+            } else {
+                failed_count++;
+            }
+        }
+
+        std::cout << "----------------------------------------" << std::endl;
+        std::cout << "=== Summary ===" << std::endl;
+        std::cout << "  total:  " << images.size() << std::endl;
+        std::cout << "  ok:     " << ok_count << std::endl;
+        std::cout << "  failed: " << failed_count << std::endl;
+        return failed_count == 0 ? 0 : 1;
     }
 
     httplib::Server server;

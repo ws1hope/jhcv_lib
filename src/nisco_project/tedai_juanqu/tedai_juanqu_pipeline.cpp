@@ -282,14 +282,25 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
                                              const ReelRoiParams *prev_params,
                                               ReelCameraOutput &out, ReelStepTiming &st)
 {
-    // camera 5 分类用干净图：绘制前先裁小 ROI（替代旧版整帧 src_clone，省一次全图拷贝）
+    // camera 5 分类用干净图：绘制前先裁小 ROI（ROI 取自 camera_liuzhi_roi.json
+    // 中 camera 5 的 outside_polygon 外接矩形，替代旧版整帧 src_clone 与写死坐标，
+    // 省一次全图拷贝）
     cv::Mat cam5_clean_crop;
     if (camera_id == 5) {
         auto t_crop0 = std::chrono::high_resolution_clock::now();
-        cv::Rect roi(cv::Point(720, 375), cv::Point(1210, 820));
-        cv::Rect image_bounds(0, 0, src.cols, src.rows);
-        cv::Rect safe_roi = roi & image_bounds;
-        cam5_clean_crop = src(safe_roi).clone();
+        if (params.outside_polygon.size() >= 3) {
+            std::vector<cv::Point> outside_pts;
+            outside_pts.reserve(params.outside_polygon.size());
+            for (const auto &p : params.outside_polygon) {
+                outside_pts.emplace_back(p.x, p.y);
+            }
+            cv::Rect roi = cv::boundingRect(outside_pts);
+            cv::Rect image_bounds(0, 0, src.cols, src.rows);
+            cv::Rect safe_roi = roi & image_bounds;
+            if (safe_roi.width > 0 && safe_roi.height > 0) {
+                cam5_clean_crop = src(safe_roi).clone();
+            }
+        }
         auto t_crop1 = std::chrono::high_resolution_clock::now();
         st.clone_ms +=
             std::chrono::duration<double, std::milli>(t_crop1 - t_crop0).count();
@@ -338,10 +349,10 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
                       cv::Scalar(255, 0, 255), 4);
     }
 
-    // camera 5：下卷 2 号工位分类（旧版在每个检测框循环内重复推理同一张裁剪图，
-    // 结果等价，这里每帧推理一次）
+    // camera 5：下卷 2 号工位分类（ROI 取自 outside_polygon 外接矩形；旧版在每个
+    // 检测框循环内重复推理同一张裁剪图，结果等价，这里每帧推理一次）
     int classify_result_id = -1;
-    if (camera_id == 5) {
+    if (camera_id == 5 && !cam5_clean_crop.empty()) {
         ReelClassifier *cls = classifier();
         if (cls && cls->valid()) {
             cv::Mat cropped = cam5_clean_crop;

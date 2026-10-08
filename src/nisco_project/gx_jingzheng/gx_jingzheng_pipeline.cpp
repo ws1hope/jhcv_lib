@@ -40,6 +40,24 @@ int classIdByName(const std::vector<std::string>& names, const std::string& targ
     return -1;
 }
 
+// 逐位相等计数：比较 text 与 heat 的前 n 位（实际比较 min(text.size, heat.size, n) 位）
+int matchPrefixCount(const std::string& text, const std::string& heat, int n)
+{
+    const int m = std::min({(int)text.size(), (int)heat.size(), n});
+    int c = 0;
+    for (int i = 0; i < m; i++) {
+        if (text[i] == heat[i]) c++;
+    }
+    return c;
+}
+
+// 第二段校验：text 前 3 位是否等于 heat 的后 3 位（如 text="69554", heat 后三位 "695"）
+bool matchHeatTail(const std::string& text, const std::string& heat)
+{
+    if (heat.size() < 3 || text.size() < 3) return false;
+    return text.compare(0, 3, heat, heat.size() - 3, 3) == 0;
+}
+
 } // namespace
 
 GxJingzhengPipeline::GxJingzhengPipeline(const GxJingzhengServerConfig& config)
@@ -263,6 +281,7 @@ int GxJingzhengPipeline::classifyDirection(const std::vector<cv::Mat>& char_imag
 
 bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
                                             const std::vector<GxJingzhengSegInstance>& zifu_instances,
+                                            const std::string& heat_number,
                                             GxJingzhengPipelineResult& result,
                                             bool verbose)
 {
@@ -295,6 +314,7 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         cv::Mat warped_after;        // 方向矫正后（实际送 OCR 的图）
         int dir_flag = 0;
         std::string text;
+        float conf = 0.f;            // 采纳朝向的 OCR 置信度
         float center_y = 0.f;        // 用于上→下排序
     };
 
@@ -361,66 +381,154 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         return false;
     }
 
-    // 逐片段：方向分类 → 矫正 → OCR；低置信度时反向再试取最优
-    bool any_flipped = false;
+    // 片段按 y 从小到大稳定排序（y 相同保持 seg 原顺序）
+    std::stable_sort(pieces.begin(), pieces.end(),
+        [](const Piece& a, const Piece& b) {
+            return a.center_y < b.center_y;
+        });
+
+    // 全局方向分类：所有片段一次性多数投票，整条统一 0/180
+    std::vector<cv::Mat> dir_imgs;
+    dir_imgs.reserve(pieces.size());
+    for (auto& p : pieces) dir_imgs.push_back(p.warped_before);
+    int cls_out = -1;
+    float cls_conf = 0.f;
+    int global_dir = classifyDirection(dir_imgs, &cls_out, &cls_conf);
+
+    // 方向为 180：整条倒置，读数顺序随之反转
+    if (global_dir == 180) {
+        std::reverse(pieces.begin(), pieces.end());
+    }
+
+    if (verbose) {
+        std::cout << "[DEBUG]   zifu global dir=" << global_dir
+                  << " (cls=" << cls_out << " conf=" << cls_conf << ")" << std::endl;
+    }
+
+    // 对单段按指定朝向(0/180)做方向矫正 + OCR，返回实际送 OCR 的图
+    auto ocrWithDir = [&](const cv::Mat& warped_before, int dir,
+                          std::string& text, float& conf) -> cv::Mat {
+        cv::Mat img;
+        if (dir == 180) {
+            cv::flip(warped_before, img, -1);
+        } else {
+            img = warped_before;
+        }
+        runOcr(img, text, conf);
+        return img;
+    };
+
+    // 第一遍 OCR：按全局方向分类结果整条统一矫正
     for (size_t i = 0; i < pieces.size(); i++) {
         auto& p = pieces[i];
-
-        int dir = classifyDirection({p.warped_before});
-
-        cv::Mat ocr_img;
-        if (dir == 180) {
-            cv::flip(p.warped_before, ocr_img, -1);
-        } else {
-            ocr_img = p.warped_before;
-        }
-
-        std::string text;
-        float conf = 0.f;
-        runOcr(ocr_img, text, conf);
-
-        // OCR 置信度 < 0.9：反向再试一次，取置信度更高者
-        constexpr float kOcrConfLow = 0.9f;
-        if (conf < kOcrConfLow) {
-            cv::Mat opposite;
-            cv::flip(ocr_img, opposite, -1);
-            std::string text2;
-            float conf2 = 0.f;
-            runOcr(opposite, text2, conf2);
-            if (conf2 > conf) {
-                text = text2;
-                conf = conf2;
-                ocr_img = opposite;
-                dir = (dir == 0) ? 180 : 0;
-            }
-        }
-
-        p.dir_flag = dir;
-        p.warped_after = ocr_img;
-        p.text = text;
-        if (dir == 180) any_flipped = true;
-
+        p.dir_flag = global_dir;
+        p.warped_after = ocrWithDir(p.warped_before, global_dir, p.text, p.conf);
         if (verbose) {
             std::cout << "[DEBUG]   zifu piece[" << i << "]"
                       << " text=\"" << p.text << "\""
                       << " flip=" << p.dir_flag
-                      << " ocr_conf=" << conf << std::endl;
+                      << " ocr_conf=" << p.conf << std::endl;
         }
     }
 
-    // 排序：优先 2/6 开头片段在前，同优先级内降序排列
-    std::sort(pieces.begin(), pieces.end(),
-        [](const Piece& a, const Piece& b) {
-            auto priority = [](const std::string& t) -> int {
-                if (t.empty()) return -1;
-                if (t[0] == '6') return 2;
-                if (t[0] == '2') return 1;
-                return 0;
-            };
-            int pa = priority(a.text), pb = priority(b.text);
-            if (pa != pb) return pa > pb;
-            return a.text > b.text;
-        });
+    // 炉号前 5 位逐位相等数最高的片段即第一段，并据此确定整条朝向：
+    // 若当前朝向最高匹配 < 3，则整条翻 180° 重识别后再比较，取匹配更高的朝向。
+    int final_dir = global_dir;
+    bool first_identified = false;
+    if (!heat_number.empty() && !pieces.empty()) {
+        auto bestPrefixOfTexts = [&](const std::vector<std::string>& texts,
+                                     int& best_idx, int& best_score) {
+            best_idx = -1;
+            best_score = 0;
+            for (int i = 0; i < (int)texts.size(); i++) {
+                int score = matchPrefixCount(texts[i], heat_number, 5);
+                if (score > best_score) {
+                    best_score = score;
+                    best_idx = i;
+                }
+            }
+        };
+
+        std::vector<std::string> cur_texts(pieces.size());
+        for (size_t i = 0; i < pieces.size(); i++) cur_texts[i] = pieces[i].text;
+
+        int best_idx = -1, best_score = 0;
+        bestPrefixOfTexts(cur_texts, best_idx, best_score);
+
+        if (best_score < 3) {
+            int opp_dir = (global_dir == 180) ? 0 : 180;
+            std::vector<std::string> opp_text(pieces.size());
+            std::vector<float> opp_conf(pieces.size());
+            std::vector<cv::Mat> opp_img(pieces.size());
+            for (size_t i = 0; i < pieces.size(); i++) {
+                opp_img[i] = ocrWithDir(pieces[i].warped_before, opp_dir,
+                                        opp_text[i], opp_conf[i]);
+            }
+            int opp_idx = -1, opp_score = 0;
+            bestPrefixOfTexts(opp_text, opp_idx, opp_score);
+
+            if (opp_score > best_score) {
+                final_dir = opp_dir;
+                best_idx = opp_idx;
+                best_score = opp_score;
+                for (size_t i = 0; i < pieces.size(); i++) {
+                    pieces[i].text = opp_text[i];
+                    pieces[i].conf = opp_conf[i];
+                    pieces[i].warped_after = opp_img[i];
+                    pieces[i].dir_flag = opp_dir;
+                }
+                if (verbose) {
+                    std::cout << "[DEBUG]   zifu heat flipped whole strip to dir="
+                              << final_dir << " (prefix_score=" << best_score << ")" << std::endl;
+                }
+            }
+        }
+
+        first_identified = (best_idx >= 0 && best_score >= 3);
+        if (best_idx > 0 && first_identified) {
+            std::rotate(pieces.begin(), pieces.begin() + best_idx,
+                        pieces.begin() + best_idx + 1);
+        }
+        if (verbose) {
+            std::cout << "[DEBUG]   zifu heat match best_idx=" << best_idx
+                      << " score=" << best_score
+                      << " final_dir=" << final_dir
+                      << " first_identified=" << (first_identified ? 1 : 0) << std::endl;
+        }
+    }
+
+    // 第二段：恰好 2 段、且已确定第一段时，校验另一段前 3 位是否等于炉号后 3 位；
+    // 不等则翻转再识别一次，仍不等则取置信度较高者作为第二段结果
+    if (pieces.size() == 2 && first_identified && heat_number.size() >= 3) {
+        auto& second = pieces[1];
+        if (!matchHeatTail(second.text, heat_number)) {
+            std::string orig_text = second.text;
+            float orig_conf = second.conf;
+            cv::Mat opposite;
+            cv::flip(second.warped_after, opposite, -1);
+            std::string text2;
+            float conf2 = 0.f;
+            runOcr(opposite, text2, conf2);
+
+            bool flipped_matched = matchHeatTail(text2, heat_number);
+            bool use_flipped = flipped_matched || (conf2 > orig_conf);
+            if (use_flipped) {
+                second.text = text2;
+                second.conf = conf2;
+                second.warped_after = opposite;
+                second.dir_flag = (second.dir_flag == 0) ? 180 : 0;
+            }
+            if (verbose) {
+                std::cout << "[DEBUG]   zifu second segment retry:"
+                          << " orig=\"" << orig_text << "\"(conf=" << orig_conf << ")"
+                          << " flipped=\"" << text2 << "\"(conf=" << conf2 << ")"
+                          << " flipped_matched=" << (flipped_matched ? 1 : 0)
+                          << " use_flipped=" << (use_flipped ? 1 : 0) << std::endl;
+            }
+        } else if (verbose) {
+            std::cout << "[DEBUG]   zifu second segment heat-tail matched" << std::endl;
+        }
+    }
 
     // 构建结果，多个片段之间用 '#' 分隔
     std::string concatenated;
@@ -439,7 +547,7 @@ bool GxJingzhengPipeline::handleZifuBranch(const cv::Mat& crop,
         concatenated += p.text;
     }
 
-    result.direction_flag = any_flipped ? 180 : 0;
+    result.direction_flag = (final_dir == 180) ? 180 : 0;
     result.ocr_text = concatenated;
     result.rotated_crop = cv::Mat();
     return !concatenated.empty();
@@ -687,7 +795,7 @@ GxJingzhengPipelineResult GxJingzhengPipeline::process(const cv::Mat& image,
                 zifu_insts.push_back(inst);
             }
         }
-        if (handleZifuBranch(crop, zifu_insts, result, verbose)) {
+        if (handleZifuBranch(crop, zifu_insts, heat_number, result, verbose)) {
             result.state_flag = "OK";
         }
     } else if (branch == config_.gangbiao_class_name) {

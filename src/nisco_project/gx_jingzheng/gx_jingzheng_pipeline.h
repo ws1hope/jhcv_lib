@@ -72,14 +72,16 @@ private:
     std::string decideBranch(const cv::Mat& crop,
                               std::vector<GxJingzhengSegInstance>& instances_out);
 
-    // zifu 分支：对每个 zifu 实例 mask 各自算最小外接矩 → 透视裁剪 → 方向分类 + OCR，
-    // 优先 2/6 开头片段在前，同优先级内降序排列拼接结果
+    // zifu 分支：对每个 zifu 实例 mask 各自算最小外接矩 → 透视裁剪 → 全局方向分类 + OCR，
+    // 片段按 y 升序排列；用炉号前 5 位（含 0/180 两朝向）确定第一段并修正整条朝向；
+    // 恰好 2 段时另一段用炉号后 3 位校验，不等再单独翻转重识别，仍不等取置信度较高者
     bool handleZifuBranch(const cv::Mat& crop,
                           const std::vector<GxJingzhengSegInstance>& zifu_instances,
+                          const std::string& heat_number,
                           GxJingzhengPipelineResult& result,
                           bool verbose);
 
-    // 方向分类（按字符片段多数投票）
+    // 全局方向分类（所有片段一次性多数投票），决定整条朝向与读数顺序
     // cls_out/conf_out: 输出多数票的原始类别(0/180)及平均置信度，供调试打印
     int classifyDirection(const std::vector<cv::Mat>& char_images,
                           int* cls_out = nullptr,

@@ -29,6 +29,32 @@ static cv::Mat letterboxToCanvas(const cv::Mat& img, int target_w, int target_h)
     return canvas;
 }
 
+// 归一为 3 通道 BGR，供结果图拼接（灰度/4通道/3通道通吃；空图返回空）
+static cv::Mat toBgrImage(const cv::Mat& img) {
+    if (img.empty()) return cv::Mat();
+    if (img.channels() == 1) {
+        cv::Mat bgr;
+        cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
+        return bgr;
+    }
+    if (img.channels() == 4) {
+        cv::Mat bgr;
+        cv::cvtColor(img, bgr, cv::COLOR_BGRA2BGR);
+        return bgr;
+    }
+    return img;
+}
+
+// 等比缩放到指定高度（宽按比例），空图返回空
+static cv::Mat scaleToHeight(const cv::Mat& img, int h) {
+    if (img.empty() || h <= 0) return cv::Mat();
+    if (img.rows == h) return img.clone();
+    int w = std::max(1, static_cast<int>(std::round(img.cols * static_cast<double>(h) / img.rows)));
+    cv::Mat out;
+    cv::resize(img, out, cv::Size(w, h), 0, 0, cv::INTER_LINEAR);
+    return out;
+}
+
 LuqianPipeline::LuqianPipeline(const LuqianServerConfig& config)
     : config_(config)
 {
@@ -400,12 +426,14 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         bool any_flipped;
         if (direction_override >= 0) {
             any_flipped = (direction_override == 180);
+            target_result.direction_source = "geometric (3-stack width)";
             if (verbose) {
                 std::cout << "[DEBUG]   target[" << di << "] direction: "
                      << direction_override << " (3-stack width rule)" << std::endl;
             }
         } else if (use_geometric) {
             any_flipped = geometricAnyFlipped();
+            target_result.direction_source = "geometric (width gap>=300)";
             if (verbose) {
                 std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
                      << " (geometric, width gap>=300)" << std::endl;
@@ -419,12 +447,15 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             int cls_dir = classifyDirection(cls_imgs, &cls_out, &cls_conf);
             if (cls_out >= 0) {
                 any_flipped = (cls_dir == 180);
+                target_result.direction_source =
+                    "model (classifier vote conf=" + cv::format("%.2f", cls_conf) + ")";
                 if (verbose) {
                     std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
                          << " (classifier vote, conf=" << cls_conf << ")" << std::endl;
                 }
             } else {
                 any_flipped = geometricAnyFlipped();
+                target_result.direction_source = "geometric fallback (model undecided)";
                 if (verbose) {
                     std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
                          << " (geometric fallback, classifier undecided)" << std::endl;
@@ -726,6 +757,110 @@ cv::Mat LuqianPipeline::createAnnotatedImage(
             cv::putText(annotated, t.ocr_text, cv::Point(20, text_y),
                         cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 255, 0), thick);   // 绿
         }
+    }
+
+    // 层5: 底部新增"字符片段方向矫正前/后"对照面板。
+    // 布局A：两行(上行=矫正前, 下行=矫正后)，每列一个字符；缩略图高度按字符数自适应。
+    if (focus_first && !targets[0].chars.empty()) {
+        const auto& chars = targets[0].chars;
+        const int N = static_cast<int>(chars.size());
+        const int gap = 8;         // 列间距/边距
+        const int pad = 4;         // 列内左右留白
+        const int label_h = 24;    // 每行缩略图下方标注高度
+        const int title_h = 32;    // 顶部标题行高
+        const int left_w = 90;     // 左侧 before/after 行标签列宽
+        const double label_fs = 0.5;
+
+        // 按参考高度估算各列宽比，用于按字符数自适应缩略图高度
+        std::vector<double> col_aspect(N, 0.0);
+        for (int i = 0; i < N; ++i) {
+            cv::Mat b = toBgrImage(chars[i].image_before_flip);
+            cv::Mat a = toBgrImage(chars[i].image_after_flip);
+            double ab = b.empty() ? 1.0 : static_cast<double>(b.cols) / b.rows;
+            double aa = a.empty() ? 1.0 : static_cast<double>(a.cols) / a.rows;
+            col_aspect[i] = std::max(ab, aa);
+        }
+        double aspect_sum = std::accumulate(col_aspect.begin(), col_aspect.end(), 0.0);
+        int target_w = std::max(annotated.cols, 640);
+        int avail = target_w - left_w - N * gap - N * 2 * pad;
+        int th = (aspect_sum > 0.0)
+                     ? static_cast<int>(std::floor(avail / aspect_sum))
+                     : 100;
+        th = std::max(24, std::min(160, th));   // 字符越多 -> 越小；越少 -> 越大
+
+        // 面板尺寸
+        std::vector<int> col_w(N, 0);
+        int content_w = 0;
+        for (int i = 0; i < N; ++i) {
+            col_w[i] = std::max(1, static_cast<int>(std::round(col_aspect[i] * th))) + 2 * pad;
+            content_w += col_w[i];
+        }
+        int panel_w = std::max(annotated.cols, left_w + content_w + (N + 1) * gap);
+        int row_h = th + label_h;
+        int panel_h = title_h + 2 * row_h + gap;
+
+        // 标题行：char segments ... 右侧追加方向判定依据（几何/模型）
+        const std::string title = "char segments (before / after direction flip)";
+        std::string basis = targets[0].direction_source.empty()
+                                ? "unknown" : targets[0].direction_source;
+        const std::string dir_info = "dir=" + std::to_string(targets[0].direction_flag)
+                                     + "  basis: " + basis;
+        int title_w = cv::getTextSize(title, cv::FONT_HERSHEY_SIMPLEX, 0.7, 2, nullptr).width;
+        int dir_w = cv::getTextSize(dir_info, cv::FONT_HERSHEY_SIMPLEX, 0.7, 2, nullptr).width;
+        panel_w = std::max(panel_w, 10 + title_w + 30 + dir_w + 10);
+
+        cv::Mat panel(panel_h, panel_w, CV_8UC3, cv::Scalar(20, 20, 20));
+
+        cv::putText(panel, title, cv::Point(10, title_h - 9),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        cv::putText(panel, dir_info, cv::Point(10 + title_w + 30, title_h - 9),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 165, 255), 2);
+
+        auto putThumb = [&](const cv::Mat& raw, int col_x, int col_wi, int row_y) {
+            cv::Mat bgr = toBgrImage(raw);
+            if (bgr.empty()) return;
+            cv::Mat s = scaleToHeight(bgr, th);
+            if (s.cols > col_wi - 2 * pad) {
+                cv::resize(s, s, cv::Size(col_wi - 2 * pad, th));
+            }
+            int cx = col_x + (col_wi - s.cols) / 2;
+            cx = std::max(col_x, std::min(cx, col_x + col_wi - s.cols));
+            cv::Rect dst(cx, row_y, s.cols, s.rows);
+            dst &= cv::Rect(0, 0, panel.cols, panel.rows);
+            if (dst.area() <= 0) return;
+            s(cv::Rect(0, 0, dst.width, dst.height)).copyTo(panel(dst));
+        };
+
+        const int row0_y = title_h;
+        const int row1_y = title_h + row_h;
+        // 行标签（Hershey 不支持中文，用英文）
+        cv::putText(panel, "before", cv::Point(10, row0_y + th / 2 + 6),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 200, 255), 1);
+        cv::putText(panel, "after", cv::Point(10, row1_y + th / 2 + 6),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 200, 255), 1);
+
+        int x = left_w + gap;
+        for (int i = 0; i < N; ++i) {
+            cv::rectangle(panel, cv::Rect(x, row0_y, col_w[i], th), cv::Scalar(80, 80, 80), 1);
+            cv::rectangle(panel, cv::Rect(x, row1_y, col_w[i], th), cv::Scalar(80, 80, 80), 1);
+            putThumb(chars[i].image_before_flip, x, col_w[i], row0_y);
+            putThumb(chars[i].image_after_flip, x, col_w[i], row1_y);
+            // 标注：序号 + OCR 文本 + 方向标志
+            std::string lab = "t" + std::to_string(i) + " \"" + chars[i].ocr_text
+                              + "\" d" + std::to_string(chars[i].direction_flag);
+            cv::putText(panel, lab, cv::Point(x, row1_y + th + label_h - 7),
+                        cv::FONT_HERSHEY_SIMPLEX, label_fs, cv::Scalar(0, 255, 0), 1);
+            x += col_w[i] + gap;
+        }
+
+        // 拼到结果图底部（宽度取二者较大者，避免超出）
+        cv::Mat annotated_bgr = toBgrImage(annotated);
+        int out_w = std::max(annotated_bgr.cols, panel_w);
+        int out_h = annotated_bgr.rows + panel_h;
+        cv::Mat out(out_h, out_w, CV_8UC3, cv::Scalar(0, 0, 0));
+        annotated_bgr.copyTo(out(cv::Rect(0, 0, annotated_bgr.cols, annotated_bgr.rows)));
+        panel.copyTo(out(cv::Rect(0, annotated_bgr.rows, panel_w, panel_h)));
+        annotated = out;
     }
 
     return annotated;

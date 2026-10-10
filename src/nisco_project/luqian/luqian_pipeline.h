@@ -27,6 +27,7 @@ struct LuqianTargetResult {
     std::string class_name;
     float confidence;
     int direction_flag = 0;   // 0 或 180
+    std::string direction_source;   // 方向判定依据（几何/模型），供结果图可视化
     cv::Mat target_image;     // 目标裁剪图（用于结果图可视化缩略图）
     std::vector<LuqianCharInfo> chars;
     std::string ocr_text;

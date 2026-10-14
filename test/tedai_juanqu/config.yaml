@@ -14,6 +14,9 @@ inference:
   liuzhi_roi_file: models/tedai_juanqu/camera_liuzhi_roi.json
   # camera 5 下卷 2 号工位分类模型
   classify_model: models/tedai_juanqu/out2_classify.onnx
+  # camera 5 工位分类模型开关（默认 false）：置 true 时需同时配置 classify_model，
+  # 开启后 cam5 输送线外收录额外要求分类结果为 2
+  enable_classify: false
 
 # 每相机一个专属检测模型（与旧服务 model_path_panjuan_count_2 按下标对应）
 # 本地单模型冒烟测试：6 个相机统一用 det.onnx（正式部署时改回各自专属模型）

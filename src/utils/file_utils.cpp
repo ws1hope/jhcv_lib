@@ -402,6 +402,7 @@ JHDeepCore::TedaiJuanquServerConfig FileHelper::loadTedaiJuanquConfig(const std:
         cfg.device = node["inference"]["device"].as<std::string>("cuda");
         cfg.liuzhi_roi_file = node["inference"]["liuzhi_roi_file"].as<std::string>(cfg.liuzhi_roi_file);
         cfg.classify_model = node["inference"]["classify_model"].as<std::string>("");
+        cfg.enable_classify = node["inference"]["enable_classify"].as<bool>(false);
     }
 
     if (node["cameras"] && node["cameras"].IsSequence()) {

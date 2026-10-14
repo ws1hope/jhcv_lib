@@ -210,6 +210,9 @@ struct TedaiJuanquServerConfig {
     std::string log_dir = "E:\\JuanquGenzong\\log";
     std::string liuzhi_roi_file = "camera_liuzhi_roi.json";  // 各相机三区域多边形配置
     std::string classify_model;  // camera 5 下卷工位分类模型（out2_classify.onnx）
+    // camera 5 工位分类模型开关（默认 false）。true 时需同时配置 classify_model，
+    // 否则该开关无效并回退为关闭行为（see TedaiJuanquPipeline）
+    bool enable_classify = false;
     std::string device = "cuda";
     std::vector<TedaiJuanquCameraConfig> cameras;
 };

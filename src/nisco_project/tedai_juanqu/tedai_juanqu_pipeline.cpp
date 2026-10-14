@@ -27,6 +27,14 @@ TedaiJuanquPipeline::TedaiJuanquPipeline(const TedaiJuanquServerConfig &config)
         std::cerr << "[ERROR] tedai_juanqu: failed to load liuzhi roi file: "
                   << config_.liuzhi_roi_file << std::endl;
     }
+
+    // camera 5 分类开关：开启但未配模型时无效，回退为关闭行为
+    classify_enabled_ = config_.enable_classify && !config_.classify_model.empty();
+    if (config_.enable_classify && config_.classify_model.empty()) {
+        std::cerr << "[WARN] tedai_juanqu: enable_classify=true but classify_model "
+                     "is empty, classification disabled"
+                  << std::endl;
+    }
 }
 
 bool TedaiJuanquPipeline::loadLiuzhiRois()
@@ -138,6 +146,9 @@ ReelClassifier *TedaiJuanquPipeline::classifier()
     if (classifier_loaded_) return classifier_.get();
     classifier_loaded_ = true;
 
+    if (!classify_enabled_) {
+        return nullptr;
+    }
     if (config_.classify_model.empty()) {
         std::cerr << "[ERROR] tedai_juanqu: classify_model not configured" << std::endl;
         return nullptr;
@@ -173,7 +184,7 @@ bool TedaiJuanquPipeline::warmup()
         }
     }
 
-    if (!config_.classify_model.empty()) {
+    if (classify_enabled_) {
         ReelClassifier *cls = classifier();
         if (cls == nullptr) {
             all_ok = false;
@@ -284,9 +295,9 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
 {
     // camera 5 分类用干净图：绘制前先裁小 ROI（ROI 取自 camera_liuzhi_roi.json
     // 中 camera 5 的 outside_polygon 外接矩形，替代旧版整帧 src_clone 与写死坐标，
-    // 省一次全图拷贝）
+    // 省一次全图拷贝）。仅在分类开关开启时才裁剪。
     cv::Mat cam5_clean_crop;
-    if (camera_id == 5) {
+    if (camera_id == 5 && classify_enabled_) {
         auto t_crop0 = std::chrono::high_resolution_clock::now();
         if (params.outside_polygon.size() >= 3) {
             std::vector<cv::Point> outside_pts;
@@ -350,9 +361,10 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     }
 
     // camera 5：下卷 2 号工位分类（ROI 取自 outside_polygon 外接矩形；旧版在每个
-    // 检测框循环内重复推理同一张裁剪图，结果等价，这里每帧推理一次）
+    // 检测框循环内重复推理同一张裁剪图，结果等价，这里每帧推理一次）。
+    // 仅当 config.enable_classify 开启且分类模型可用时执行。
     int classify_result_id = -1;
-    if (camera_id == 5 && !cam5_clean_crop.empty()) {
+    if (camera_id == 5 && classify_enabled_ && !cam5_clean_crop.empty()) {
         ReelClassifier *cls = classifier();
         if (cls && cls->valid()) {
             cv::Mat cropped = cam5_clean_crop;
@@ -395,9 +407,12 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
                     outside_rects.push_back(box);
                 }
             } else if (camera_id == 5) {
-                // 针对误检：正常盘卷 + 分类结果为 2 + 面积 > 50000
-                if (obj.classid == 0 && classify_result_id == 2 &&
-                    obj.rect.area() > 50000) {
+                // 针对误检：正常盘卷 + 面积 > 50000；分类开关开启时额外要求分类结果为 2
+                bool keep = (obj.classid == 0 && obj.rect.area() > 50000);
+                if (classify_enabled_) {
+                    keep = keep && (classify_result_id == 2);
+                }
+                if (keep) {
                     outside_rects.push_back(box);
                 }
             } else {

@@ -31,6 +31,7 @@ struct BilletResult {
     std::vector<BilletCharInfo> chars;
     std::string ocr_text;
     float ocr_confidence = 0.f;  // 该坯料各已识别字符 OCR 置信度的最小值
+    bool is_duplicate = false;   // ocr_text 与同图前面某坯料完全相同时标记，发送/展示时跳过
 };
 
 struct ZbhcPipelineResult {

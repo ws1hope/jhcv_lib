@@ -16,13 +16,13 @@ using json = nlohmann::json;
 
 namespace JHDeepCore {
 
-// 单图置信度 = 所有结果(坯料, ocr_text 非空)置信度的最小值；无结果返回 0
+// 单图置信度 = 所有结果(坯料, ocr_text 非空且非重复)置信度的最小值；无结果返回 0
 static float computeImageConfidence(const Pipeline::ZbhcPipelineResult& r)
 {
     float img_min = 1.0f;
     bool any = false;
     for (auto& billet : r.billets) {
-        if (billet.ocr_text.empty()) continue;
+        if (billet.ocr_text.empty() || billet.is_duplicate) continue;
         img_min = std::min(img_min, billet.ocr_confidence);
         any = true;
     }
@@ -131,7 +131,7 @@ public:
 
             json billets_ocr = json::array();
             for (auto& billet : pipeline_result.billets) {
-                if (!billet.ocr_text.empty()) {
+                if (!billet.ocr_text.empty() && !billet.is_duplicate) {
                     billets_ocr.push_back(billet.ocr_text);
                 }
             }
@@ -199,7 +199,7 @@ public:
 
             json billets_ocr = json::array();
             for (auto& billet : pipeline_result.billets) {
-                if (!billet.ocr_text.empty()) {
+                if (!billet.ocr_text.empty() && !billet.is_duplicate) {
                     billets_ocr.push_back(billet.ocr_text);
                 }
             }

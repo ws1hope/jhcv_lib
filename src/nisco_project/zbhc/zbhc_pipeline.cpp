@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <numeric>
+#include <unordered_set>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -544,6 +545,24 @@ const int pad_x = 30, pad_y = 5;
         }
     }
 
+    // ===== 标记完全重复的坯料结果 =====
+    // 同一张图内，ocr_text 非空且与前面某坯料完全相同时，标记为重复（保留首次出现），
+    // 供 service 发送与结果图展示时跳过。
+    {
+        std::unordered_set<std::string> seen;
+        int dup_count = 0;
+        for (auto& b : result.billets) {
+            if (b.ocr_text.empty()) continue;
+            if (!seen.insert(b.ocr_text).second) {
+                b.is_duplicate = true;
+                dup_count++;
+            }
+        }
+        if (verbose && dup_count > 0) {
+            std::cout << "[DEBUG] duplicate billet results removed: " << dup_count << std::endl;
+        }
+    }
+
     auto infer_end = std::chrono::high_resolution_clock::now();
     auto infer_ms = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start).count();
     if (verbose) {
@@ -601,9 +620,10 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
         }
     }
 
-    // 层4: 左上角 OCR 结果文本 (红色)
+    // 层4: 左上角 OCR 结果文本 (红色)。空结果与完全重复的结果不展示
     int text_y = 120;
     for (int bi = 0; bi < (int)billets.size(); bi++) {
+        if (billets[bi].ocr_text.empty() || billets[bi].is_duplicate) continue;
         if (text_y + 20 > annotated.rows) break;
         std::string text = "billet" + std::to_string(bi + 1) + ": " + billets[bi].ocr_text;
         cv::putText(annotated, text, cv::Point(20, text_y),
@@ -716,17 +736,25 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
         cards.push_back(std::move(c));
     }
 
+    // 结果为空或完全重复的坯料，其卡片不展示（cards 与 billets 一一对应）
+    auto isHidden = [&](int bi) {
+        return billets[bi].ocr_text.empty() || billets[bi].is_duplicate;
+    };
+
     // 无有效卡片时不扩展画布
     bool any_content = false;
-    for (auto& c : cards) if (c.card_w > 0) { any_content = true; break; }
+    for (int bi = 0; bi < (int)cards.size(); bi++) {
+        if (cards[bi].card_w > 0 && !isHidden(bi)) { any_content = true; break; }
+    }
     if (!any_content) {
         return annotated;
     }
 
     // 第一遍：流式排版（卡片间横向排列、放不下换行），只算总高度
     int cur_x = margin, cur_y = 0, row_max_h = 0, total_h = 0;
-    for (auto& c : cards) {
-        if (c.card_w <= 0) continue;
+    for (int bi = 0; bi < (int)cards.size(); bi++) {
+        auto& c = cards[bi];
+        if (c.card_w <= 0 || isHidden(bi)) continue;
         if (cur_x + c.card_w > annotated.cols - margin && cur_x > margin) {
             cur_y += row_max_h + section_gap;
             cur_x = margin;
@@ -759,7 +787,7 @@ cv::Mat ZbhcPipeline::createAnnotatedImage(
     row_max_h = 0;
     for (int bi = 0; bi < (int)cards.size(); bi++) {
         auto& c = cards[bi];
-        if (c.card_w <= 0) continue;
+        if (c.card_w <= 0 || isHidden(bi)) continue;
         std::string tag = "billet" + std::to_string(bi + 1);
 
         // 放不下则换行

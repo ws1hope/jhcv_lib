@@ -109,6 +109,12 @@ set(JIUYANG_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/jiuyang/jiuyang_pipeline.cpp
 )
 
+# jiuyang/feigangcao 模块 - 定位+分类识别服务
+set(FEIGANGCAO_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/jiuyang/feigangcao/feigangcao_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/jiuyang/feigangcao/feigangcao_service.cpp
+)
+
 # xintiangang 模块 - luqian(原 xintiangang) 目标检测+OCR 识别服务
 set(XINTIANGANG_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/xintiangang/luqian/xintiangang_pipeline.cpp
@@ -171,6 +177,7 @@ set(ALL_SOURCES
     ${AI_PLATFORM_MAIN_SOURCES}
     ${NISCO_PROJECT_SOURCES}
     ${JIUYANG_SOURCES}
+    ${FEIGANGCAO_SOURCES}
     ${XINTIANGANG_SOURCES}
     ${GUOKUACHE_SOURCES}
     ${HUAXIN_SOURCES}
@@ -206,6 +213,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/tedai_juanqu
     ${CMAKE_CURRENT_SOURCE_DIR}/nisco_project/section_angle
     ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang
+    ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/feigangcao
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/luqian
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/guokuache
@@ -246,6 +254,7 @@ if(MSVC)
         ${AI_PLATFORM_MAIN_SOURCES}
         ${NISCO_PROJECT_SOURCES}
         ${JIUYANG_SOURCES}
+        ${FEIGANGCAO_SOURCES}
         ${XINTIANGANG_SOURCES}
         ${GUOKUACHE_SOURCES}
         ${HUAXIN_SOURCES}

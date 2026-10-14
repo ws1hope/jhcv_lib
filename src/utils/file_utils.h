@@ -132,6 +132,20 @@ struct HuaxinServerConfig {
     std::vector<HuaxinValidRoi> valid_rois;
 };
 
+// feigangcao 配置：定位模型（取置信度最高的框）+ 分类模型
+struct FeigangcaoServerConfig {
+    std::string host = "127.0.0.1";
+    int port = 7012;
+    std::string url_path = "/feigangrec";  // HTTP POST 端点
+    std::string log_dir = "D:\\FeigangcaoLog";
+    std::string det_crop_dir;    // 定位框裁剪图保存目录（为空则存到输入图目录 results 下）
+    std::string cls_crop_dir;    // 分类图保存目录，按类别建子文件夹（为空则存到输入图目录 results 下）
+    std::string det_model;       // 定位模型（目标检测）
+    std::string cls_model;       // 分类模型
+    std::string cls_label;       // 分类标签文件（可空）
+    std::string device = "cuda";
+};
+
 struct GuokuacheServerConfig {
     std::string service_name = "guokuache";
     std::string host = "0.0.0.0";
@@ -254,6 +268,8 @@ public:
     static JHDeepCore::XintiangangServerConfig loadXintiangangConfig(const std::string& config_path);
 
     static JHDeepCore::HuaxinServerConfig loadHuaxinConfig(const std::string& config_path);
+
+    static JHDeepCore::FeigangcaoServerConfig loadFeigangcaoConfig(const std::string& config_path);
 
     static JHDeepCore::GuokuacheServerConfig loadGuokuacheConfig(const std::string& config_path);
 

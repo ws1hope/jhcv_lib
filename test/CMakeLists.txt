@@ -63,6 +63,9 @@ add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
 add_executable(jiuyang ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/main.cpp)
 add_executable(jiuyang_bend_test ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/bend_detector_test.cpp)
 
+# ========== 废钢槽 定位+分类识别服务 ==========
+add_executable(feigangcao ${CMAKE_CURRENT_SOURCE_DIR}/feigangcao/main.cpp)
+
 # ========== 统一设置 ==========
 set(TEST_TARGETS
     yolo_inference
@@ -96,6 +99,7 @@ set(TEST_TARGETS
     homography_test
     jiuyang
     jiuyang_bend_test
+    feigangcao
 )
 
 foreach(TARGET ${TEST_TARGETS})
@@ -210,6 +214,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/jiuyang/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== 废钢槽 定位+分类识别服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/feigangcao/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

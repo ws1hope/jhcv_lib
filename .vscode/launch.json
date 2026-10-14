@@ -1405,6 +1405,48 @@
             "preLaunchTask": "mac build all"
         },
         {
+            // 废钢槽 定位+分类识别 HTTP 服务（POST /feigangrec，端口 7012）
+            // 模型放 models/feigangcao/（config.yaml 相对仓库根目录）
+            "name": "feigangcao - HTTP server",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/feigangcao.exe",
+            "args": [
+                "-c", "test/feigangcao/config.yaml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            // 废钢槽 定位+分类本地测试：单图推理（-s 工位号）
+            "name": "feigangcao - local test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/feigangcao.exe",
+            "args": [
+                "--test",
+                "-c", "test/feigangcao/config.yaml",
+                "-i", "images\\jiuyang\\baocao\\20260921190631643_0.jpg",
+                "-s", "0"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
             "name": "biaoding calibration tool",
             "type": "debugpy",
             "request": "launch",

@@ -262,6 +262,36 @@ JHDeepCore::HuaxinServerConfig FileHelper::loadHuaxinConfig(const std::string& c
     return cfg;
 }
 
+JHDeepCore::FeigangcaoServerConfig FileHelper::loadFeigangcaoConfig(const std::string& config_path)
+{
+    JHDeepCore::FeigangcaoServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+        cfg.url_path = node["server"]["url_path"].as<std::string>(cfg.url_path);
+    }
+
+    if (node["output"]) {
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+        cfg.det_crop_dir = node["output"]["det_crop_dir"].as<std::string>(cfg.det_crop_dir);
+        cfg.cls_crop_dir = node["output"]["cls_crop_dir"].as<std::string>(cfg.cls_crop_dir);
+    }
+
+    if (node["models"]) {
+        cfg.det_model = node["models"]["det_model"].as<std::string>("");
+        cfg.cls_model = node["models"]["cls_model"].as<std::string>("");
+        cfg.cls_label = node["models"]["cls_label"].as<std::string>("");
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    return cfg;
+}
+
 JHDeepCore::GuokuacheServerConfig FileHelper::loadGuokuacheConfig(const std::string& config_path)
 {
     JHDeepCore::GuokuacheServerConfig cfg;

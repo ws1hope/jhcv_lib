@@ -260,22 +260,28 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             }
         }
 
-        // 重排为"最宽 -> 最窄 -> 其他(原 y 顺序)"，再送入 OCR（三实例特判触发时跳过）
+        // 分组按长边 max(宽,高) 衡量"最长"：横排组取宽、竖排(竖长条)组取高，
+        // 使"字符越多的分组越靠前"与分组朝向无关地成立。
+        // 重排为"最长 -> 最短 -> 其他(原 y 顺序)"，再送入 OCR（三实例特判触发时跳过）
         if (!three_stack && seg_indices.size() > 1) {
-            int widest = 0, narrowest = 0;
+            auto long_edge = [&](int idx) {
+                const auto& b = seg_res.detections[idx].bbox;
+                return std::max(b.width, b.height);
+            };
+            int longest = 0, shortest = 0;
             for (int i = 1; i < (int)seg_indices.size(); ++i) {
-                int wi = seg_res.detections[seg_indices[i]].bbox.width;
-                int ww = seg_res.detections[seg_indices[widest]].bbox.width;
-                int wn = seg_res.detections[seg_indices[narrowest]].bbox.width;
-                if (wi > ww) widest = i;
-                if (wi < wn) narrowest = i;
+                int li = long_edge(seg_indices[i]);
+                int ll = long_edge(seg_indices[longest]);
+                int ls = long_edge(seg_indices[shortest]);
+                if (li > ll) longest = i;
+                if (li < ls) shortest = i;
             }
             std::vector<int> reordered;
-            reordered.push_back(seg_indices[widest]);
-            if (narrowest != widest)
-                reordered.push_back(seg_indices[narrowest]);
+            reordered.push_back(seg_indices[longest]);
+            if (shortest != longest)
+                reordered.push_back(seg_indices[shortest]);
             for (int i = 0; i < (int)seg_indices.size(); ++i) {
-                if (i != widest && i != narrowest)
+                if (i != longest && i != shortest)
                     reordered.push_back(seg_indices[i]);
             }
             seg_indices = std::move(reordered);
@@ -505,8 +511,8 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
 
         target_result.direction_flag = target_dir;
 
-        // 片段顺序已由上方"最宽 -> 最窄 -> 其他"重排确定，且该顺序与片段在图像中的
-        // 上下位置无关（正/倒置结果一致），故 any_flipped 时不再反向 chars；否则会把最宽
+        // 片段顺序已由上方"最长 -> 最短 -> 其他"重排确定，且该顺序与片段在图像中的
+        // 上下位置无关（正/倒置结果一致），故 any_flipped 时不再反向 chars；否则会把最长
         // 片段翻到末尾，破坏送入 OCR 的读取顺序。
 
         // OCR 后按内容对齐炉号开头：把与输入炉号逐字符匹配最多（无炉号则取首两位

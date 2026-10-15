@@ -1,5 +1,6 @@
 #include "JHDeepCore.h"
 #include "tedai_juanqu_pipeline.h"
+#include "reel_debug_logger.h"
 #include "reel_types.h"
 #include "file_utils.h"
 #include "json.hpp"
@@ -131,7 +132,9 @@ class TedaiJuanquServicePrivate {
   public:
     explicit TedaiJuanquServicePrivate(const std::string &config_path)
         : config_(FileHelper::loadTedaiJuanquConfig(config_path)),
-          pipeline_(std::make_unique<Pipeline::TedaiJuanquPipeline>(config_))
+          pipeline_(std::make_unique<Pipeline::TedaiJuanquPipeline>(config_)),
+          debug_logger_(std::make_unique<Pipeline::ReelDebugLogger>(
+              config_.debug_log_enable, config_.log_dir))
     {
     }
 
@@ -238,6 +241,17 @@ class TedaiJuanquServicePrivate {
             appendCameraResult(root["all_results"], cam);
         }
 
+        // 分阶段调试日志（JSONL，默认关闭）：每相机每请求一行，用于跨帧归因
+        if (debug_logger_->enabled()) {
+            uint64_t req_index = ++debug_req_index_;
+            const auto &diags = pipeline_->lastDiagnostics();
+            for (size_t i = 0; i < results.size(); ++i) {
+                if (i >= diags.size()) break;
+                debug_logger_->logCamera(station_id, req_index,
+                                         results[i].read_picture_flag, diags[i]);
+            }
+        }
+
         fout << "detect finished, cameras=" << results.size() << std::endl;
         return log_and_dump();
     }
@@ -258,6 +272,8 @@ class TedaiJuanquServicePrivate {
 
     TedaiJuanquServerConfig config_;
     std::unique_ptr<Pipeline::TedaiJuanquPipeline> pipeline_;
+    std::unique_ptr<Pipeline::ReelDebugLogger> debug_logger_;
+    uint64_t debug_req_index_ = 0;
     std::mutex mtx_;
 };
 

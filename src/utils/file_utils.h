@@ -223,6 +223,10 @@ struct TedaiJuanquServerConfig {
     // camera 5 工位分类模型开关（默认 false）。true 时需同时配置 classify_model，
     // 否则该开关无效并回退为关闭行为（see TedaiJuanquPipeline）
     bool enable_classify = false;
+    // 调试日志开关（默认 false）：开启后除现有 algorithm.txt 外，额外写一份
+    // 分阶段 JSONL（每相机每请求一行），用于跨帧归因「目标丢失」。关闭时
+    // 行为与输出与现状完全一致。
+    bool debug_log_enable = false;
     std::string device = "cuda";
     std::vector<TedaiJuanquCameraConfig> cameras;
 };

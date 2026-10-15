@@ -17,6 +17,9 @@ inference:
   # camera 5 工位分类模型开关（默认 false）：置 true 时需同时配置 classify_model，
   # 开启后 cam5 输送线外收录额外要求分类结果为 2
   enable_classify: false
+  # 分阶段调试日志开关（默认 false）：置 true 时在 log_dir 下额外写
+  # tedai_debug_YYYYMMDD.jsonl（每相机每请求一行），用于跨帧归因目标丢失。
+  debug_log_enable: false
 
 # 每相机一个专属检测模型（与旧服务 model_path_panjuan_count_2 按下标对应）
 # 本地单模型冒烟测试：6 个相机统一用 det.onnx（正式部署时改回各自专属模型）

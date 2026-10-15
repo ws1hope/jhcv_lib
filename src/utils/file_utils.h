@@ -132,6 +132,12 @@ struct HuaxinServerConfig {
     std::vector<HuaxinValidRoi> valid_rois;
 };
 
+// 单个工位的有效检测范围：station_id -> N 点多边形顶点（图像坐标）
+struct FeigangcaoValidRoi {
+    std::string station_id;
+    std::vector<std::array<int, 2>> points;  // >=3 点才启用
+};
+
 // feigangcao 配置：定位模型（取置信度最高的框）+ 分类模型
 struct FeigangcaoServerConfig {
     std::string host = "127.0.0.1";
@@ -144,6 +150,10 @@ struct FeigangcaoServerConfig {
     std::string cls_model;       // 分类模型
     std::string cls_label;       // 分类标签文件（可空）
     std::string device = "cuda";
+    // 有效检测范围（按工位区分，station_id 匹配请求里的 station_id）：
+    // 取最高置信度框后，其中心点在对应多边形内才送分类；
+    // 不配置本项或 station_id 无匹配则不做范围过滤（全局检测）。
+    std::vector<FeigangcaoValidRoi> valid_rois;
 };
 
 struct GuokuacheServerConfig {

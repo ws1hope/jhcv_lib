@@ -29,6 +29,17 @@ FeigangcaoPipelineResult FeigangcaoPipeline::process(const cv::Mat& image,
 {
     FeigangcaoPipelineResult result;
 
+    // 按 station_id 选定当前工位的有效检测范围多边形（无匹配则空，表示不过滤）
+    active_roi_poly_.clear();
+    for (const auto& vr : config_.valid_rois) {
+        if (vr.station_id == station_id) {
+            for (const auto& p : vr.points) {
+                active_roi_poly_.push_back(cv::Point(p[0], p[1]));
+            }
+            break;
+        }
+    }
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // ---- 定位模型 ----
@@ -87,6 +98,26 @@ FeigangcaoPipelineResult FeigangcaoPipeline::process(const cv::Mat& image,
                   << "," << roi.width << "," << roi.height << ")" << std::endl;
     }
 
+    // ---- 有效检测范围（当前工位 valid_roi 多边形）检查 ----
+    // 最高置信度框的中心点在多边形内才送入分类
+    if ((int)active_roi_poly_.size() >= 3) {
+        cv::Point center(roi.x + roi.width / 2, roi.y + roi.height / 2);
+        bool center_in_roi = cv::pointPolygonTest(active_roi_poly_, center, false) >= 0;
+
+        if (verbose) {
+            std::cout << "[DEBUG] valid_roi center=(" << center.x << "," << center.y
+                      << ") in_roi=" << (center_in_roi ? "true" : "false") << std::endl;
+        }
+
+        if (!center_in_roi) {
+            result.out_of_roi = true;
+            auto t1 = std::chrono::high_resolution_clock::now();
+            result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+            result.annotated_image = createAnnotatedImage(image, result);
+            return result;
+        }
+    }
+
     // ---- 分类模型：定位框裁剪送检 ----
     cv::Mat crop = image(roi).clone();
     if (crop.channels() == 1) {
@@ -122,6 +153,17 @@ cv::Mat FeigangcaoPipeline::createAnnotatedImage(
     const FeigangcaoPipelineResult& result)
 {
     cv::Mat annotated = src_img.clone();
+
+    // 有效检测范围多边形：蓝色线绘制
+    if ((int)active_roi_poly_.size() >= 3) {
+        cv::polylines(annotated, active_roi_poly_, true, cv::Scalar(255, 0, 0), 4);
+    }
+
+    // 因最高置信度框中心点不在有效检测范围内而跳过分类：图上标注
+    if (result.out_of_roi) {
+        cv::putText(annotated, "OUT OF ROI", cv::Point(10, 60),
+                    cv::FONT_HERSHEY_SIMPLEX, 2.0, cv::Scalar(255, 0, 0), 5);
+    }
 
     // 定位框：绿色，左上角写置信度
     if (result.detected) {

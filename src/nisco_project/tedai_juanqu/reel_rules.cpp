@@ -38,9 +38,15 @@ void removeChongfuPanjuan(const std::vector<ReelRect> &prev_inside,
                           std::vector<ReelRect> &present, int &present_count,
                           const std::vector<ReelPoint> &prev_qishi,
                           const std::vector<ReelPoint> &present_qishi,
-                          int &guolv_flag)
+                          int &guolv_flag, ReelDedupDecision *decision)
 {
+    if (decision) {
+        *decision = ReelDedupDecision();
+        decision->prev_inside_count = (int)prev_inside.size();
+    }
+
     if (prev_qishi.size() < 2 || present_qishi.size() < 2) return;
+    if (decision) decision->evaluated = true;
 
     // 只需检查上一个区域的最后一个盘卷和当前区域的第一个盘卷
     // 距对应起点/终点的距离
@@ -63,7 +69,10 @@ void removeChongfuPanjuan(const std::vector<ReelRect> &prev_inside,
         }
     }
 
-    if (!guolv_flag_bool) return;
+    if (!guolv_flag_bool) {
+        if (decision) decision->multi_reel_exempt = true;
+        return;
+    }
 
     if (!prev_inside.empty()) {
         previous_last_panjuan_center = prev_inside.back();
@@ -80,12 +89,28 @@ void removeChongfuPanjuan(const std::vector<ReelRect> &prev_inside,
         double present_distance = reelPointsDistance(
             present_first_panjuan_center.x, present_first_panjuan_center.y,
             present_qishi[0].x, present_qishi[0].y);
+        if (decision) {
+            decision->has_prev_inside = true;
+            decision->prev_last_center = previous_last_panjuan_center;
+            decision->has_prev_qishi = true;
+            decision->prev_qishi_end = prev_qishi[1];
+            decision->has_present = (present_count > 0 && !present.empty());
+            decision->present_first_center = present_first_panjuan_center;
+            decision->has_present_qishi = true;
+            decision->present_qishi_start = present_qishi[0];
+            decision->prev_distance = previous_distance;
+            decision->present_distance = present_distance;
+        }
         // 经验阈值
         if (previous_distance < 100 && present_distance < 100 &&
             std::abs(previous_distance - present_distance) < 100) {
             if (!present.empty()) {
                 present.erase(present.begin());
                 present_count--;
+                if (decision) {
+                    decision->applied = true;
+                    decision->removed_count = 1;
+                }
             }
             if (present.size() == static_cast<size_t>(present_count)) {
                 guolv_flag = 1;
@@ -99,9 +124,16 @@ void removeChongfuPanjuanBetweenInsideOutside(const std::vector<ReelRect> &prev_
                                               int &present_count,
                                               const std::vector<ReelPoint> &prev_qishi,
                                               const std::vector<ReelPoint> &present_qishi,
-                                              int &guolv_flag)
+                                              int &guolv_flag,
+                                              ReelDedupDecision *decision)
 {
+    if (decision) {
+        *decision = ReelDedupDecision();
+        decision->prev_inside_count = (int)prev_inside.size();
+    }
+
     if (prev_qishi.size() < 2 || present_qishi.size() < 2) return;
+    if (decision) decision->evaluated = true;
 
     ReelRect previous_last_panjuan_center;  // 默认 (0,0)
     ReelRect present_first_panjuan_center;  // 默认 (0,0)
@@ -121,10 +153,26 @@ void removeChongfuPanjuanBetweenInsideOutside(const std::vector<ReelRect> &prev_
         double present_distance = reelPointsDistance(
             present_first_panjuan_center.x, present_first_panjuan_center.y,
             present_qishi[0].x, present_qishi[0].y);
+        if (decision) {
+            decision->has_prev_inside = true;
+            decision->prev_last_center = previous_last_panjuan_center;
+            decision->has_prev_qishi = true;
+            decision->prev_qishi_end = prev_qishi[1];
+            decision->has_present = true;
+            decision->present_first_center = present_first_panjuan_center;
+            decision->has_present_qishi = true;
+            decision->present_qishi_start = present_qishi[0];
+            decision->prev_distance = previous_distance;
+            decision->present_distance = present_distance;
+        }
         if (previous_distance < 100 && present_distance < 100) {
             if (!present.empty()) {
                 present.erase(present.begin());
                 present_count--;
+                if (decision) {
+                    decision->applied = true;
+                    decision->removed_count = 1;
+                }
             }
             if (present.size() == static_cast<size_t>(present_count)) {
                 guolv_flag = 1;

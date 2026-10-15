@@ -1,5 +1,6 @@
 #pragma once
 
+#include "reel_diagnostics.h"
 #include "reel_types.h"
 
 #include <vector>
@@ -19,22 +20,26 @@ bool reelRectCmpYDown(const ReelRect &a, const ReelRect &b);
 // camera 3 用 camera 2 的输送线内结果过滤自己的输送线内首盘。
 // prev_qishi/present_qishi 为两个区域的起终点（各 2 个点）。
 // 多卷工况（上个区域 >1 盘且本区域 >10 盘、间距特征匹配）时跳过过滤。
+// decision 为可选出参（默认空）：非空时记录本次判定明细，业务行为不变。
 void removeChongfuPanjuan(const std::vector<ReelRect> &prev_inside,
                           std::vector<ReelRect> &present, int &present_count,
                           const std::vector<ReelPoint> &prev_qishi,
                           const std::vector<ReelPoint> &present_qishi,
-                          int &guolv_flag);
+                          int &guolv_flag,
+                          ReelDedupDecision *decision = nullptr);
 
 // 跨区域重复盘卷过滤（旧版 remove_chongfu_panjuan_between_inside_outside 等价）：
 // camera 5 用 camera 3 的输送线内结果过滤自己的输送线外首盘。
 // 注意：旧实现里 previous 取 [-1] 下标属未定义行为，这里按其意图取
 // 上区域最后一个盘卷 / 起终点数组的第 2 个点。
+// decision 为可选出参（默认空）：非空时记录本次判定明细，业务行为不变。
 void removeChongfuPanjuanBetweenInsideOutside(const std::vector<ReelRect> &prev_inside,
                                               std::vector<ReelRect> &present,
                                               int &present_count,
                                               const std::vector<ReelPoint> &prev_qishi,
                                               const std::vector<ReelPoint> &present_qishi,
-                                              int &guolv_flag);
+                                              int &guolv_flag,
+                                              ReelDedupDecision *decision = nullptr);
 
 // 透视变换：像素中心点 -> 物理毫米坐标（旧版 transform_rects_to_physical 等价）。
 // 输出 x 被置为 序号+50、y 取 max(0, 四舍五入)，location=1——

@@ -96,6 +96,7 @@ set(NISCO_PROJECT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/fujian/fujian_service.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/reel_infer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/reel_rules.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/reel_debug_logger.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/reel_track_pipeline.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/tedai_juanqu_pipeline.cpp
     ${CMAKE_CURRENT_LIST_DIR}/nisco_project/tedai_juanqu/tedai_juanqu_service.cpp

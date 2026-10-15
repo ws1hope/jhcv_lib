@@ -1,8 +1,10 @@
 #include <stdio.h>
+#include <algorithm>
 #include <cstdlib>
 #include <string>
 #include <vector>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -28,9 +30,15 @@ static void printHelp(const char *progName)
     std::cout << "  (metadata.json: {station_id, pictures_information:[{camera_id, file_key}]};" << std::endl;
     std::cout << "   image_dir contains one image file per file_key)" << std::endl;
     std::cout << std::endl;
+    std::cout << "Sequence replay mode (offline, per-frame, for flicker logs):" << std::endl;
+    std::cout << "  " << progName << " --seq <frames_dir> -c config.yaml" << std::endl;
+    std::cout << "  (frames_dir contains ordered subdirs, each with metadata.json + images;" << std::endl;
+    std::cout << "   set debug_log_enable: true to emit tedai_debug_YYYYMMDD.jsonl)" << std::endl;
+    std::cout << std::endl;
     std::cout << "Options:" << std::endl;
     std::cout << "  -c, --config  Path to config YAML file (default: config.yaml)" << std::endl;
     std::cout << "  --test        Run in local test mode" << std::endl;
+    std::cout << "  --seq         Sequence replay mode; next arg is frames dir" << std::endl;
     std::cout << "  -m, --meta    metadata JSON file for local test" << std::endl;
     std::cout << "  -d, --dir     Image directory for local test" << std::endl;
     std::cout << "  -h, --help    Show this help" << std::endl;
@@ -105,12 +113,103 @@ static int runLocalTest(JHDeepCore::TedaiJuanquService &service,
     return 0;
 }
 
+// 序列回放：frames_dir 下按名称排序的子目录，每个子目录是一次请求
+// （metadata.json + 该请求引用的图片）。逐帧调用 handleRequest，形成时序，
+// 配合 debug_log_enable 生成 tedai_debug_YYYYMMDD.jsonl 供离线分析。
+// 每帧打印 camera1/2/3 各区域 roi_boxCount 摘要，便于肉眼快速看抖动。
+static int runSequenceTest(JHDeepCore::TedaiJuanquService &service,
+                           const std::string &seq_dir)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_directory(seq_dir, ec)) {
+        std::cerr << "[ERROR] sequence dir not found: " << seq_dir << std::endl;
+        return 1;
+    }
+
+    std::vector<fs::path> frames;
+    for (const auto &entry : fs::directory_iterator(seq_dir, ec)) {
+        if (entry.is_directory()) frames.push_back(entry.path());
+    }
+    std::sort(frames.begin(), frames.end());
+    if (frames.empty()) {
+        std::cerr << "[ERROR] no frame subdirectories under: " << seq_dir << std::endl;
+        return 1;
+    }
+    std::cout << "[INFO] sequence frames: " << frames.size() << std::endl;
+
+    int idx = 0;
+    for (const auto &frame_dir : frames) {
+        std::string metadata_path = (frame_dir / "metadata.json").string();
+        if (!fs::exists(metadata_path, ec)) {
+            for (const auto &f : fs::directory_iterator(frame_dir, ec)) {
+                if (f.path().extension() == ".json") {
+                    metadata_path = f.path().string();
+                    break;
+                }
+            }
+        }
+        std::string metadata;
+        if (!readFileContent(metadata_path, metadata)) {
+            std::cerr << "[WARN] frame " << idx
+                      << " metadata not found: " << metadata_path << std::endl;
+            idx++;
+            continue;
+        }
+
+        json root = json::parse(metadata, nullptr, false);
+        std::map<std::string, std::string> files;
+        if (!root.is_discarded() && root.contains("pictures_information")) {
+            for (const auto &item : root["pictures_information"]) {
+                if (!item.is_object() || !item.contains("file_key")) continue;
+                std::string key = item["file_key"].get<std::string>();
+                std::string content;
+                if (readFileContent((frame_dir / key).string(), content)) {
+                    files[key] = content;
+                } else {
+                    std::cerr << "[WARN] frame " << idx
+                              << " image not found: " << (frame_dir / key).string()
+                              << std::endl;
+                }
+            }
+        }
+
+        auto start = std::chrono::high_resolution_clock::now();
+        std::string result = service.handleRequest(metadata, files);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+                      .count();
+
+        std::cout << "[FRAME " << idx << "] " << ms << " ms";
+        json resp = json::parse(result, nullptr, false);
+        if (!resp.is_discarded() && resp.contains("all_results")) {
+            for (const auto &cam : resp["all_results"]) {
+                int cid = cam.value("camera_id", -1);
+                if (cid != 1 && cid != 2 && cid != 3) continue;
+                std::cout << " | cam" << cid;
+                if (cam.contains("single_camera_results")) {
+                    for (const auto &roi : cam["single_camera_results"]) {
+                        std::cout << " " << roi.value("roi_id", std::string("?")) << "="
+                                  << roi.value("roi_boxCount", -1);
+                    }
+                }
+            }
+        }
+        std::cout << std::endl;
+        idx++;
+    }
+    std::cout << "[INFO] sequence replay done: " << idx << " frames" << std::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     std::string config_path = "config.yaml";
     bool test_mode = false;
     std::string test_meta;
     std::string test_dir;
+    bool seq_mode = false;
+    std::string seq_dir;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -118,6 +217,9 @@ int main(int argc, char *argv[])
             config_path = argv[++i];
         } else if (arg == "--test") {
             test_mode = true;
+        } else if (arg == "--seq" && i + 1 < argc) {
+            seq_mode = true;
+            seq_dir = argv[++i];
         } else if ((arg == "-m" || arg == "--meta") && i + 1 < argc) {
             test_meta = argv[++i];
         } else if ((arg == "-d" || arg == "--dir") && i + 1 < argc) {
@@ -135,7 +237,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (!test_mode) {
+    if (!test_mode && !seq_mode) {
         std::cout << "=== Tedai Juanqu HTTP Service ===" << std::endl;
     }
     std::cout << "[INFO] Config: " << config_path << std::endl;
@@ -166,6 +268,10 @@ int main(int argc, char *argv[])
                      .count()
               << " ms" << (warmup_ok ? "" : " (some models failed, see log)")
               << std::endl;
+
+    if (seq_mode) {
+        return runSequenceTest(service, seq_dir);
+    }
 
     if (test_mode) {
         return runLocalTest(service, test_meta, test_dir);

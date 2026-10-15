@@ -1,5 +1,6 @@
 #pragma once
 
+#include "reel_diagnostics.h"
 #include "reel_types.h"
 #include "reel_infer.h"
 #include "file_utils.h"
@@ -68,6 +69,13 @@ class TedaiJuanquPipeline {
     // 本次 process() 的分步耗时明细（按 camera_id 升序，process() 每次调用开始时清空）
     const std::vector<ReelStepTiming> &lastTimings() const { return last_timings_; }
 
+    // 本次 process() 的分阶段诊断快照（按 camera_id 升序，process() 每次调用开始时清空）。
+    // 仅用于跨帧日志归因，不参与业务判定。
+    const std::vector<ReelCameraDiagnostics> &lastDiagnostics() const
+    {
+        return last_diagnostics_;
+    }
+
   private:
     ReelDetector *detector(int camera_id);  // 按相机懒加载并缓存
     ReelClassifier *classifier();           // 懒加载并缓存
@@ -76,11 +84,13 @@ class TedaiJuanquPipeline {
     void detectReelLocation(int camera_id, cv::Mat &src, const ReelRoiParams &params,
                             const ReelCameraOutput *prev_result,
                             const ReelRoiParams *prev_params,
-                            ReelCameraOutput &out, ReelStepTiming &st);
+                            ReelCameraOutput &out, ReelStepTiming &st,
+                            ReelCameraDiagnostics &diag);
 
     // camera 0：白色遮挡 + 正常/异常盘卷过滤 + 两区域判定
     void detectReelExport(int camera_id, cv::Mat &src, const ReelRoiParams &params,
-                          ReelCameraOutput &out, ReelStepTiming &st);
+                          ReelCameraOutput &out, ReelStepTiming &st,
+                          ReelCameraDiagnostics &diag);
 
     // 结果图保存：<result_dir>\camera_%02d\YYYYMMDD\YYYYMMDDHHMMSSmmm_%02d.jpg（质量 75）
     std::string saveResultImage(int camera_id, const cv::Mat &image);
@@ -96,6 +106,8 @@ class TedaiJuanquPipeline {
     double detect_total_ms_ = 0;    // 本次 process() 内所有相机检测推理累计 ms
     double classify_total_ms_ = 0;  // 本次 process() 内 camera5 分类推理累计 ms
     std::vector<ReelStepTiming> last_timings_;  // 本次 process() 分步耗时明细
+    // 本次 process() 分阶段诊断快照（跨帧日志归因用）
+    std::vector<ReelCameraDiagnostics> last_diagnostics_;
 };
 
 } // namespace Pipeline

@@ -53,6 +53,8 @@ struct ReelCameraOutput {
     std::vector<ReelRect> inside;    // 输送线内盘卷
     std::vector<ReelRect> outside;   // 输送线外（卸卷/抬卷）盘卷
     std::vector<ReelRect> collect;   // 集卷区域盘卷
+    // 透视变换前的像素坐标快照，仅供跨相机去重使用（不对外输出）
+    std::vector<ReelRect> inside_pixel;
 };
 
 // 单相机一帧输入（已解码图片）

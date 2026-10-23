@@ -96,6 +96,7 @@ public:
                 item["read_picture_flag"] = "NG";
                 item["rec_state_flag"] = "NG";
                 item["rec_results"] = json::array();
+                item["piliao_number"] = 0;
                 item["picture_path"] = "";
                 array_result.push_back(item);
                 img_confs.push_back(0.0f);
@@ -139,6 +140,7 @@ public:
             item["read_picture_flag"] = "OK";
             item["rec_state_flag"] = billets_ocr.empty() ? "NG" : "OK";
             item["rec_results"] = billets_ocr;
+            item["piliao_number"] = pipeline_result.piliao_number;
             item["picture_path"] = save_picture_name;
 
             array_result.push_back(item);
@@ -188,6 +190,7 @@ public:
                 item["read_picture_flag"] = "NG";
                 item["rec_state_flag"] = "NG";
                 item["rec_results"] = json::array();
+                item["piliao_number"] = 0;
                 item["picture_path"] = "";
                 array_result.push_back(item);
                 img_confs.push_back(0.0f);
@@ -207,6 +210,7 @@ public:
             item["read_picture_flag"] = "OK";
             item["rec_state_flag"] = billets_ocr.empty() ? "NG" : "OK";
             item["rec_results"] = billets_ocr;
+            item["piliao_number"] = pipeline_result.piliao_number;
             item["picture_path"] = "";
 
             array_result.push_back(item);

@@ -37,6 +37,7 @@ struct BilletResult {
 struct ZbhcPipelineResult {
     std::vector<Detection> det1_detections;
     std::vector<BilletResult> billets;
+    int piliao_number = 0;   // 本图 det2 检出的坯料总数（多个 det1 累加，去重前）
     cv::Mat annotated_image;
 };
 

@@ -190,6 +190,7 @@ ZbhcPipelineResult ZbhcPipeline::process(const cv::Mat& image, bool verbose,
         std::vector<DetectionResult> det2_results;
         det2_->process(det2_imgs, det2_results);
         DetectionResult det2_res = det2_results.empty() ? DetectionResult{} : det2_results[0];
+        result.piliao_number += det2_res.num_detections;
 
         if (verbose) {
             std::cout << "[DEBUG] det1[" << di << "] -> det2 detections: "

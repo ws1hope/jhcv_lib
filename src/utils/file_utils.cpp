@@ -277,6 +277,7 @@ JHDeepCore::FeigangcaoServerConfig FileHelper::loadFeigangcaoConfig(const std::s
         cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
         cfg.det_crop_dir = node["output"]["det_crop_dir"].as<std::string>(cfg.det_crop_dir);
         cfg.cls_crop_dir = node["output"]["cls_crop_dir"].as<std::string>(cfg.cls_crop_dir);
+        cfg.x_image_dir = node["output"]["x_image_dir"].as<std::string>(cfg.x_image_dir);
     }
 
     if (node["models"]) {

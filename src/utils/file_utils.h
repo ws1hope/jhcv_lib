@@ -146,6 +146,7 @@ struct FeigangcaoServerConfig {
     std::string log_dir = "D:\\FeigangcaoLog";
     std::string det_crop_dir;    // 定位框裁剪图保存目录（为空则存到输入图目录 results 下）
     std::string cls_crop_dir;    // 分类图保存目录，按类别建子文件夹（为空则存到输入图目录 results 下）
+    std::string x_image_dir;     // 分类结果为 "x" 时的原图保存目录（为空则存到输入图目录 results 下）
     std::string det_model;       // 定位模型（目标检测）
     std::string cls_model;       // 分类模型
     std::string cls_label;       // 分类标签文件（可空）

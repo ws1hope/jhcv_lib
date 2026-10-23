@@ -15,6 +15,9 @@ using json = nlohmann::json;
 
 namespace JHDeepCore {
 
+// 分类模型输出该类名时，按 NG 上报（与目标检测无结果一致：detail_state=NG、result=""）
+static const std::string kNgClassName = "x";
+
 class FeigangcaoServicePrivate {
 public:
     explicit FeigangcaoServicePrivate(const std::string& config_path)
@@ -112,7 +115,7 @@ public:
 private:
     // 单图处理，返回 all_results 数组中的一项：
     //   state_flag   - 图像解析是否成功 OK/NG
-    //   detail_state - 识别是否成功 OK/NG（解析失败时为 NG）
+    //   detail_state - 识别是否成功 OK/NG（解析失败、无结果或分类为 NG 类别时为 NG）
     //   result       - 分类结果（class_name），失败或无结果为 ""
     //   picture_path - 结果图保存路径
     json buildResult(const std::string& picture_path,
@@ -137,10 +140,11 @@ private:
         Pipeline::FeigangcaoPipelineResult pr = pipeline_->process(src_img, station_id, verbose);
         total_inference_ms += pr.inference_time_ms;
 
-        if (!pr.result.empty()) {
+        if (!pr.result.empty() && pr.result != kNgClassName) {
             item["detail_state"] = "OK";
             item["result"] = pr.result;
         } else {
+            // 无结果或分类为 NG 类别（"x"）时，与目标检测结果为空时一致：detail_state=NG、result=""
             item["detail_state"] = "NG";
             item["result"] = "";
         }
@@ -202,6 +206,26 @@ private:
                 std::cout << "[INFO] Classify image saved: " << cls_path << std::endl;
             }
             fout << "classify image saved: " << cls_path << std::endl;
+        }
+
+        // 3) 分类结果为 NG 类别（"x"）时，把原图单独存到 x_original 文件夹，便于复核
+        if (pr.result == kNgClassName) {
+            size_t pos = picture_path.find_last_of("\\/");
+            std::string dir = (pos == std::string::npos) ? "." : picture_path.substr(0, pos);
+            std::string name = (pos == std::string::npos) ? picture_path : picture_path.substr(pos + 1);
+            std::string x_folder = config_.x_image_dir.empty()
+                ? dir + "\\results\\station_" + station_id + "\\x_original"
+                : config_.x_image_dir + "\\station_" + station_id;
+            std::string x_path = verbose ? "feigangcao_x_original.jpg"
+                                         : x_folder + "\\" + name;
+            if (!verbose) {
+                FileHelper::ensureDirectoryExists(x_folder);
+            }
+            cv::imwrite(x_path, src_img);
+            if (verbose) {
+                std::cout << "[INFO] X original image saved: " << x_path << std::endl;
+            }
+            fout << "x original image saved: " << x_path << std::endl;
         }
 
         item["state_flag"] = "OK";

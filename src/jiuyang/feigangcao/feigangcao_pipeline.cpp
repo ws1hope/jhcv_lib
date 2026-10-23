@@ -63,15 +63,33 @@ FeigangcaoPipelineResult FeigangcaoPipeline::process(const cv::Mat& image,
         }
     }
 
-    // 取置信度最高的框
+    // 有效检测范围（当前工位 valid_roi 多边形）：先筛选中心点在范围内的框，
+    // 再从候选框中取置信度最高的；未配置范围时所有框均为候选
+    bool has_roi = (int)active_roi_poly_.size() >= 3;
     int best = -1;
     for (int i = 0; i < (int)dets.size(); i++) {
-        if (best < 0 || dets[i].confidence > dets[best].confidence) {
+        const auto& d = dets[i];
+        if (has_roi) {
+            cv::Point center(d.bbox.x + d.bbox.width / 2,
+                             d.bbox.y + d.bbox.height / 2);
+            bool center_in_roi = cv::pointPolygonTest(active_roi_poly_, center, false) >= 0;
+            if (verbose) {
+                std::cout << "[DEBUG] valid_roi det[" << i << "] center=("
+                          << center.x << "," << center.y << ") in_roi="
+                          << (center_in_roi ? "true" : "false") << std::endl;
+            }
+            if (!center_in_roi) {
+                continue;
+            }
+        }
+        if (best < 0 || d.confidence > dets[best].confidence) {
             best = i;
         }
     }
 
     if (best < 0) {
+        // 未检出目标，或检出框均不在当前工位有效检测范围内
+        result.out_of_roi = has_roi && !dets.empty();
         auto t1 = std::chrono::high_resolution_clock::now();
         result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         result.annotated_image = createAnnotatedImage(image, result);
@@ -96,26 +114,6 @@ FeigangcaoPipelineResult FeigangcaoPipeline::process(const cv::Mat& image,
     if (verbose) {
         std::cout << "  best det[" << best << "] roi=(" << roi.x << "," << roi.y
                   << "," << roi.width << "," << roi.height << ")" << std::endl;
-    }
-
-    // ---- 有效检测范围（当前工位 valid_roi 多边形）检查 ----
-    // 最高置信度框的中心点在多边形内才送入分类
-    if ((int)active_roi_poly_.size() >= 3) {
-        cv::Point center(roi.x + roi.width / 2, roi.y + roi.height / 2);
-        bool center_in_roi = cv::pointPolygonTest(active_roi_poly_, center, false) >= 0;
-
-        if (verbose) {
-            std::cout << "[DEBUG] valid_roi center=(" << center.x << "," << center.y
-                      << ") in_roi=" << (center_in_roi ? "true" : "false") << std::endl;
-        }
-
-        if (!center_in_roi) {
-            result.out_of_roi = true;
-            auto t1 = std::chrono::high_resolution_clock::now();
-            result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-            result.annotated_image = createAnnotatedImage(image, result);
-            return result;
-        }
     }
 
     // ---- 分类模型：定位框裁剪送检 ----
@@ -159,7 +157,7 @@ cv::Mat FeigangcaoPipeline::createAnnotatedImage(
         cv::polylines(annotated, active_roi_poly_, true, cv::Scalar(255, 0, 0), 4);
     }
 
-    // 因最高置信度框中心点不在有效检测范围内而跳过分类：图上标注
+    // 无检测框中心点落在有效检测范围内而跳过分类：图上标注
     if (result.out_of_roi) {
         cv::putText(annotated, "OUT OF ROI", cv::Point(10, 60),
                     cv::FONT_HERSHEY_SIMPLEX, 2.0, cv::Scalar(255, 0, 0), 5);

@@ -20,12 +20,12 @@ struct FeigangcaoPipelineResult {
     std::string result;                 // 分类结果（class_name），无结果时为空
     float cls_confidence = 0.0f;        // 分类置信度
     cv::Mat det_crop;                   // 定位框裁剪图（送入分类模型的图像）
-    bool out_of_roi = false;            // 最高置信度框中心点不在当前工位有效检测范围内
+    bool out_of_roi = false;            // 检测框均不在当前工位有效检测范围内
     cv::Mat annotated_image;            // 画框 + 文字的结果图
     double inference_time_ms = 0.0;     // 纯模型推理耗时（定位 + 分类）
 };
 
-// 定位模型（取置信度最高的框）-> 裁剪 -> 分类模型
+// 定位模型 -> 按有效检测范围筛选框后取置信度最高 -> 裁剪 -> 分类模型
 class FeigangcaoPipeline {
 public:
     explicit FeigangcaoPipeline(const FeigangcaoServerConfig& config);

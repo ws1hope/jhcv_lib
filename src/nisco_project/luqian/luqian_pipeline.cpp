@@ -606,15 +606,38 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                  << std::endl;
         }
 
-        // 按当前片段顺序拼接 OCR 文本，并在倒数第三位前插入 '#'
+        // 10 位喷码判定：恰好两个实例分割片段且形状相似(最长/最短边差值均 <=100px)时，
+        // 视为 10 位喷码——前 8 位为传入炉号，仅拼接识别结果末两位作为尾缀。
+        bool is10digit = false;
+        if (char_crops.size() == 2 && !heat_number.empty()) {
+            auto longEdge = [](const cv::Rect& r) { return std::max(r.width, r.height); };
+            auto shortEdge = [](const cv::Rect& r) { return std::min(r.width, r.height); };
+            const cv::Rect& b0 = char_crops[0].bbox_local;
+            const cv::Rect& b1 = char_crops[1].bbox_local;
+            is10digit = std::abs(longEdge(b0) - longEdge(b1)) <= 100
+                     && std::abs(shortEdge(b0) - shortEdge(b1)) <= 100;
+        }
+
+        // 按当前片段顺序拼接 OCR 文本；10 位喷码取末两位作尾缀，否则在倒数第三位前插入 '#'
         std::string target_ocr;
         for (auto& ch : target_result.chars) {
             target_ocr += ch.ocr_text;
         }
-        if (target_ocr.size() >= 3) {
-            target_ocr.insert(target_ocr.size() - 3, "#");
+        if (is10digit) {
+            std::string suffix = target_ocr.size() >= 2
+                ? target_ocr.substr(target_ocr.size() - 2) : target_ocr;
+            target_result.ocr_text = heat_number + "#" + suffix;
+            if (verbose) {
+                std::cout << "[DEBUG]     target[" << di << "] 10-digit (2 similar segs):"
+                     << " ocr=\"" << target_ocr << "\""
+                     << " -> \"" << target_result.ocr_text << "\"" << std::endl;
+            }
+        } else {
+            if (target_ocr.size() >= 3) {
+                target_ocr.insert(target_ocr.size() - 3, "#");
+            }
+            target_result.ocr_text = target_ocr;
         }
-        target_result.ocr_text = target_ocr;
 
         // ===== Step 8: 炉号纠错兜底 =====
         // 已传入炉号且两次识别(ocr1/ocr2)均有结果时：若两者都未与炉号完全一致，
@@ -622,7 +645,7 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
         // 作为最终结果。错位口径与 Step 7 的 bad 一致：仅按炉号长度 hlen 对齐前缀
         // 计数(hlen - matched)，忽略识别串超出 hlen 的尾部(如 '#' 后的附加后缀)，
         // 故不会把附加码误计为错位。仅替换热号部分，保留原识别的后缀。
-        if (!heat_number.empty() && !target_result.ocr2_text.empty()) {
+        if (!is10digit && !heat_number.empty() && !target_result.ocr2_text.empty()) {
             auto heatErrors = [](const std::string& ocr, const std::string& heat) -> int {
                 int hlen = (int)heat.size();
                 int n = (int)std::min(ocr.size(), (size_t)hlen);

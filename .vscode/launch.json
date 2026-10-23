@@ -617,8 +617,8 @@
             "args": [
                 "--test",
                 "-c", "test/zbhc/config.yaml",
-                "-i", "images\\zbhc_test\\debug\\20260714145106.jpg",
-                "-H", "0",
+                "-i", "images/zbhc_test/20261019130620.jpg",
+                "-H", "26410717",
                 "-s", "1"
             ],
             "cwd": "${workspaceFolder}",
@@ -683,8 +683,8 @@
             "args": [
                 "--test",
                 "-c", "test/luqian/config.yaml",
-                "-i", "images/td/debug/20261008050221643_1.jpg",
-                "-H", "26610165",
+                "-i", "images/td/debug/20261014164430481_1.jpg",
+                "-H", "26706709",
                 "-s", "1"
             ],
             "stopAtEntry": false,
@@ -1433,8 +1433,8 @@
             "args": [
                 "--test",
                 "-c", "test/feigangcao/config.yaml",
-                "-i", "images\\jiuyang\\baocao\\20260921190631643_0.jpg",
-                "-s", "0"
+                "-i", "images\\fgc\\20261020053108804_0.jpg",
+                "-s", "1"
             ],
             "cwd": "${workspaceFolder}",
             "environment": [

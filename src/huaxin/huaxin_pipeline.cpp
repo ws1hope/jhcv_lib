@@ -74,6 +74,7 @@ HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image,
 
     if (leftmost < 0) {
         // 第一个模型无输出，直接出结果图
+        result.failure_reason = "NO_LABEL";
         auto t1 = std::chrono::high_resolution_clock::now();
         result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         result.annotated_image = createAnnotatedImage(image, result);
@@ -87,6 +88,7 @@ HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image,
         sel.bbox.x, sel.bbox.y, sel.bbox.width, sel.bbox.height,
         image.cols, image.rows);
     if (roi.area() <= 0) {
+        result.failure_reason = "NO_LABEL";
         auto t1 = std::chrono::high_resolution_clock::now();
         result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
         result.annotated_image = createAnnotatedImage(image, result);
@@ -112,6 +114,7 @@ HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image,
 
         if (!center_in_roi) {
             result.det2_skipped = true;
+            result.failure_reason = "NO_LABEL";
             auto t1 = std::chrono::high_resolution_clock::now();
             result.inference_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
             result.annotated_image = createAnnotatedImage(image, result);
@@ -170,6 +173,9 @@ HuaxinPipelineResult HuaxinPipeline::process(const cv::Mat& image,
     }
 
     result.all_results = all_results;
+    if (result.all_results.empty()) {
+        result.failure_reason = "NO_LABEL";
+    }
     result.annotated_image = createAnnotatedImage(image, result);
 
     return result;

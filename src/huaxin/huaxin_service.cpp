@@ -3,11 +3,15 @@
 #include "file_utils.h"
 #include "json.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <vector>
 
 #include <opencv2/imgcodecs.hpp>
 
@@ -112,10 +116,12 @@ public:
 
 private:
     // 单图处理，返回 all_results 数组中的一项：
-    //   state_flag  - 图像解析是否成功 OK/NG
-    //   detail_state - 识别是否成功 OK/NG（解析失败时为 NG）
-    //   result      - 铸坯端面识别结果，失败或无结果为 ""
-    //   picture_path - 结果图保存路径（输入图目录\results\station_<id>\<OK|NG>\<原文件名>）
+    //   state_flag   - 整体是否成功 OK/NG（detail_state 为 OK 时为 OK）
+    //   detail_state - OK 或 NG 原因码：
+    //                  NO_LABEL / NO_GBNUM / INVALID_EXT / PATH_ERROR /
+    //                  READ_ERROR / RECOGNIZE_ERROR / SAVE_ERROR
+    //   result       - 成功时为铸坯端面识别结果，失败时固定为 ""
+    //   picture_path - 结果图保存路径（输入图目录\results\station_<id>\<OK|NG>\原文件名）
     json buildResult(const std::string& picture_path,
                      const std::string& station_id,
                      int picture_id, bool verbose,
@@ -124,30 +130,75 @@ private:
     {
         json item;
         item["picture_id"] = std::to_string(picture_id);
+        item["result"] = "";
 
+        auto setFailure = [&item](const std::string& code) {
+            item["state_flag"] = "NG";
+            item["detail_state"] = code;
+            item["result"] = "";
+        };
+
+        // 1. 图片后缀白名单（不区分大小写）
+        static const std::vector<std::string> kValidExts = {
+            ".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"};
+        std::string ext = std::filesystem::path(picture_path).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (std::find(kValidExts.begin(), kValidExts.end(), ext) == kValidExts.end()) {
+            setFailure("INVALID_EXT");
+            item["picture_path"] = picture_path;
+            fout << "invalid extension: " << picture_path << std::endl;
+            return item;
+        }
+
+        // 2. 路径必须存在且为普通文件
+        std::error_code fs_ec;
+        if (!std::filesystem::exists(picture_path, fs_ec) ||
+            !std::filesystem::is_regular_file(picture_path, fs_ec)) {
+            setFailure("PATH_ERROR");
+            item["picture_path"] = picture_path;
+            fout << "path not found or not a file: " << picture_path << std::endl;
+            return item;
+        }
+
+        // 3. 图片读取/解码
         cv::Mat src_img = cv::imread(picture_path);
         if (!src_img.data) {
-            item["state_flag"] = "NG";
-            item["detail_state"] = "NG";
-            item["result"] = "";
+            setFailure("READ_ERROR");
             item["picture_path"] = picture_path;
             fout << "detect failed! empty image: " << picture_path << std::endl;
             return item;
         }
 
-        Pipeline::HuaxinPipelineResult pr = pipeline_->process(src_img, station_id, verbose);
+        // 4. 模型推理/识别
+        Pipeline::HuaxinPipelineResult pr;
+        try {
+            pr = pipeline_->process(src_img, station_id, verbose);
+        } catch (const std::exception& e) {
+            setFailure("RECOGNIZE_ERROR");
+            item["picture_path"] = picture_path;
+            fout << "recognize error: " << e.what() << std::endl;
+            return item;
+        } catch (...) {
+            setFailure("RECOGNIZE_ERROR");
+            item["picture_path"] = picture_path;
+            fout << "recognize error: unknown exception" << std::endl;
+            return item;
+        }
         total_inference_ms += pr.inference_time_ms;
 
-        if (!pr.all_results.empty()) {
+        // 5. 识别结果判定
+        bool ok = !pr.all_results.empty();
+        if (ok) {
+            item["state_flag"] = "OK";
             item["detail_state"] = "OK";
             item["result"] = pr.all_results;
         } else {
-            item["detail_state"] = "NG";
-            item["result"] = "";
+            setFailure(pr.failure_reason.empty() ? "NO_LABEL" : pr.failure_reason);
         }
 
-        // 结果图保存路径：输入图所在目录\results\station_<工位>\<OK|NG>\原文件名；
-        // 本地测试直接存当前目录
+        // 6. 结果图保存路径：输入图所在目录\results\station_<工位>\<OK|NG>\原文件名；
+        //    本地测试直接存当前目录。目录名只取决于整体是否成功，不使用 detail_state 文本。
         std::string save_path;
         if (verbose) {
             save_path = "huaxin_result.jpg";
@@ -156,18 +207,25 @@ private:
             std::string dir = (pos == std::string::npos) ? "." : picture_path.substr(0, pos);
             std::string name = (pos == std::string::npos) ? picture_path : picture_path.substr(pos + 1);
             std::string folder = dir + "\\results\\station_" + station_id
-                                 + "\\" + item["detail_state"].get<std::string>();
-            FileHelper::ensureDirectoryExists(folder);
+                                 + "\\" + (ok ? "OK" : "NG");
+            std::error_code dir_ec;
+            std::filesystem::create_directories(folder, dir_ec);
+            if (dir_ec || !std::filesystem::is_directory(folder, dir_ec)) {
+                setFailure("SAVE_ERROR");
+                item["picture_path"] = picture_path;
+                fout << "create dir failed: " << folder << std::endl;
+                return item;
+            }
             save_path = folder + "\\" + name;
         }
 
-        if (!pr.annotated_image.empty()) {
-            cv::imwrite(save_path, pr.annotated_image);
-        } else {
-            cv::imwrite(save_path, src_img);
+        const cv::Mat& out_img = pr.annotated_image.empty() ? src_img : pr.annotated_image;
+        if (!cv::imwrite(save_path, out_img)) {
+            setFailure("SAVE_ERROR");
+            item["picture_path"] = picture_path;
+            fout << "imwrite failed: " << save_path << std::endl;
+            return item;
         }
-
-        item["state_flag"] = "OK";
 
         item["picture_path"] = save_path;
 

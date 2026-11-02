@@ -324,3 +324,19 @@ extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastError(char *buf,
     buf[n] = '\0';
     return (int)n;
 }
+
+extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char *buf,
+                                                                    int buf_size)
+{
+    if (buf == NULL || buf_size <= 0) return 0;
+    std::string id;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        if (g_pipeline != nullptr) {
+            id = g_pipeline->lastReelId();
+        }
+    }
+    size_t n = id.copy(buf, (size_t)buf_size - 1);
+    buf[n] = '\0';
+    return (int)n;
+}

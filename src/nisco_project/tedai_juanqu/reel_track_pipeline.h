@@ -42,12 +42,23 @@ class ReelTrackPipeline {
                 const InputParamsReelExportTargetTrack& input_params,
                 OutputResultReelExportTargetTrack* output_params);
 
+    // 最近一次出生（第一次定位到正常盘卷）盘卷的唯一值 YYYYMMDD_XXX；
+    // 尚无出生时为空串。供 DLL 新接口 MV_SDK_GetLastReelId 取用。
+    const std::string& lastReelId() const { return last_reel_id_; }
+
   private:
+    // 出生赋号：当天自增序号写入 box.order_number，并更新 last_reel_id_。
+    void assignNewReelOrder(reelBoxMatch& box);
+
     std::unique_ptr<ReelDetector> detector_;
     // 异常卷边缘触发报警的跨帧状态（旧版函数内 static）
     int prev_station_one_real_state_ = 0;
     int prev_station_two_real_state_ = 0;
     std::vector<std::pair<int, int>> prev_reels_;  // (中心x, 出生工位)
+    // 盘卷唯一值（日期 + 当天序号）跟踪状态
+    int reel_order_counter_ = 0;   // 当天已赋序号计数（跨天重置）
+    std::string reel_id_date_;     // 当前日期 YYYYMMDD（用于跨天检测）
+    std::string last_reel_id_;     // 最近一次出生的完整唯一值
 };
 
 } // namespace Pipeline

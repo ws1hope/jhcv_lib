@@ -115,6 +115,11 @@ REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_Destroy(void)
 // Copy the last error message into buf; returns copied length (0 if none).
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastError(char* buf, int buf_size);
 
+// Return the reel id (YYYYMMDD_XXX) assigned to the most recently born normal
+// reel (first frame it was located). Copies into buf; returns copied length
+// (0 if no reel has been born since Init). Empty string when none assigned.
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char* buf, int buf_size);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

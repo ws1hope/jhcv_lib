@@ -23,7 +23,11 @@ std::string formatTimestamp()
               1000;
     std::time_t t = std::chrono::system_clock::to_time_t(now);
     std::tm lt_tm{};
+#ifdef _WIN32
     localtime_s(&lt_tm, &t);
+#else
+    localtime_r(&t, &lt_tm);
+#endif
     char buf[64];
     std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &lt_tm);
     std::ostringstream out;
@@ -35,7 +39,11 @@ std::string todayString()
 {
     std::time_t t = std::time(nullptr);
     std::tm lt_tm{};
+#ifdef _WIN32
     localtime_s(&lt_tm, &t);
+#else
+    localtime_r(&t, &lt_tm);
+#endif
     char buf[16];
     std::strftime(buf, sizeof(buf), "%Y%m%d", &lt_tm);
     return std::string(buf);

@@ -834,7 +834,12 @@ std::string TedaiJuanquPipeline::saveResultImage(int camera_id, const cv::Mat &i
                   now.time_since_epoch()) % 1000;
     std::time_t t = std::chrono::system_clock::to_time_t(now);
     std::tm lt_tm{};
-    localtime_s(&lt_tm, &t);  // 保存任务多线程并行，localtime 非线程安全
+    // 保存任务多线程并行，localtime 非线程安全
+#ifdef _WIN32
+    localtime_s(&lt_tm, &t);
+#else
+    localtime_r(&t, &lt_tm);
+#endif
     std::tm *lt = &lt_tm;
 
     std::string folder =

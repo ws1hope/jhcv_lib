@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <iostream>
 
 namespace JHDeepCore {
@@ -27,9 +29,25 @@ bool boxMatchCmpYUp(const reelBoxMatch &a, const reelBoxMatch &b)
     return a.y < b.y;
 }
 
+// 当前本地日期 YYYYMMDD。DLL 层已用 g_mutex 串行化 detect，此处线程安全可放宽。
+std::string CurrentDateYYYYMMDD()
+{
+    std::time_t t = std::time(nullptr);
+    std::tm tmv = {};
+#ifdef _WIN32
+    localtime_s(&tmv, &t);
+#else
+    localtime_r(&t, &tmv);
+#endif
+    char buf[16];
+    std::strftime(buf, sizeof(buf), "%Y%m%d", &tmv);
+    return std::string(buf);
+}
+
 } // namespace
 
-bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu)
+bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu,
+                             ReelIdCallback on_reel_id_assigned)
 {
     detector_ = std::make_unique<ReelDetector>(model_path, use_gpu);
     if (!detector_->valid()) {
@@ -42,7 +60,38 @@ bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu)
     prev_station_one_real_state_ = 0;
     prev_station_two_real_state_ = 0;
     prev_reels_.clear();
+    // 赋号状态复位；持久化序号由 DLL 层通过 seedReelOrder 恢复
+    reel_order_counter_ = 0;
+    reel_id_date_.clear();
+    last_reel_id_.clear();
+    on_reel_id_assigned_ = std::move(on_reel_id_assigned);
     return true;
+}
+
+void ReelTrackPipeline::seedReelOrder(const std::string &date, int seq)
+{
+    if (date.empty() || seq <= 0) return;
+    if (date != CurrentDateYYYYMMDD()) return;  // 非当天不恢复，交给跨天重置
+    reel_id_date_ = date;
+    reel_order_counter_ = seq;
+}
+
+// 出生赋号：当天自增序号（跨天重置），写入 box.order_number，并记录完整唯一值。
+void ReelTrackPipeline::assignNewReelOrder(reelBoxMatch &box)
+{
+    std::string today = CurrentDateYYYYMMDD();
+    if (today != reel_id_date_) {
+        reel_id_date_ = today;
+        reel_order_counter_ = 0;
+    }
+    ++reel_order_counter_;
+    box.order_number = reel_order_counter_;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%s_%03d", today.c_str(), reel_order_counter_);
+    last_reel_id_ = buf;
+    if (on_reel_id_assigned_) {
+        on_reel_id_assigned_(reel_id_date_, reel_order_counter_);
+    }
 }
 
 bool ReelTrackPipeline::detect(cv::Mat &src_image,
@@ -178,6 +227,7 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
                 exist_box.width = left_points[0].rect.width;
                 exist_box.height = left_points[0].rect.height;
                 exist_box.station_number = 1;
+                assignNewReelOrder(exist_box);
                 exist_box.previous_x = left_points[0].rect.x;
                 exist_box.previous_y = left_points[0].rect.y;
                 exist_box.previous_width = left_points[0].rect.width;
@@ -196,6 +246,7 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
                 exist_box.width = left_points[0].rect.width;
                 exist_box.height = left_points[0].rect.height;
                 exist_box.station_number = 2;
+                assignNewReelOrder(exist_box);
                 exist_box.previous_x = left_points[0].rect.x;
                 exist_box.previous_y = left_points[0].rect.y;
                 exist_box.previous_width = left_points[0].rect.width;
@@ -214,6 +265,7 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
                 exist_box.width = left_points[0].rect.width;
                 exist_box.height = left_points[0].rect.height;
                 exist_box.station_number = previous_frame_leave_station_number0;
+                exist_box.order_number = 0;
                 exist_box.previous_x = left_points[0].rect.x;
                 exist_box.previous_y = left_points[0].rect.y;
                 exist_box.previous_width = left_points[0].rect.width;
@@ -238,13 +290,16 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
                 if (p.rect.y < set_station_one_fengang_line0) {
                     station_one_panjuan_out_state0 = 1;
                     exist_box.station_number = 1;
+                    assignNewReelOrder(exist_box);
                 } else if (p.rect.y >= set_station_one_fengang_line0 &&
                            p.rect.y < set_station_two_fengang_line0) {
                     station_two_panjuan_out_state0 = 1;
                     exist_box.station_number = 2;
+                    assignNewReelOrder(exist_box);
                 } else {
                     panjuan_back_state0 = 1;
                     exist_box.station_number = previous_frame_leave_station_number0;
+                    exist_box.order_number = 0;
                     current_frame_leave_station_number0 = 0;
                 }
                 boxs_exist_current.push_back(exist_box);
@@ -306,15 +361,18 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
                 if (p.rect.y < set_station_one_fengang_line0) {
                     station_one_panjuan_out_state0 = 1;
                     exist_box.station_number = 1;
+                    assignNewReelOrder(exist_box);
                 } else if (p.rect.y >= set_station_one_fengang_line0 &&
                            p.rect.y < set_station_two_fengang_line0) {
                     station_two_panjuan_out_state0 = 1;
                     exist_box.station_number = 2;
+                    assignNewReelOrder(exist_box);
                 } else {
                     // 从分钢线右侧回退
                     panjuan_back_state0 = 1;
                     back_flag = 1;
                     exist_box.station_number = previous_frame_leave_station_number0;
+                    exist_box.order_number = 0;
                     current_frame_leave_station_number0 = 0;
                 }
                 boxs_exist_current.push_back(exist_box);
@@ -329,6 +387,7 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
                 exist_box.width = match_success_cur[i].rect.width;
                 exist_box.height = match_success_cur[i].rect.height;
                 exist_box.station_number = match_success_prev[i].station_number;
+                exist_box.order_number = match_success_prev[i].order_number;
                 exist_box.previous_x = match_success_prev[i].x;
                 exist_box.previous_y = match_success_prev[i].y;
                 exist_box.previous_width = match_success_prev[i].width;

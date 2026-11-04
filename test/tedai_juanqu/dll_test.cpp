@@ -59,6 +59,9 @@ int main(int argc, char *argv[])
         char err[256] = {0};
         MV_SDK_GetLastError(err, sizeof(err));
         printf("frame %d: result=%p last_error='%s'\n", frame, (void *)result, err);
+        char reel_id[64] = {0};
+        int reel_id_len = MV_SDK_GetLastReelId(reel_id, sizeof(reel_id));
+        printf("  last_reel_id='%s' (len=%d)\n", reel_id, reel_id_len);
         printf("  exist=%d leave=%d near_line_right=%d leave_station=%d "
                "back=%d out1=%d out2=%d alarm1=%d alarm2=%d\n",
                out.exist_region_current_frame_boxCount,
@@ -71,12 +74,13 @@ int main(int argc, char *argv[])
                out.station_one_alarm_trigger,
                out.station_two_alarm_trigger);
         for (int i = 0; i < out.exist_region_current_frame_boxCount; i++) {
-            printf("  exist[%d]: station=%d center=(%d,%d) size=%dx%d\n", i,
+            printf("  exist[%d]: station=%d center=(%d,%d) size=%dx%d order=%d\n", i,
                    out.boxs_exist_region_current[i].station_number,
                    out.boxs_exist_region_current[i].x,
                    out.boxs_exist_region_current[i].y,
                    out.boxs_exist_region_current[i].width,
-                   out.boxs_exist_region_current[i].height);
+                   out.boxs_exist_region_current[i].height,
+                   out.boxs_exist_region_current[i].order_number);
         }
 
         if (result != NULL) {
@@ -100,6 +104,9 @@ int main(int argc, char *argv[])
     }
 
     MV_SDK_ReelExportTargetTrack_Destroy();
+    char final_id[64] = {0};
+    int final_len = MV_SDK_GetLastReelId(final_id, sizeof(final_id));
+    printf("after Destroy: last_reel_id='%s' (len=%d)\n", final_id, final_len);
     printf("Destroy done\n");
     return 0;
 }

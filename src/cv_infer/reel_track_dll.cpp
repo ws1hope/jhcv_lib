@@ -39,6 +39,8 @@ std::string g_last_error;
 const char *kModelPath = "panjuan_best_location.onnx";
 // Legacy debug log file name (kept for site troubleshooting familiarity).
 const char *kDebugLog = "JHMVDetect_debug.log";
+// Reel id daily-sequence state, stored next to the debug log.
+const char *kReelSeqFile = "JHMVDetect_reel_seq.txt";
 
 void SetLastErrorMessage(const std::string &msg)
 {
@@ -140,15 +142,20 @@ std::string PickWritableLogPath()
     return kDebugLog;
 }
 
+// Chosen log path (picked once, then cached). Reused so the reel-seq state
+// file lands in the same directory, which is already proven writable.
+const std::string &DebugLogPath()
+{
+    static const std::string path = PickWritableLogPath();
+    return path;
+}
+
 void WriteDebugLog(const std::string &msg)
 {
     static std::mutex log_mutex;
-    static std::string log_path;
     static bool wrote_header = false;
     std::lock_guard<std::mutex> lock(log_mutex);
-    if (log_path.empty()) {
-        log_path = PickWritableLogPath();
-    }
+    const std::string &log_path = DebugLogPath();
     std::ofstream fout(log_path, std::ios::app);
     if (!fout.is_open()) {
         return;
@@ -158,6 +165,82 @@ void WriteDebugLog(const std::string &msg)
         wrote_header = true;
     }
     fout << "[" << Timestamp() << "] " << msg << std::endl;
+}
+
+// Reel id persistence: "<YYYYMMDD> <seq>" next to the debug log, so a process
+// restart on the same day continues numbering instead of resetting to _001.
+std::string ReelSeqStatePath()
+{
+    std::string dir = DirectoryOfFile(DebugLogPath());
+    if (dir.empty()) return std::string(kReelSeqFile);
+    return JoinPath(dir, kReelSeqFile);
+}
+
+bool LoadReelSeq(std::string &date, int &seq)
+{
+    date.clear();
+    seq = 0;
+    const std::string path = ReelSeqStatePath();
+    std::ifstream fin(path);
+    if (!fin.is_open()) {
+        WriteDebugLog("[ReelId] state file not found (new counter): " + path);
+        return false;
+    }
+    std::string d;
+    int s = 0;
+    bool valid = static_cast<bool>(fin >> d >> s) && d.size() == 8 && s >= 0;
+    if (valid) {
+        for (char c : d) {
+            if (c < '0' || c > '9') {
+                valid = false;
+                break;
+            }
+        }
+    }
+    if (!valid) {
+        WriteDebugLog("[ReelId] state file invalid (reset counter): " + path);
+        return false;
+    }
+    date = d;
+    seq = s;
+    WriteDebugLog("[ReelId] state loaded: date=" + date +
+                  " seq=" + std::to_string(seq));
+    return true;
+}
+
+bool SaveReelSeq(const std::string &date, int seq)
+{
+    const std::string path = ReelSeqStatePath();
+    const std::string tmp_path = path + ".tmp";
+    {
+        std::ofstream fout(tmp_path, std::ios::trunc);
+        if (!fout.is_open()) {
+            WriteDebugLog("[ReelId] cannot open state tmp: " + tmp_path);
+            return false;
+        }
+        fout << date << " " << seq << "\n";
+        fout.flush();
+        if (!fout) {
+            WriteDebugLog("[ReelId] write state tmp failed: " + tmp_path);
+            return false;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp_path, path, ec);
+    if (ec) {
+        // Windows rename may refuse to replace an existing file.
+        std::error_code rm_ec;
+        std::filesystem::remove(path, rm_ec);
+        ec.clear();
+        std::filesystem::rename(tmp_path, path, ec);
+    }
+    if (ec) {
+        WriteDebugLog("[ReelId] rename state failed: " + path);
+        return false;
+    }
+    WriteDebugLog("[ReelId] state saved: date=" + date +
+                  " seq=" + std::to_string(seq));
+    return true;
 }
 
 // Short pointer formatting for logs (callers must not create std::string
@@ -254,8 +337,18 @@ bool InitPipelineLocked()
     std::unique_ptr<JHDeepCore::Pipeline::ReelTrackPipeline> pipeline(
         new JHDeepCore::Pipeline::ReelTrackPipeline());
 
+    // Restore the persisted daily sequence before the first detect: the
+    // callback saves it again on every reel birth.
+    std::string seq_date;
+    int seq_number = 0;
+    LoadReelSeq(seq_date, seq_number);
+    WriteDebugLog("[ReelId] state path = " + ReelSeqStatePath());
+
     WriteDebugLog("[Init] GPU init start");
-    bool ok = pipeline->init(modelPath, true);
+    bool ok = pipeline->init(modelPath, true,
+                             [](const std::string &date, int seq) {
+                                 SaveReelSeq(date, seq);
+                             });
     if (!ok) {
         // Do not retry CPU here. A native GPU failure can leave ORT/CUDA in a
         // corrupted state, and re-initializing in the same process may turn a
@@ -264,6 +357,7 @@ bool InitPipelineLocked()
         SetLastErrorMessage(std::string("model init failed: ") + modelPath);
         return false;
     }
+    pipeline->seedReelOrder(seq_date, seq_number);
 
     g_pipeline = pipeline.release();
     WriteDebugLog("[Init] GPU init OK");
@@ -625,6 +719,22 @@ extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastError(char *buf,
     std::lock_guard<std::mutex> lock(g_error_mutex);
     if (buf == NULL || buf_size <= 0) return 0;
     size_t n = g_last_error.copy(buf, (size_t)buf_size - 1);
+    buf[n] = '\0';
+    return (int)n;
+}
+
+extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char *buf,
+                                                                      int buf_size)
+{
+    if (buf == NULL || buf_size <= 0) return 0;
+    std::string id;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        if (g_pipeline != nullptr) {
+            id = g_pipeline->lastReelId();
+        }
+    }
+    size_t n = id.copy(buf, (size_t)buf_size - 1);
     buf[n] = '\0';
     return (int)n;
 }

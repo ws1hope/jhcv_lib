@@ -4,6 +4,7 @@
 #include "reel_infer.h"
 #include "reel_track_dll.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -29,11 +30,17 @@ namespace Pipeline {
 //   right_filter_points 新进入盘卷统计（仅用于 cout）。
 class ReelTrackPipeline {
   public:
+    // 出生赋号回调：date=YYYYMMDD，seq=当天序号。DLL 层用它把计数落盘，
+    // 保证进程重启后同一天不回退到 _001。
+    using ReelIdCallback = std::function<void(const std::string& date, int seq)>;
+
     ReelTrackPipeline() = default;
     ~ReelTrackPipeline() = default;
 
     // model_path 需配套同名 YAML（task_type: detection 等，见 reel_infer.h）
-    bool init(const std::string& model_path, bool use_gpu);
+    // on_reel_id_assigned 可为空：为空时只做内存内赋号（不持久化）。
+    bool init(const std::string& model_path, bool use_gpu,
+              ReelIdCallback on_reel_id_assigned = nullptr);
     bool valid() const { return detector_ && detector_->valid(); }
 
     // 单帧跟踪：src_image 为输入图（会被绘制结果）；
@@ -42,12 +49,28 @@ class ReelTrackPipeline {
                 const InputParamsReelExportTargetTrack& input_params,
                 OutputResultReelExportTargetTrack* output_params);
 
+    // 恢复当天已用序号（跨进程重启）。date 为空或非当天时不做处理，
+    // 首次赋号会按"跨天"逻辑从 1 开始。
+    void seedReelOrder(const std::string& date, int seq);
+
+    // 最近一次出生（第一次定位到正常盘卷）盘卷的唯一值 YYYYMMDD_XXX；
+    // 尚无出生时为空串。供 DLL 新接口 MV_SDK_GetLastReelId 取用。
+    const std::string& lastReelId() const { return last_reel_id_; }
+
   private:
+    // 出生赋号：当天自增序号写入 box.order_number，并更新 last_reel_id_。
+    void assignNewReelOrder(reelBoxMatch& box);
+
     std::unique_ptr<ReelDetector> detector_;
     // 异常卷边缘触发报警的跨帧状态（旧版函数内 static）
     int prev_station_one_real_state_ = 0;
     int prev_station_two_real_state_ = 0;
     std::vector<std::pair<int, int>> prev_reels_;  // (中心x, 出生工位)
+    // 盘卷唯一值（日期 + 当天序号）跟踪状态
+    int reel_order_counter_ = 0;   // 当天已赋序号计数（跨天重置）
+    std::string reel_id_date_;     // 当前日期 YYYYMMDD（用于跨天检测）
+    std::string last_reel_id_;     // 最近一次出生的完整唯一值
+    ReelIdCallback on_reel_id_assigned_;  // 赋号成功后通知（DLL 落盘）
 };
 
 } // namespace Pipeline

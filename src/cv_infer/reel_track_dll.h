@@ -7,6 +7,7 @@
 // plus new additive exports:
 //   MV_SDK_ReelExportTargetTrack_Destroy   (release model/session)
 //   MV_SDK_GetLastError                    (last error message)
+//   MV_SDK_GetLastReelId                   (last born reel id, YYYYMMDD_XXX)
 //
 // Struct layouts MUST NOT change (C# uses LayoutKind.Sequential,
 // Pack default). All box x/y are CENTER points (legacy format).
@@ -47,7 +48,8 @@ typedef struct reelBoxMatch {
     int y;                // center y
     int width;
     int height;
-    int order_number;             // order index inside the station
+    int order_number;             // daily birth sequence 1..N (0 = not a new
+                                  // birth this frame); see MV_SDK_GetLastReelId
     int match_state;              // 0 not matched, 1 matched
     int continuous_match_false_count;
     int previous_x;               // previous frame center x
@@ -125,6 +127,13 @@ REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_Destroy(void)
 
 // Copy the last error message into buf; returns copied length (0 if none).
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastError(char* buf, int buf_size);
+
+// Return the reel id (YYYYMMDD_XXX) assigned to the most recently born normal
+// reel (first frame it was located). Copies into buf; returns copied length
+// (0 if no reel has been born since Init). The daily sequence (XXX) is
+// persisted next to the debug log, so it keeps increasing after a process
+// restart on the same day.
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char* buf, int buf_size);
 
 #ifdef __cplusplus
 }  // extern "C"

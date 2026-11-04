@@ -90,9 +90,10 @@ typedef struct OutputResultReelExportTargetTrack {
 } OutputResultReelExportTargetTrack;  // 1008 bytes
 
 // Model init. Legacy contract: always returns 0; load failure only via
-// MV_SDK_GetLastError. Model path is "panjuan_best_location.onnx" relative
-// to the process working directory (legacy behavior). Calling Init again
-// releases the previous instance first.
+// MV_SDK_GetLastError. Model path is "panjuan_best_location.onnx": resolved
+// from the process working directory first, then the host exe directory, then
+// this DLL's directory. Init tries GPU first and falls back to CPU. Calling
+// Init again releases the previous instance first.
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_Init(
     int xmin_thresh, int xmax_thresh, int ymin_thresh, int ymax_thresh);
 
@@ -109,16 +110,21 @@ MV_SDK_ReelExportTargetTrack_Detect_2(
 // Never use Marshal.FreeHGlobal / FreeCoTaskMem on those buffers.
 REEL_TRACK_API void REEL_TRACK_STDCALL MV_SDK_Free(unsigned char* pBuffer);
 
+// Legacy multi-camera entry points declared by the C# side. This DLL only
+// implements the reel export track; these stubs keep P/Invoke binding safe
+// (they return 0 / NULL and only write a debug-log line).
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelCount_Init_test_id(
+    int camera_id, int xmin_thresh, int xmax_thresh, int ymin_thresh,
+    int ymax_thresh);
+REEL_TRACK_API unsigned char* REEL_TRACK_STDCALL
+MV_SDK_ReelLocation_Detect_test_id(int camera_id, const char* inputImageName,
+                                   const void* param, void* result);
+
 // Release model/session and reset internal alarm state (new export).
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_Destroy(void);
 
 // Copy the last error message into buf; returns copied length (0 if none).
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastError(char* buf, int buf_size);
-
-// Return the reel id (YYYYMMDD_XXX) assigned to the most recently born normal
-// reel (first frame it was located). Copies into buf; returns copied length
-// (0 if no reel has been born since Init). Empty string when none assigned.
-REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char* buf, int buf_size);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -28,3 +28,11 @@ valid_roi:
         - [741, 1996]
 output:
   log_dir: "D:\\CharacterDetect\\log"
+# 目标运动方向：仅比较 det1 最左框 bbox 中心的 x 相对上次确认方向位置的位移。
+# dx <= -min_move_px 判 forward，dx >= min_move_px 判 back，否则 still。
+# 换炉次、超过 reset_timeout_ms、分辨率变化或单帧跳变超过 max_jump_px 时重置。
+motion:
+  enable: true
+  min_move_px: 10
+  reset_timeout_ms: 3000
+  max_jump_px: 200

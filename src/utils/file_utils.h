@@ -130,6 +130,12 @@ struct HuaxinServerConfig {
     // 有效检测范围（按工位区分，station_id 匹配请求里的 station_id）：
     // 只有最左框中心点在对应多边形内时才送入 det2
     std::vector<HuaxinValidRoi> valid_rois;
+    // 目标运动方向判定：仅比较 bbox 中心 x 相对上次确认方向位置的位移。
+    // |dx| < min_move_px 视为 still，避免检测框抖动造成误判。
+    bool motion_enable = true;
+    int motion_min_move_px = 10;
+    int motion_reset_timeout_ms = 3000;
+    int motion_max_jump_px = 200;
 };
 
 // 单个工位的有效检测范围：station_id -> N 点多边形顶点（图像坐标）

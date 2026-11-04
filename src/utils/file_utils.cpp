@@ -259,6 +259,13 @@ JHDeepCore::HuaxinServerConfig FileHelper::loadHuaxinConfig(const std::string& c
         }
     }
 
+    if (node["motion"]) {
+        cfg.motion_enable = node["motion"]["enable"].as<bool>(cfg.motion_enable);
+        cfg.motion_min_move_px = node["motion"]["min_move_px"].as<int>(cfg.motion_min_move_px);
+        cfg.motion_reset_timeout_ms = node["motion"]["reset_timeout_ms"].as<int>(cfg.motion_reset_timeout_ms);
+        cfg.motion_max_jump_px = node["motion"]["max_jump_px"].as<int>(cfg.motion_max_jump_px);
+    }
+
     return cfg;
 }
 

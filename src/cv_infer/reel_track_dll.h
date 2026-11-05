@@ -7,7 +7,9 @@
 // plus new additive exports:
 //   MV_SDK_ReelExportTargetTrack_Destroy   (release model/session)
 //   MV_SDK_GetLastError                    (last error message)
-//   MV_SDK_GetLastReelId                   (last born reel id, YYYYMMDD_XXX)
+//   MV_SDK_GetLastReelId                   (last born reel id, YYYYMMDDNNN)
+//   MV_SDK_GetLastReelIdValue              (same id as long long)
+//   MV_SDK_PopReelLeaveEvent               (reel crossed the leave line)
 //
 // Struct layouts MUST NOT change (C# uses LayoutKind.Sequential,
 // Pack default). All box x/y are CENTER points (legacy format).
@@ -91,6 +93,19 @@ typedef struct OutputResultReelExportTargetTrack {
     int station_two_alarm_trigger;       // edge-triggered, 1 for a single frame
 } OutputResultReelExportTargetTrack;  // 1008 bytes
 
+// One "reel crossed the leave line" event. Same reel id is reported once only
+// (deduplicated inside the DLL); the queue is drained with
+// MV_SDK_PopReelLeaveEvent after each Detect_2 call.
+typedef struct ReelLeaveEvent {
+    long long reel_id;        // 20261104007 (YYYYMMDD + daily sequence)
+    int station_number;       // 1 / 2, 0 when unknown
+    int x;                    // center x at the crossing frame
+    int y;                    // center y
+    int width;
+    int height;
+    long long leave_time_ms;  // Unix epoch milliseconds
+} ReelLeaveEvent;
+
 // Model init. Legacy contract: always returns 0; load failure only via
 // MV_SDK_GetLastError. Model path is "panjuan_best_location.onnx": resolved
 // from the process working directory first, then the host exe directory, then
@@ -128,12 +143,21 @@ REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_ReelExportTargetTrack_Destroy(void)
 // Copy the last error message into buf; returns copied length (0 if none).
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastError(char* buf, int buf_size);
 
-// Return the reel id (YYYYMMDD_XXX) assigned to the most recently born normal
+// Return the reel id (YYYYMMDDNNN) assigned to the most recently born normal
 // reel (first frame it was located). Copies into buf; returns copied length
-// (0 if no reel has been born since Init). The daily sequence (XXX) is
-// persisted next to the debug log, so it keeps increasing after a process
-// restart on the same day.
+// (0 if no reel has been born since Init). The daily sequence is persisted
+// next to the debug log, so it keeps increasing after a process restart on
+// the same day.
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char* buf, int buf_size);
+
+// Same value as above but numeric (long long); 0 when no reel born yet.
+REEL_TRACK_API long long REEL_TRACK_STDCALL MV_SDK_GetLastReelIdValue(void);
+
+// Pop one queued "reel left the area" event (FIFO). Returns 1 and fills evt
+// when an event was available, 0 when the queue is empty. Call it in a loop
+// right after Detect_2; the queue holds at most 64 events and drops the
+// oldest one when full.
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_PopReelLeaveEvent(ReelLeaveEvent* evt);
 
 #ifdef __cplusplus
 }  // extern "C"

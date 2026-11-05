@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -41,6 +42,12 @@ const char *kModelPath = "panjuan_best_location.onnx";
 const char *kDebugLog = "JHMVDetect_debug.log";
 // Reel id daily-sequence state, stored next to the debug log.
 const char *kReelSeqFile = "JHMVDetect_reel_seq.txt";
+// Upper bound of pending reel-leave events (oldest dropped when full).
+const size_t kMaxLeaveEvents = 64;
+// FIFO of reel-leave events; guarded by g_mutex.
+std::deque<ReelLeaveEvent> g_leave_events;
+// Last logged draw summary (only logged when it changes).
+std::string g_last_draw_summary;
 
 void SetLastErrorMessage(const std::string &msg)
 {
@@ -326,6 +333,7 @@ bool InitPipelineLocked()
 {
     std::string modelPath = ResolveModelPath();
 
+    WriteDebugLog(std::string("[Init] build=\"") + __DATE__ + " " + __TIME__ + "\"");
     WriteDebugLog("[Init] model path = " + modelPath);
     WriteDebugLog("[Init] sizeof(reelBoxMatch)=" +
                   std::to_string(sizeof(reelBoxMatch)) +
@@ -336,6 +344,10 @@ bool InitPipelineLocked()
 
     std::unique_ptr<JHDeepCore::Pipeline::ReelTrackPipeline> pipeline(
         new JHDeepCore::Pipeline::ReelTrackPipeline());
+
+    // 新一轮 Init 清空离开事件队列与绘制摘要缓存
+    g_leave_events.clear();
+    g_last_draw_summary.clear();
 
     // Restore the persisted daily sequence before the first detect: the
     // callback saves it again on every reel birth.
@@ -574,6 +586,45 @@ static unsigned char *Detect2Impl(unsigned char *inputImage, int nWidth,
         return NULL;
     }
 
+    // 盘卷离开事件入队（有界 FIFO）+ 绘制摘要（标签变化时才写日志）。
+    // 注意：此处仍持有 g_mutex，Pop 由 MV_SDK_PopReelLeaveEvent 在同一把锁下取。
+    {
+        std::vector<JHDeepCore::Pipeline::ReelLeaveEventInfo> events =
+            g_pipeline->takeLeaveEvents();
+        if (!events.empty()) {
+            long long now_ms = (long long)std::chrono::duration_cast<
+                std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count();
+            for (const auto &info : events) {
+                ReelLeaveEvent evt;
+                evt.reel_id = info.reel_id;
+                evt.station_number = info.station_number;
+                evt.x = info.x;
+                evt.y = info.y;
+                evt.width = info.width;
+                evt.height = info.height;
+                evt.leave_time_ms = now_ms;
+                if (g_leave_events.size() >= kMaxLeaveEvents) {
+                    g_leave_events.pop_front();
+                    WriteDebugLog("[ReelEvent] drop oldest (queue full, cap=64)");
+                }
+                g_leave_events.push_back(evt);
+                WriteDebugLog(
+                    "[ReelEvent] leave id=" + std::to_string(evt.reel_id) +
+                    " station=" + std::to_string(evt.station_number) +
+                    " center=(" + std::to_string(evt.x) + "," +
+                    std::to_string(evt.y) + ") pending=" +
+                    std::to_string(g_leave_events.size()));
+            }
+        }
+        const std::string &summary = g_pipeline->lastDrawSummary();
+        if (!summary.empty() && summary != g_last_draw_summary) {
+            g_last_draw_summary = summary;
+            WriteDebugLog("[Draw] " + summary);
+        }
+    }
+
     unsigned char *outputResultImage = MatToUchar(srcImage);
     if (outputResultImage == NULL) {
         WriteDebugLog("[Detect_2] MatToUchar allocation failed");
@@ -706,6 +757,8 @@ MV_SDK_ReelExportTargetTrack_Destroy(void)
         std::lock_guard<std::mutex> lock(g_mutex);
         delete g_pipeline;
         g_pipeline = nullptr;
+        g_leave_events.clear();
+        g_last_draw_summary.clear();
         WriteDebugLog("[Destroy] pipeline released");
     } catch (...) {
         // never let an exception cross the DLL boundary
@@ -737,4 +790,25 @@ extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char *buf,
     size_t n = id.copy(buf, (size_t)buf_size - 1);
     buf[n] = '\0';
     return (int)n;
+}
+
+extern "C" REEL_TRACK_API long long REEL_TRACK_STDCALL
+MV_SDK_GetLastReelIdValue(void)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_pipeline == nullptr) return 0;
+    return g_pipeline->lastReelIdValue();
+}
+
+extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL
+MV_SDK_PopReelLeaveEvent(ReelLeaveEvent *evt)
+{
+    if (evt == NULL) return 0;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_leave_events.empty()) return 0;
+    *evt = g_leave_events.front();
+    g_leave_events.pop_front();
+    WriteDebugLog("[ReelEvent] pop id=" + std::to_string(evt->reel_id) +
+                  " pending=" + std::to_string(g_leave_events.size()));
+    return 1;
 }

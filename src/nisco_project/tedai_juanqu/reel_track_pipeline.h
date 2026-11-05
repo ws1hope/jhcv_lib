@@ -6,12 +6,23 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace JHDeepCore {
 namespace Pipeline {
+
+// 盘卷离开事件的精简信息（DLL 层补时间戳后转成 C ABI 结构体 ReelLeaveEvent）。
+struct ReelLeaveEventInfo {
+    long long reel_id = 0;    // 20261104007
+    int station_number = 0;   // 1 / 2 / 0 未知
+    int x = 0;                // 离开瞬间的中心点
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
 
 // 盘卷出口单帧跟踪（旧 DLL `MV_SDK_ReelExportTargetTrack_Detect_2_Impl`
 // 的迁移，C# P/Invoke 直调路径的算法核心）。
@@ -53,13 +64,25 @@ class ReelTrackPipeline {
     // 首次赋号会按"跨天"逻辑从 1 开始。
     void seedReelOrder(const std::string& date, int seq);
 
-    // 最近一次出生（第一次定位到正常盘卷）盘卷的唯一值 YYYYMMDD_XXX；
-    // 尚无出生时为空串。供 DLL 新接口 MV_SDK_GetLastReelId 取用。
+    // 最近一次出生（第一次定位到正常盘卷）盘卷的唯一值 YYYYMMDDNNN（纯数字）；
+    // 尚无出生时为空串。供 DLL 接口 MV_SDK_GetLastReelId 取用。
     const std::string& lastReelId() const { return last_reel_id_; }
+    // 同上，数值形式（long long）；尚无出生时为 0。
+    long long lastReelIdValue() const { return last_reel_id_value_; }
+
+    // 取走本帧产生的盘卷离开事件（取走后内部清空）。
+    std::vector<ReelLeaveEventInfo> takeLeaveEvents();
+
+    // 最近一帧的绘制摘要（仅在标签内容变化时由 DLL 写日志）。
+    const std::string& lastDrawSummary() const { return last_draw_summary_; }
 
   private:
     // 出生赋号：当天自增序号写入 box.order_number，并更新 last_reel_id_。
     void assignNewReelOrder(reelBoxMatch& box);
+    // 序号 -> 完整 ID（YYYYMMDDNNN，纯数字）；跨进程重启后老卷无记录时按当天日期兜底。
+    std::string reelIdText(int order) const;
+    // 序号 -> 数值形式的 ID；无效返回 0。
+    long long reelIdValue(int order) const;
 
     std::unique_ptr<ReelDetector> detector_;
     // 异常卷边缘触发报警的跨帧状态（旧版函数内 static）
@@ -69,8 +92,14 @@ class ReelTrackPipeline {
     // 盘卷唯一值（日期 + 当天序号）跟踪状态
     int reel_order_counter_ = 0;   // 当天已赋序号计数（跨天重置）
     std::string reel_id_date_;     // 当前日期 YYYYMMDD（用于跨天检测）
-    std::string last_reel_id_;     // 最近一次出生的完整唯一值
+    std::string last_reel_id_;     // 最近一次出生的完整唯一值（纯数字）
+    long long last_reel_id_value_ = 0;  // 最近一次出生的数值形式
+    std::vector<std::string> reel_ids_;  // 序号-1 -> 完整 ID（仅当天，用于图上标注）
     ReelIdCallback on_reel_id_assigned_;  // 赋号成功后通知（DLL 落盘）
+    // 盘卷离开事件
+    std::set<long long> reported_leave_ids_;  // 已产生过离开事件的盘卷号（去重）
+    std::vector<ReelLeaveEventInfo> leave_events_;  // 本帧待取走的事件
+    std::string last_draw_summary_;  // 绘制摘要（标签变化时 DLL 记日志）
 };
 
 } // namespace Pipeline

@@ -61,7 +61,8 @@ int main(int argc, char *argv[])
         printf("frame %d: result=%p last_error='%s'\n", frame, (void *)result, err);
         char reel_id[64] = {0};
         int reel_id_len = MV_SDK_GetLastReelId(reel_id, sizeof(reel_id));
-        printf("  last_reel_id='%s' (len=%d)\n", reel_id, reel_id_len);
+        printf("  last_reel_id='%s' (len=%d) value=%lld\n", reel_id, reel_id_len,
+               MV_SDK_GetLastReelIdValue());
         printf("  exist=%d leave=%d near_line_right=%d leave_station=%d "
                "back=%d out1=%d out2=%d alarm1=%d alarm2=%d\n",
                out.exist_region_current_frame_boxCount,
@@ -82,8 +83,34 @@ int main(int argc, char *argv[])
                    out.boxs_exist_region_current[i].height,
                    out.boxs_exist_region_current[i].order_number);
         }
+        for (int i = 0; i < out.leave_region_current_frame_boxCount; i++) {
+            printf("  leave[%d]: station=%d center=(%d,%d) size=%dx%d order=%d\n", i,
+                   out.boxs_leave_region_current[i].station_number,
+                   out.boxs_leave_region_current[i].x,
+                   out.boxs_leave_region_current[i].y,
+                   out.boxs_leave_region_current[i].width,
+                   out.boxs_leave_region_current[i].height,
+                   out.boxs_leave_region_current[i].order_number);
+        }
+
+        ReelLeaveEvent leave_evt;
+        while (MV_SDK_PopReelLeaveEvent(&leave_evt) == 1) {
+            printf("  leave_event: reel_id=%lld station=%d center=(%d,%d) "
+                   "size=%dx%d time_ms=%lld\n",
+                   leave_evt.reel_id, leave_evt.station_number, leave_evt.x,
+                   leave_evt.y, leave_evt.width, leave_evt.height,
+                   leave_evt.leave_time_ms);
+        }
 
         if (result != NULL) {
+            // 保存带标注的结果图，便于直接检查框/工位/盘卷号码的绘制效果。
+            if (out.width > 0 && out.height > 0 && out.channels == 3) {
+                cv::Mat annotated(out.height, out.width, CV_8UC3, result);
+                char out_name[64];
+                snprintf(out_name, sizeof(out_name), "dll_test_out_%d.jpg", frame);
+                cv::imwrite(out_name, annotated);
+                printf("  annotated image saved: %s\n", out_name);
+            }
             MV_SDK_Free(result);
         } else {
             printf("[ERROR] Detect_2 returned NULL, abort\n");

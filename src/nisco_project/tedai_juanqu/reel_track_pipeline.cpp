@@ -44,6 +44,70 @@ std::string CurrentDateYYYYMMDD()
     return std::string(buf);
 }
 
+// 盘卷标签：深色底（蓝/红）+ 白字。工位用 1.0 字号，完整 ID 用 0.7 字号接在同一行；
+// 默认画在框上方边缘，靠近画面顶部时挪到框内，靠右时左移，避免出界。
+void DrawReelLabel(cv::Mat &img, const cv::Rect &box,
+                   const std::string &station_text, const std::string &reel_id,
+                   const cv::Scalar &bg_color)
+{
+    const int kFont = cv::FONT_HERSHEY_DUPLEX;
+    const double kStationScale = 1.0;
+    const double kIdScale = 0.7;
+    const int kThickness = 2;
+    const int kPad = 8;
+    const int kGap = 10;
+    const cv::Scalar kTextColor(255, 255, 255);  // 白字
+
+    if (station_text.empty() && reel_id.empty()) return;
+
+    int station_base = 0;
+    int id_base = 0;
+    cv::Size station_size =
+        station_text.empty()
+            ? cv::Size(0, 0)
+            : cv::getTextSize(station_text, kFont, kStationScale, kThickness,
+                              &station_base);
+    cv::Size id_size =
+        reel_id.empty() ? cv::Size(0, 0)
+                        : cv::getTextSize(reel_id, kFont, kIdScale, kThickness,
+                                          &id_base);
+
+    int text_h = std::max(station_size.height, id_size.height);
+    int label_w = station_size.width + kPad * 2;
+    if (!reel_id.empty()) {
+        label_w += (station_text.empty() ? 0 : kGap) + id_size.width;
+    }
+    int label_h = text_h + kPad * 2;
+
+    int x = box.x;
+    int y = box.y - label_h - 2;  // 框上方
+    if (y < 0) y = box.y + 2;     // 顶部越界：画到框内
+    if (x + label_w > img.cols) x = img.cols - label_w;  // 右侧越界：左移
+    if (x < 0) x = 0;
+
+    cv::rectangle(img, cv::Rect(x, y, label_w, label_h), bg_color, cv::FILLED);
+
+    // 两段文字共用基线，底部对齐
+    int baseline_y = y + kPad + text_h;
+    if (!station_text.empty()) {
+        cv::putText(img, station_text, cv::Point(x + kPad, baseline_y), kFont,
+                    kStationScale, kTextColor, kThickness, cv::LINE_AA);
+    }
+    if (!reel_id.empty()) {
+        int id_x = x + kPad + station_size.width +
+                   (station_text.empty() ? 0 : kGap);
+        cv::putText(img, reel_id, cv::Point(id_x, baseline_y), kFont, kIdScale,
+                    kTextColor, kThickness, cv::LINE_AA);
+    }
+}
+
+// 拼接绘制摘要（标签内容变化时 DLL 写日志，方便现场定位"没有号"的问题）。
+void AppendDrawLabel(std::string &out, const std::string &label)
+{
+    if (!out.empty()) out += "|";
+    out += label;
+}
+
 } // namespace
 
 bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu,
@@ -64,6 +128,11 @@ bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu,
     reel_order_counter_ = 0;
     reel_id_date_.clear();
     last_reel_id_.clear();
+    last_reel_id_value_ = 0;
+    reel_ids_.clear();
+    reported_leave_ids_.clear();
+    leave_events_.clear();
+    last_draw_summary_.clear();
     on_reel_id_assigned_ = std::move(on_reel_id_assigned);
     return true;
 }
@@ -77,21 +146,54 @@ void ReelTrackPipeline::seedReelOrder(const std::string &date, int seq)
 }
 
 // 出生赋号：当天自增序号（跨天重置），写入 box.order_number，并记录完整唯一值。
+// ID 为纯数字 YYYYMMDDNNN（例：20261104007），方便 C# 用 long 保存。
 void ReelTrackPipeline::assignNewReelOrder(reelBoxMatch &box)
 {
     std::string today = CurrentDateYYYYMMDD();
     if (today != reel_id_date_) {
         reel_id_date_ = today;
         reel_order_counter_ = 0;
+        reel_ids_.clear();            // 只保留当天号码用于图上标注
+        reported_leave_ids_.clear();  // 跨天清空离开事件去重记录
     }
     ++reel_order_counter_;
     box.order_number = reel_order_counter_;
     char buf[32];
-    snprintf(buf, sizeof(buf), "%s_%03d", today.c_str(), reel_order_counter_);
+    snprintf(buf, sizeof(buf), "%s%03d", today.c_str(), reel_order_counter_);
     last_reel_id_ = buf;
+    last_reel_id_value_ = std::strtoll(buf, nullptr, 10);
+    reel_ids_.push_back(last_reel_id_);
     if (on_reel_id_assigned_) {
         on_reel_id_assigned_(reel_id_date_, reel_order_counter_);
     }
+}
+
+std::string ReelTrackPipeline::reelIdText(int order) const
+{
+    if (order <= 0 || order > reel_order_counter_) return std::string();
+    size_t idx = (size_t)(order - 1);
+    if (idx < reel_ids_.size() && !reel_ids_[idx].empty()) {
+        return reel_ids_[idx];
+    }
+    // 跨进程重启后，重启前出生的卷不在表内：按当前日期 + 序号兜底
+    if (reel_id_date_.empty()) return std::string();
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%s%03d", reel_id_date_.c_str(), order);
+    return std::string(buf);
+}
+
+long long ReelTrackPipeline::reelIdValue(int order) const
+{
+    std::string text = reelIdText(order);
+    if (text.empty()) return 0;
+    return std::strtoll(text.c_str(), nullptr, 10);
+}
+
+std::vector<ReelLeaveEventInfo> ReelTrackPipeline::takeLeaveEvents()
+{
+    std::vector<ReelLeaveEventInfo> events;
+    events.swap(leave_events_);
+    return events;
 }
 
 bool ReelTrackPipeline::detect(cv::Mat &src_image,
@@ -401,12 +503,55 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
     // ========== 离开区域（分钢线右侧）盘卷更新 ==========
     leave_region_current_frame_boxCount0 = (int)right_points.size();
     for (const auto &p : right_points) {
-        reelBoxMatch leave_box;
+        reelBoxMatch leave_box{};  // 值初始化：避免 order_number 等字段带脏值
         leave_box.x = p.rect.x;
         leave_box.y = p.rect.y;
         leave_box.width = p.rect.width;
         leave_box.height = p.rect.height;
         boxs_leave_current.push_back(leave_box);
+    }
+    // 离开区域没有自己的跟踪状态：用上一帧 exist + leave 做位置预测匹配，
+    // 一对一继承 order_number / station_number，供图上标注与离开事件使用。
+    if (!boxs_leave_current.empty()) {
+        std::vector<reelBoxMatch> prev_candidates;
+        for (int i = 0; i < exist_prev_count; i++) {
+            prev_candidates.push_back(input_params.boxs_exist_region_previous[i]);
+        }
+        for (int i = 0; i < leave_prev_count; i++) {
+            prev_candidates.push_back(input_params.boxs_leave_region_previous[i]);
+        }
+        std::vector<bool> candidate_used(prev_candidates.size(), false);
+        for (auto &leave_box : boxs_leave_current) {
+            int best_index = -1;
+            int best_distance = INT_MAX;
+            for (size_t k = 0; k < prev_candidates.size(); k++) {
+                if (candidate_used[k]) continue;
+                const reelBoxMatch &prev = prev_candidates[k];
+                if (prev.order_number <= 0) continue;
+                // 横向偏差过大视为不同的卷（防止相邻盘卷串号）
+                if (std::abs(leave_box.x - prev.x) > 120) continue;
+                // 用上一帧位移做线性外推，盘卷移动快时也能接上号
+                int predict_y = prev.y;
+                if (prev.previous_y > 0) {
+                    predict_y = prev.y + (prev.y - prev.previous_y) / 2;
+                }
+                int distance = std::abs(leave_box.y - predict_y);
+                if (distance < best_distance) {
+                    best_distance = distance;
+                    best_index = (int)k;
+                }
+            }
+            if (best_index >= 0 && best_distance < 180) {
+                const reelBoxMatch &prev = prev_candidates[best_index];
+                leave_box.order_number = prev.order_number;
+                leave_box.station_number = prev.station_number;
+                leave_box.previous_x = prev.x;
+                leave_box.previous_y = prev.y;
+                leave_box.previous_width = prev.width;
+                leave_box.previous_height = prev.height;
+                candidate_used[best_index] = true;
+            }
+        }
     }
     if (right_points.empty()) {
         current_frame_leave_near_fengang_line_right0 = 5000;
@@ -421,6 +566,8 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
     // ========== 绘制：有效区域内的盘卷（蓝框 + 工位标签） ==========
     cv::Scalar color_center(0, 255, 0);
     cv::Scalar color_rec(255, 0, 0);
+    std::string draw_labels;
+    int draw_with_id = 0;
     for (int i = 0; i < exist_region_current_frame_boxCount0 &&
                     i < (int)boxs_exist_current.size();
          ++i) {
@@ -441,13 +588,14 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
         } else {
             class_string = "notknow";
         }
-        cv::Size text_size =
-            cv::getTextSize(class_string, cv::FONT_HERSHEY_DUPLEX, 1, 2, 0);
-        cv::Rect text_box(box.x, box.y - 40, text_size.width + 10,
-                          text_size.height + 20);
-        cv::rectangle(src_image, text_box, color_rec, cv::FILLED);
-        cv::putText(src_image, class_string, cv::Point(box.x + 5, box.y - 10),
-                    cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 0, 0), 2, 0);
+        std::string reel_id = reelIdText(detection.order_number);
+        DrawReelLabel(src_image, box, class_string, reel_id, color_rec);
+        std::string label = class_string;
+        if (!reel_id.empty()) {
+            label += " " + reel_id;
+            ++draw_with_id;
+        }
+        AppendDrawLabel(draw_labels, label);
     }
 
     // ========== 绘制：离开区域盘卷（红框；首个按离开工位标注） ==========
@@ -468,10 +616,13 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
                    color_center1, -1);
         std::string class_string;
         if (i == 0) {
-            if (current_frame_leave_station_number0 == 1) {
+            // 优先用 DLL 记录的离开工位；未知时回退到上一帧跟踪到的工位
+            int station = current_frame_leave_station_number0;
+            if (station != 1 && station != 2) station = detection.station_number;
+            if (station == 1) {
                 class_string = "station1";
                 boxs_leave_current[i].station_number = 1;
-            } else if (current_frame_leave_station_number0 == 2) {
+            } else if (station == 2) {
                 class_string = "station2";
                 boxs_leave_current[i].station_number = 2;
             } else {
@@ -481,13 +632,43 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
         } else {
             class_string = "notknow";
         }
-        cv::Size text_size =
-            cv::getTextSize(class_string, cv::FONT_HERSHEY_DUPLEX, 1, 2, 0);
-        cv::Rect text_box(box.x, box.y - 40, text_size.width + 10,
-                          text_size.height + 20);
-        cv::rectangle(src_image, text_box, color_rec1, cv::FILLED);
-        cv::putText(src_image, class_string, cv::Point(box.x + 5, box.y - 10),
-                    cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 0, 0), 2, 0);
+        std::string reel_id = reelIdText(detection.order_number);
+        // 有盘卷号码时不再显示 "notknow"（号码本身已能标识该盘卷）
+        if (!reel_id.empty() && class_string == "notknow") class_string.clear();
+        DrawReelLabel(src_image, box, class_string, reel_id, color_rec1);
+        std::string label = class_string;
+        if (!reel_id.empty()) {
+            label += " " + reel_id;
+            ++draw_with_id;
+        }
+        AppendDrawLabel(draw_labels, label);
+    }
+
+    // 绘制摘要：标签内容变化时由 DLL 写日志（定位"图上没有号"的问题）
+    last_draw_summary_ =
+        "exist=" + std::to_string(exist_region_current_frame_boxCount0) +
+        " leave=" + std::to_string(leave_region_current_frame_boxCount0) +
+        " with_id=" + std::to_string(draw_with_id) +
+        " labels=" + (draw_labels.empty() ? std::string("<none>") : draw_labels);
+
+    // ========== 盘卷离开事件（首次进入离开区且已带号，同一号码只报一次） ==========
+    for (int i = 0; i < leave_region_current_frame_boxCount0 &&
+                    i < (int)boxs_leave_current.size();
+         ++i) {
+        const reelBoxMatch &leave_box = boxs_leave_current[i];
+        if (leave_box.order_number <= 0) continue;
+        long long reel_id_value = reelIdValue(leave_box.order_number);
+        if (reel_id_value <= 0) continue;
+        if (reported_leave_ids_.count(reel_id_value) > 0) continue;
+        reported_leave_ids_.insert(reel_id_value);
+        ReelLeaveEventInfo info;
+        info.reel_id = reel_id_value;
+        info.station_number = leave_box.station_number;
+        info.x = leave_box.x;
+        info.y = leave_box.y;
+        info.width = leave_box.width;
+        info.height = leave_box.height;
+        leave_events_.push_back(info);
     }
 
     // ========== 绘制：异常盘卷（红框） ==========
@@ -503,13 +684,7 @@ bool ReelTrackPipeline::detect(cv::Mat &src_image,
         cv::circle(src_image, cv::Point(obj.rect.x, obj.rect.y), 5,
                    color_center2, -1);
         std::string class_string = "abnormal";
-        cv::Size text_size =
-            cv::getTextSize(class_string, cv::FONT_HERSHEY_DUPLEX, 1, 2, 0);
-        cv::Rect text_box(box.x, box.y - 40, text_size.width + 10,
-                          text_size.height + 20);
-        cv::rectangle(src_image, text_box, color_rec2, cv::FILLED);
-        cv::putText(src_image, class_string, cv::Point(box.x + 5, box.y - 10),
-                    cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 0, 0), 2, 0);
+        DrawReelLabel(src_image, box, class_string, std::string(), color_rec2);
     }
 
     // ========== 工位出入状态（报警边缘触发前的基础状态） ==========

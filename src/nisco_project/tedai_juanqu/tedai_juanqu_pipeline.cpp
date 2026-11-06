@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
@@ -20,8 +21,153 @@ using json = nlohmann::json;
 // 旧版结构体数组容量
 static const int kMaxPanjuanCount = 50;
 
+namespace {
+
+std::string fmtFixed(double value, int digits)
+{
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.*f", digits, value);
+    return std::string(buf);
+}
+
+void drawDashedLine(cv::Mat &img, const cv::Point &a, const cv::Point &b,
+                    const cv::Scalar &color, int thickness)
+{
+    double len = cv::norm(b - a);
+    if (len < 1.0) return;
+    cv::Point2d dir((b.x - a.x) / len, (b.y - a.y) / len);
+    const double dash = 14.0;
+    for (double s = 0.0; s < len; s += dash * 2.0) {
+        double e = std::min(len, s + dash);
+        cv::Point p1(cvRound(a.x + dir.x * s), cvRound(a.y + dir.y * s));
+        cv::Point p2(cvRound(a.x + dir.x * e), cvRound(a.y + dir.y * e));
+        cv::line(img, p1, p2, color, thickness, cv::LINE_AA);
+    }
+}
+
+// 左下角信息面板（深色底 + 白字）
+void drawInfoPanel(cv::Mat &img, const std::vector<std::string> &lines)
+{
+    if (lines.empty()) return;
+    const double scale = 0.6;
+    const int line_h = 24;
+    const int pad = 8;
+    int max_w = 0;
+    for (const auto &s : lines) {
+        int base = 0;
+        cv::Size sz = cv::getTextSize(s, cv::FONT_HERSHEY_DUPLEX, scale, 1, &base);
+        max_w = std::max(max_w, sz.width);
+    }
+    int total_h = (int)lines.size() * line_h + pad * 2;
+    int x = 10;
+    int y = img.rows - total_h - 10;
+    if (y < 0) y = 0;
+    cv::Rect bg(x, y, max_w + pad * 2, total_h);
+    cv::rectangle(img, bg, cv::Scalar(30, 30, 30), cv::FILLED);
+    for (size_t i = 0; i < lines.size(); i++) {
+        cv::putText(img, lines[i], cv::Point(x + pad, y + pad + 16 + (int)i * line_h),
+                    cv::FONT_HERSHEY_DUPLEX, scale, cv::Scalar(255, 255, 255), 1,
+                    cv::LINE_AA);
+    }
+}
+
+// 在结果图上标注进入判定：qishi/zhongzhi 轴线、半径圆、上报/未上报的框与信息面板
+void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
+                    int entry_radius_px, double entry_t_ratio)
+{
+    const cv::Scalar kAxisColor(255, 0, 255);    // 品红：轴线
+    const cv::Scalar kQishiColor(0, 0, 255);     // 红：起点
+    const cv::Scalar kZhongzhiColor(255, 0, 0);  // 蓝：终点
+    const cv::Scalar kEnterColor(0, 255, 0);     // 绿：本次上报
+    const cv::Scalar kRejectColor(150, 150, 150);
+    const cv::Scalar kDupColor(0, 255, 255);
+
+    auto drawBox = [&](const ReelRect &box, const cv::Scalar &color, int thickness) {
+        cv::Rect rect(box.x - box.width / 2, box.y - box.height / 2, box.width,
+                      box.height);
+        cv::rectangle(img, rect, color, thickness);
+    };
+
+    if (dbg.gate.has_axis) {
+        cv::Point q(dbg.gate.qishi.x, dbg.gate.qishi.y);
+        cv::Point z(dbg.gate.zhongzhi.x, dbg.gate.zhongzhi.y);
+        drawDashedLine(img, q, z, kAxisColor, 2);
+        cv::circle(img, q, entry_radius_px, kAxisColor, 1, cv::LINE_AA);
+        cv::circle(img, q, 6, kQishiColor, cv::FILLED, cv::LINE_AA);
+        cv::circle(img, z, 6, kZhongzhiColor, cv::FILLED, cv::LINE_AA);
+        cv::putText(img, "qishi", q + cv::Point(8, -8), cv::FONT_HERSHEY_DUPLEX,
+                    0.6, kQishiColor, 1, cv::LINE_AA);
+        cv::putText(img, "zhongzhi", z + cv::Point(8, -8),
+                    cv::FONT_HERSHEY_DUPLEX, 0.6, kZhongzhiColor, 1, cv::LINE_AA);
+    }
+
+    for (const auto &box : dbg.duplicated) {
+        drawBox(box, kDupColor, 1);
+        cv::putText(img, "dup", cv::Point(box.x - box.width / 2, box.y - box.height / 2 - 4),
+                    cv::FONT_HERSHEY_DUPLEX, 0.5, kDupColor, 1, cv::LINE_AA);
+    }
+    for (const auto &box : dbg.rejected) {
+        drawBox(box, kRejectColor, 1);
+        cv::putText(img, "no-enter",
+                    cv::Point(box.x - box.width / 2, box.y - box.height / 2 - 4),
+                    cv::FONT_HERSHEY_DUPLEX, 0.5, kRejectColor, 1, cv::LINE_AA);
+    }
+
+    if (dbg.has_event) {
+        drawBox(dbg.box, kEnterColor, 3);
+        std::string rule = (dbg.rule == ReelEnterDebug::RULE_DIST)
+                               ? "dist"
+                               : ((dbg.rule == ReelEnterDebug::RULE_T)
+                                      ? "t"
+                                      : "fallback");
+        std::string label = "ENTER d=" + fmtFixed(dbg.distance, 0) +
+                            " t=" + fmtFixed(dbg.t, 2) + " rule=" + rule;
+        cv::putText(img, label,
+                    cv::Point(dbg.box.x - dbg.box.width / 2,
+                              dbg.box.y - dbg.box.height / 2 - 8),
+                    cv::FONT_HERSHEY_DUPLEX, 0.7, kEnterColor, 2, cv::LINE_AA);
+    }
+
+    std::string status;
+    if (dbg.baseline) {
+        status = "enter=NO (baseline)";
+    } else if (dbg.has_event) {
+        std::string rule = (dbg.rule == ReelEnterDebug::RULE_DIST)
+                               ? "dist"
+                               : ((dbg.rule == ReelEnterDebug::RULE_T) ? "t"
+                                                                       : "fallback");
+        status = "enter=YES rule=" + rule + " d=" + fmtFixed(dbg.distance, 0) +
+                 " t=" + fmtFixed(dbg.t, 2);
+    } else {
+        status = "enter=NO (no candidate)";
+    }
+
+    std::vector<std::string> lines;
+    lines.push_back("cam" + std::to_string(camera_id) + "  new=" +
+                    std::to_string(dbg.new_count) + " tracked=" +
+                    std::to_string(dbg.tracked_count) + " dup=" +
+                    std::to_string(dbg.dup_count));
+    lines.push_back(status);
+    if (dbg.gate.has_axis) {
+        lines.push_back("qishi=(" + std::to_string(dbg.gate.qishi.x) + "," +
+                        std::to_string(dbg.gate.qishi.y) + ")  zhongzhi=(" +
+                        std::to_string(dbg.gate.zhongzhi.x) + "," +
+                        std::to_string(dbg.gate.zhongzhi.y) + ")");
+    } else {
+        lines.push_back("qishi=none (fallback)");
+    }
+    lines.push_back("radius=" + std::to_string(entry_radius_px) + "  t_max=" +
+                    fmtFixed(entry_t_ratio, 2));
+    if (dbg.has_event && dbg.event_id.size() > 14) {
+        lines.push_back("event=" + dbg.event_id.substr(0, 14));
+    }
+    drawInfoPanel(img, lines);
+}
+
+} // namespace
+
 TedaiJuanquPipeline::TedaiJuanquPipeline(const TedaiJuanquServerConfig &config)
-    : config_(config)
+    : config_(config), enter_tracker_(config.events)
 {
     if (!loadLiuzhiRois()) {
         std::cerr << "[ERROR] tedai_juanqu: failed to load liuzhi roi file: "
@@ -107,6 +253,54 @@ bool TedaiJuanquPipeline::loadLiuzhiRois()
     }
 
     return !camera_params_.empty();
+}
+
+void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
+                                            const ReelCameraOutput &out,
+                                            cv::Mat &src, long long now_ms)
+{
+    if (!config_.events.enable) return;
+
+    int roi_index = -1;
+    const char *roi_id = nullptr;
+    if (camera_id >= 1 && camera_id <= 3) {
+        roi_index = 0;  // inside
+        roi_id = "inside";
+    } else if (camera_id == 4 || camera_id == 5) {
+        roi_index = 1;  // outside
+        roi_id = "outside";
+    } else {
+        return;  // camera0 不参与
+    }
+
+    auto it = liuzhi_rois_.find(camera_id);
+    if (it == liuzhi_rois_.end() || (int)it->second.size() <= roi_index) return;
+    const ReelRoiInfo &roi = it->second[roi_index];
+
+    // camera3 的 inside 输出做过透视变换（x 被置为序号+50），
+    // 入口判定/连续性匹配必须使用变换前的像素框
+    const std::vector<ReelRect> *boxes = nullptr;
+    if (roi_index == 0) {
+        boxes = (camera_id == 3) ? &out.inside_pixel : &out.inside;
+    } else {
+        boxes = &out.outside;
+    }
+
+    ReelEventGate gate;
+    if (roi.qishi_zhongzhi_points.size() >= 2) {
+        gate.has_axis = true;
+        gate.qishi = roi.qishi_zhongzhi_points[0];
+        gate.zhongzhi = roi.qishi_zhongzhi_points[1];
+    }
+
+    ReelEnterDebug debug;
+    enter_tracker_.update(camera_id, roi_id, roi.liuzhi_id, *boxes, gate,
+                          now_ms, &last_events_, &debug);
+
+    if (config_.events.draw_debug) {
+        drawEnterDebug(src, camera_id, debug, config_.events.entry_radius_px,
+                       config_.events.entry_t_ratio);
+    }
 }
 
 ReelDetector *TedaiJuanquPipeline::detector(int camera_id)
@@ -206,6 +400,10 @@ std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
     classify_total_ms_ = 0;
     last_timings_.clear();
     last_diagnostics_.clear();
+    last_events_.clear();
+
+    const long long event_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
 
     // 按 camera_id 升序处理（跨相机去重依赖：camera 3 依赖 camera 2、
     // camera 5 依赖 camera 3 的本请求结果）
@@ -263,6 +461,8 @@ std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
                                    prev_result, prev_params, out, st, diag);
             }
             out.read_picture_flag = 1;
+            // 盘卷进入区域事件（仅检测成功的相机）
+            updateEnterEvents(camera_id, out, src, event_now_ms);
             // 保存任务并行执行（编码+写盘），本线程继续处理下一相机
             auto t_save0 = std::chrono::high_resolution_clock::now();
             size_t result_index = results.size();

@@ -164,6 +164,7 @@ class TedaiJuanquServicePrivate {
         root["station_id"] = station_id;
         root["read_message_flag"] = "OK";
         root["all_results"] = ojson::array();
+        root["events"] = ojson::array();
 
         auto log_and_dump = [&]() {
             std::string result = root.dump();
@@ -239,6 +240,21 @@ class TedaiJuanquServicePrivate {
 
         for (const auto &cam : results) {
             appendCameraResult(root["all_results"], cam);
+        }
+
+        // 盘卷进入区域事件（本次请求每相机最多 1 条；无事件时为空数组）
+        for (const auto &ev : pipeline_->lastEvents()) {
+            ojson item;
+            item["event_id"] = ev.event_id;
+            item["type"] = ev.type;
+            item["camera_id"] = ev.camera_id;
+            item["roi_id"] = ev.roi_id;
+            item["liuzhi_id"] = ev.liuzhi_id;
+            item["x"] = ev.x;
+            item["y"] = ev.y;
+            item["width"] = ev.width;
+            item["height"] = ev.height;
+            root["events"].push_back(item);
         }
 
         // 分阶段调试日志（JSONL，默认关闭）：每相机每请求一行，用于跨帧归因

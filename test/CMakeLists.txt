@@ -55,6 +55,7 @@ add_executable(fujian ${CMAKE_CURRENT_SOURCE_DIR}/fujian/main.cpp)
 
 # ========== Tedai Juanqu 多相机盘卷定位服务 ==========
 add_executable(tedai_juanqu ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/main.cpp)
+add_executable(enter_event_test ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/enter_event_test.cpp)
 
 # ========== 单应矩阵测试 ==========
 add_executable(homography_test ${CMAKE_CURRENT_SOURCE_DIR}/homography/main.cpp)
@@ -96,6 +97,7 @@ set(TEST_TARGETS
     gx_jingzheng
     fujian
     tedai_juanqu
+    enter_event_test
     homography_test
     jiuyang
     jiuyang_bend_test
@@ -206,6 +208,7 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/main.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tedai_juanqu/enter_event_test.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

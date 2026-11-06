@@ -439,6 +439,20 @@ JHDeepCore::TedaiJuanquServerConfig FileHelper::loadTedaiJuanquConfig(const std:
         }
     }
 
+    if (node["events"]) {
+        const YAML::Node& ev = node["events"];
+        cfg.events.enable = ev["enable"].as<bool>(cfg.events.enable);
+        cfg.events.draw_debug = ev["draw_debug"].as<bool>(cfg.events.draw_debug);
+        cfg.events.entry_radius_px = ev["entry_radius_px"].as<int>(cfg.events.entry_radius_px);
+        cfg.events.entry_t_ratio = ev["entry_t_ratio"].as<double>(cfg.events.entry_t_ratio);
+        cfg.events.dedup_frames = ev["dedup_frames"].as<int>(cfg.events.dedup_frames);
+        cfg.events.track_timeout_ms =
+            ev["track_timeout_ms"].as<int>(cfg.events.track_timeout_ms);
+        cfg.events.match_radius_px =
+            ev["match_radius_px"].as<int>(cfg.events.match_radius_px);
+        cfg.events.max_missed = ev["max_missed"].as<int>(cfg.events.max_missed);
+    }
+
     return cfg;
 }
 

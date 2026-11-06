@@ -1,6 +1,7 @@
 #pragma once
 
 #include "reel_diagnostics.h"
+#include "reel_region_tracker.h"
 #include "reel_types.h"
 #include "reel_infer.h"
 #include "file_utils.h"
@@ -76,9 +77,17 @@ class TedaiJuanquPipeline {
         return last_diagnostics_;
     }
 
+    // 本次 process() 产生的盘卷进入区域事件（每相机最多 1 条，按 camera_id 升序）
+    const std::vector<ReelEnterEvent> &lastEvents() const { return last_events_; }
+
   private:
     ReelDetector *detector(int camera_id);  // 按相机懒加载并缓存
     ReelClassifier *classifier();           // 懒加载并缓存
+
+    // 盘卷进入区域事件：把本相机结果送入跟踪器（camera1-3 -> inside/liuzhi=1，
+    // camera4-5 -> outside/liuzhi=2；camera0 不参与），并按需在结果图上标注。
+    void updateEnterEvents(int camera_id, const ReelCameraOutput &out,
+                           cv::Mat &src, long long now_ms);
 
     // cameras 1-5：检测 + 三区域判定 + 排序 + 跨区域去重 + camera 3 坐标转换
     void detectReelLocation(int camera_id, cv::Mat &src, const ReelRoiParams &params,
@@ -108,6 +117,9 @@ class TedaiJuanquPipeline {
     std::vector<ReelStepTiming> last_timings_;  // 本次 process() 分步耗时明细
     // 本次 process() 分阶段诊断快照（跨帧日志归因用）
     std::vector<ReelCameraDiagnostics> last_diagnostics_;
+    // 盘卷进入区域事件（跨请求状态 + 本次结果）
+    ReelRegionTracker enter_tracker_;
+    std::vector<ReelEnterEvent> last_events_;
 };
 
 } // namespace Pipeline

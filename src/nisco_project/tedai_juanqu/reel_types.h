@@ -70,5 +70,18 @@ struct ReelDetObject {
     int classid = 0;
 };
 
+// HTTP 响应的盘卷进入区域事件（每次请求每相机最多 1 条）
+struct ReelEnterEvent {
+    std::string event_id;   // evt-<UUID>
+    std::string type = "enter";
+    int camera_id = -1;
+    std::string roi_id;     // inside / outside
+    int liuzhi_id = -1;     // 取自 ROI 配置
+    int x = 0;              // 进入瞬间框中心（像素坐标）
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
+
 } // namespace Pipeline
 } // namespace JHDeepCore

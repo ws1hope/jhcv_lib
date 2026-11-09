@@ -14,6 +14,18 @@
 namespace JHDeepCore {
 namespace Pipeline {
 
+// 盘卷出生事件的精简信息（DLL 层补时间戳后转成 C ABI 结构体 ReelBirthEvent）。
+// 出生帧即首次被判为工位 1/2 正常盘卷的那一帧，坐标与输出框同源。
+struct ReelBirthEventInfo {
+    long long reel_id = 0;    // 20261106007
+    int order_number = 0;     // 当天序号，与输出框 order_number 一致
+    int station_number = 1;   // 1 / 2
+    int x = 0;                // 出生帧中心点
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
+
 // 盘卷离开事件的精简信息（DLL 层补时间戳后转成 C ABI 结构体 ReelLeaveEvent）。
 struct ReelLeaveEventInfo {
     long long reel_id = 0;    // 20261104007
@@ -70,6 +82,10 @@ class ReelTrackPipeline {
     // 同上，数值形式（long long）；尚无出生时为 0。
     long long lastReelIdValue() const { return last_reel_id_value_; }
 
+    // 取走本帧产生的盘卷出生事件（取走后内部清空）。每个出生的正常盘卷一条，
+    // 同帧多卷互不覆盖；异常卷、回退卷不产生事件。
+    std::vector<ReelBirthEventInfo> takeBirthEvents();
+
     // 取走本帧产生的盘卷离开事件（取走后内部清空）。
     std::vector<ReelLeaveEventInfo> takeLeaveEvents();
 
@@ -99,6 +115,8 @@ class ReelTrackPipeline {
     // 盘卷离开事件
     std::set<long long> reported_leave_ids_;  // 已产生过离开事件的盘卷号（去重）
     std::vector<ReelLeaveEventInfo> leave_events_;  // 本帧待取走的事件
+    // 盘卷出生事件（本帧待取走，DLL 层补时间戳后入队）
+    std::vector<ReelBirthEventInfo> birth_events_;
     std::string last_draw_summary_;  // 绘制摘要（标签变化时 DLL 记日志）
 };
 

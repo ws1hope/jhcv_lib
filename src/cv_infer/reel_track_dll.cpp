@@ -46,6 +46,13 @@ const char *kReelSeqFile = "JHMVDetect_reel_seq.txt";
 const size_t kMaxLeaveEvents = 64;
 // FIFO of reel-leave events; guarded by g_mutex.
 std::deque<ReelLeaveEvent> g_leave_events;
+// Upper bound of pending reel-birth events (oldest dropped when full).
+const size_t kMaxBirthEvents = 64;
+// FIFO of reel-birth events; guarded by g_mutex.
+std::deque<ReelBirthEvent> g_birth_events;
+// ABI guard: C# declares this struct as LayoutKind.Sequential (default Pack).
+static_assert(sizeof(ReelBirthEvent) == 40,
+              "ReelBirthEvent must stay 40 bytes to match the C# side");
 // Last logged draw summary (only logged when it changes).
 std::string g_last_draw_summary;
 
@@ -347,6 +354,7 @@ bool InitPipelineLocked()
 
     // 新一轮 Init 清空离开事件队列与绘制摘要缓存
     g_leave_events.clear();
+    g_birth_events.clear();
     g_last_draw_summary.clear();
 
     // Restore the persisted daily sequence before the first detect: the
@@ -547,6 +555,14 @@ static unsigned char *Detect2Impl(unsigned char *inputImage, int nWidth,
     std::lock_guard<std::mutex> lock(g_mutex);
 
     WriteDebugLog("[Detect_2] enter Detect2Impl");
+    // Log what the caller actually passed as "previous frame reel counts".
+    // Birth detection depends on it; values <0 or >10 are treated as 0
+    // (legacy protocol rule, same clamp as the pipeline).
+    WriteDebugLog(
+        "[Detect_2] input prev_exist=" +
+        std::to_string(input_params.exist_region_previous_frame_boxCount) +
+        " prev_leave=" +
+        std::to_string(input_params.leave_region_previous_frame_boxCount));
     if (g_pipeline == nullptr) {
         WriteDebugLog("[Detect_2] pipeline is null, auto init...");
         if (!InitPipelineLocked()) {
@@ -584,6 +600,53 @@ static unsigned char *Detect2Impl(unsigned char *inputImage, int nWidth,
         SetLastErrorMessage("detect unknown exception");
         WriteDebugLog("[Detect_2] detect unknown exception");
         return NULL;
+    }
+
+    // Reel birth events into the bounded FIFO (one per born normal reel, so
+    // two reels born in the same frame are both delivered with their own box).
+    // Still holding g_mutex; Pop runs under the same lock.
+    {
+        std::vector<JHDeepCore::Pipeline::ReelBirthEventInfo> births =
+            g_pipeline->takeBirthEvents();
+        if (!births.empty()) {
+            // Same clamp rule as the pipeline: counts <0 or >10 are treated
+            // as 0 (legacy protocol). Logging both the raw input and the
+            // current-frame count makes repeated births attributable:
+            // prev_exist=0 on every birth means the caller is not feeding
+            // the previous frame back.
+            int prev_raw = input_params.exist_region_previous_frame_boxCount;
+            int prev_used = (prev_raw < 0 || prev_raw > 10) ? 0 : prev_raw;
+            int cur_exist = output_params->exist_region_current_frame_boxCount;
+            long long now_ms = (long long)std::chrono::duration_cast<
+                std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count();
+            for (const auto &info : births) {
+                ReelBirthEvent evt;
+                evt.reel_id = info.reel_id;
+                evt.order_number = info.order_number;
+                evt.station_number = info.station_number;
+                evt.x = info.x;
+                evt.y = info.y;
+                evt.width = info.width;
+                evt.height = info.height;
+                evt.birth_time_ms = now_ms;
+                if (g_birth_events.size() >= kMaxBirthEvents) {
+                    g_birth_events.pop_front();
+                    WriteDebugLog("[ReelBirth] drop oldest (queue full, cap=64)");
+                }
+                g_birth_events.push_back(evt);
+                WriteDebugLog(
+                    "[ReelBirth] id=" + std::to_string(evt.reel_id) +
+                    " order=" + std::to_string(evt.order_number) +
+                    " station=" + std::to_string(evt.station_number) +
+                    " center=(" + std::to_string(evt.x) + "," +
+                    std::to_string(evt.y) + ") prev_exist=" +
+                    std::to_string(prev_used) + " cur=" +
+                    std::to_string(cur_exist) + " pending=" +
+                    std::to_string(g_birth_events.size()));
+            }
+        }
     }
 
     // 盘卷离开事件入队（有界 FIFO）+ 绘制摘要（标签变化时才写日志）。
@@ -758,6 +821,7 @@ MV_SDK_ReelExportTargetTrack_Destroy(void)
         delete g_pipeline;
         g_pipeline = nullptr;
         g_leave_events.clear();
+        g_birth_events.clear();
         g_last_draw_summary.clear();
         WriteDebugLog("[Destroy] pipeline released");
     } catch (...) {
@@ -801,6 +865,20 @@ MV_SDK_GetLastReelIdValue(void)
 }
 
 extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL
+MV_SDK_PopReelBirthEvent(ReelBirthEvent *evt)
+{
+    if (evt == NULL) return 0;
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_birth_events.empty()) return 0;
+    *evt = g_birth_events.front();
+    g_birth_events.pop_front();
+    WriteDebugLog("[ReelBirth] pop id=" + std::to_string(evt->reel_id) +
+                  " order=" + std::to_string(evt->order_number) +
+                  " pending=" + std::to_string(g_birth_events.size()));
+    return 1;
+}
+
+extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL
 MV_SDK_PopReelLeaveEvent(ReelLeaveEvent *evt)
 {
     if (evt == NULL) return 0;
@@ -811,4 +889,22 @@ MV_SDK_PopReelLeaveEvent(ReelLeaveEvent *evt)
     WriteDebugLog("[ReelEvent] pop id=" + std::to_string(evt->reel_id) +
                   " pending=" + std::to_string(g_leave_events.size()));
     return 1;
+}
+
+// Health check for periodic monitoring. Intentionally runs NO inference and
+// touches NO tracking/event state, so probing here never produces births,
+// leaves or log spam. Use this instead of Detect_2 for "is the model alive"
+// style checks.
+extern "C" REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_HealthCheck(void)
+{
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_pipeline == nullptr) {
+        WriteDebugLog("[HealthCheck] pipeline not initialized");
+        return 1;
+    }
+    if (!g_pipeline->valid()) {
+        WriteDebugLog("[HealthCheck] detector invalid");
+        return 2;
+    }
+    return 0;
 }

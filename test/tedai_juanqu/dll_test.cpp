@@ -93,6 +93,15 @@ int main(int argc, char *argv[])
                    out.boxs_leave_region_current[i].order_number);
         }
 
+        ReelBirthEvent birth_evt;
+        while (MV_SDK_PopReelBirthEvent(&birth_evt) == 1) {
+            printf("  birth_event: reel_id=%lld order=%d station=%d "
+                   "center=(%d,%d) size=%dx%d time_ms=%lld\n",
+                   birth_evt.reel_id, birth_evt.order_number,
+                   birth_evt.station_number, birth_evt.x, birth_evt.y,
+                   birth_evt.width, birth_evt.height, birth_evt.birth_time_ms);
+        }
+
         ReelLeaveEvent leave_evt;
         while (MV_SDK_PopReelLeaveEvent(&leave_evt) == 1) {
             printf("  leave_event: reel_id=%lld station=%d center=(%d,%d) "

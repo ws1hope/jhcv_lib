@@ -132,6 +132,7 @@ bool ReelTrackPipeline::init(const std::string &model_path, bool use_gpu,
     reel_ids_.clear();
     reported_leave_ids_.clear();
     leave_events_.clear();
+    birth_events_.clear();
     last_draw_summary_.clear();
     on_reel_id_assigned_ = std::move(on_reel_id_assigned);
     return true;
@@ -163,6 +164,19 @@ void ReelTrackPipeline::assignNewReelOrder(reelBoxMatch &box)
     last_reel_id_ = buf;
     last_reel_id_value_ = std::strtoll(buf, nullptr, 10);
     reel_ids_.push_back(last_reel_id_);
+    // 出生事件入队：号 + 序号 + 工位 + 出生帧坐标，供 DLL 层转成 C ABI 事件。
+    // 调用点都已填好 box 的 x/y/width/height/station_number。
+    {
+        ReelBirthEventInfo info;
+        info.reel_id = last_reel_id_value_;
+        info.order_number = box.order_number;
+        info.station_number = box.station_number;
+        info.x = box.x;
+        info.y = box.y;
+        info.width = box.width;
+        info.height = box.height;
+        birth_events_.push_back(info);
+    }
     if (on_reel_id_assigned_) {
         on_reel_id_assigned_(reel_id_date_, reel_order_counter_);
     }
@@ -193,6 +207,13 @@ std::vector<ReelLeaveEventInfo> ReelTrackPipeline::takeLeaveEvents()
 {
     std::vector<ReelLeaveEventInfo> events;
     events.swap(leave_events_);
+    return events;
+}
+
+std::vector<ReelBirthEventInfo> ReelTrackPipeline::takeBirthEvents()
+{
+    std::vector<ReelBirthEventInfo> events;
+    events.swap(birth_events_);
     return events;
 }
 

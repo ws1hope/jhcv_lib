@@ -7,6 +7,8 @@ EXPORTS
     MV_SDK_GetLastError
     MV_SDK_GetLastReelId
     MV_SDK_GetLastReelIdValue
+    MV_SDK_PopReelBirthEvent
     MV_SDK_PopReelLeaveEvent
+    MV_SDK_HealthCheck
     MV_SDK_ReelCount_Init_test_id
     MV_SDK_ReelLocation_Detect_test_id

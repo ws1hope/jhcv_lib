@@ -9,7 +9,9 @@
 //   MV_SDK_GetLastError                    (last error message)
 //   MV_SDK_GetLastReelId                   (last born reel id, YYYYMMDDNNN)
 //   MV_SDK_GetLastReelIdValue              (same id as long long)
+//   MV_SDK_PopReelBirthEvent               (a normal reel was born)
 //   MV_SDK_PopReelLeaveEvent               (reel crossed the leave line)
+//   MV_SDK_HealthCheck                     (cheap ping, no inference)
 //
 // Struct layouts MUST NOT change (C# uses LayoutKind.Sequential,
 // Pack default). All box x/y are CENTER points (legacy format).
@@ -93,6 +95,22 @@ typedef struct OutputResultReelExportTargetTrack {
     int station_two_alarm_trigger;       // edge-triggered, 1 for a single frame
 } OutputResultReelExportTargetTrack;  // 1008 bytes
 
+// One "normal reel was born" event: the reel first got its id on this frame.
+// The event carries both the id and the box it was born with, so callers never
+// have to guess which coordinate belongs to which id (two reels can be born in
+// the same frame). Drain the queue with MV_SDK_PopReelBirthEvent after each
+// Detect_2 call, exactly like the leave events.
+typedef struct ReelBirthEvent {
+    long long reel_id;        // 20261106007 (YYYYMMDD + daily sequence)
+    int order_number;         // daily sequence, same value as reelBoxMatch.order_number
+    int station_number;       // 1 / 2
+    int x;                    // center x on the birth frame
+    int y;                    // center y on the birth frame
+    int width;
+    int height;
+    long long birth_time_ms;  // Unix epoch milliseconds of the birth frame
+} ReelBirthEvent;
+
 // One "reel crossed the leave line" event. Same reel id is reported once only
 // (deduplicated inside the DLL); the queue is drained with
 // MV_SDK_PopReelLeaveEvent after each Detect_2 call.
@@ -153,11 +171,25 @@ REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_GetLastReelId(char* buf, int buf_si
 // Same value as above but numeric (long long); 0 when no reel born yet.
 REEL_TRACK_API long long REEL_TRACK_STDCALL MV_SDK_GetLastReelIdValue(void);
 
+// Pop one queued "reel born" event (FIFO). Returns 1 and fills evt when an
+// event was available, 0 when the queue is empty. Call it in a loop right
+// after Detect_2. One event per born normal reel, so two reels born in the
+// same frame produce two events and neither is lost. The queue holds at most
+// 64 events and drops the oldest one when full. Cleared by Init / Destroy.
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_PopReelBirthEvent(ReelBirthEvent* evt);
+
 // Pop one queued "reel left the area" event (FIFO). Returns 1 and fills evt
 // when an event was available, 0 when the queue is empty. Call it in a loop
 // right after Detect_2; the queue holds at most 64 events and drops the
 // oldest one when full.
 REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_PopReelLeaveEvent(ReelLeaveEvent* evt);
+
+// Cheap health check for periodic monitoring (model-alive probes). Verifies
+// the pipeline is initialized and the detector is valid; runs NO inference
+// and touches NO tracking state, so calling it never affects detection or
+// event output. Returns 0 when healthy, 1 when the pipeline is not
+// initialized, 2 when the detector is invalid.
+REEL_TRACK_API int REEL_TRACK_STDCALL MV_SDK_HealthCheck(void);
 
 #ifdef __cplusplus
 }  // extern "C"

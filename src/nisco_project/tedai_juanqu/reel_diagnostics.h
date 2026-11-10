@@ -12,10 +12,9 @@ namespace Pipeline {
 struct ReelDedupDecision {
     bool evaluated = false;         // 是否进入判定（起点数量不足等会直接跳过）
     bool applied = false;           // 是否实际删除首盘
-    bool multi_reel_exempt = false; // 多卷工况命中，跳过过滤
     int removed_count = 0;          // 实际删除数量（当前实现最多 1）
 
-    int prev_camera_id = -1;        // 提供上一区域结果的相机（3 依赖 2、5 依赖 3）
+    int prev_camera_id = -1;        // 提供上一区域结果的相机（5 依赖 3）
     int prev_inside_count = 0;      // 上一区域输送线内数量
 
     bool has_prev_inside = false;
@@ -45,10 +44,8 @@ struct ReelCameraDiagnostics {
 
     int inside_count_before_dedup = 0;
     int inside_count_after_dedup = 0;
-    int guolv_flag = 0;          // camera3 去重触发标记
     int guolv_flag_outside = 0;  // camera5 去重触发标记
 
-    ReelDedupDecision dedup_inside;   // camera3：用 camera2 过滤
     ReelDedupDecision dedup_outside;  // camera5：用 camera3 过滤
 
     int final_inside = 0;    // 最终输出数量（含截断后）

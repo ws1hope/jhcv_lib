@@ -45,8 +45,9 @@ void drawDashedLine(cv::Mat &img, const cv::Point &a, const cv::Point &b,
     }
 }
 
-// 左下角信息面板（深色底 + 白字）
-void drawInfoPanel(cv::Mat &img, const std::vector<std::string> &lines)
+// 左下角信息面板（深色底 + 白字）；panel_slot>0 时整体上移，供多区域标注堆叠
+void drawInfoPanel(cv::Mat &img, const std::vector<std::string> &lines,
+                   int panel_slot = 0)
 {
     if (lines.empty()) return;
     const double scale = 0.6;
@@ -60,7 +61,8 @@ void drawInfoPanel(cv::Mat &img, const std::vector<std::string> &lines)
     }
     int total_h = (int)lines.size() * line_h + pad * 2;
     int x = 10;
-    int y = img.rows - total_h - 10;
+    const int slot_h = line_h * 6 + pad * 2 + 12;  // 单面板最大高度 + 间隔
+    int y = img.rows - total_h - 10 - panel_slot * slot_h;
     if (y < 0) y = 0;
     cv::Rect bg(x, y, max_w + pad * 2, total_h);
     cv::rectangle(img, bg, cv::Scalar(30, 30, 30), cv::FILLED);
@@ -71,9 +73,10 @@ void drawInfoPanel(cv::Mat &img, const std::vector<std::string> &lines)
     }
 }
 
-// 在结果图上标注进入判定：qishi/zhongzhi 轴线、半径圆、上报/未上报的框与信息面板
+// 在结果图上标注进入判定：qishi/zhongzhi 轴线、半径圆、上报/未上报的框与信息面板。
+// panel_slot 用于同一相机标注多个区域时信息面板向上堆叠。
 void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
-                    int entry_radius_px, double entry_t_ratio)
+                    int entry_radius_px, double entry_t_ratio, int panel_slot = 0)
 {
     const cv::Scalar kAxisColor(255, 0, 255);    // 品红：轴线
     const cv::Scalar kQishiColor(0, 0, 255);     // 红：起点
@@ -161,7 +164,7 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
     if (dbg.has_event && dbg.event_id.size() > 14) {
         lines.push_back("event=" + dbg.event_id.substr(0, 14));
     }
-    drawInfoPanel(img, lines);
+    drawInfoPanel(img, lines, panel_slot);
 }
 
 } // namespace
@@ -261,45 +264,50 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
 {
     if (!config_.events.enable) return;
 
-    int roi_index = -1;
-    const char *roi_id = nullptr;
+    // 相机 -> 参与事件的区域列表（liuzhi_rois_ 下标 + roi_id）：
+    // cam1-3 只判 inside(liuzhi 1)；cam4 同时判 inside(liuzhi 1) 与 outside(liuzhi 2)；
+    // cam5 只判 outside(liuzhi 2)；camera0 不参与。每区域每次请求最多 1 条事件。
+    std::vector<std::pair<int, const char *>> regions;
     if (camera_id >= 1 && camera_id <= 3) {
-        roi_index = 0;  // inside
-        roi_id = "inside";
-    } else if (camera_id == 4 || camera_id == 5) {
-        roi_index = 1;  // outside
-        roi_id = "outside";
+        regions.emplace_back(0, "inside");
+    } else if (camera_id == 4) {
+        regions.emplace_back(0, "inside");
+        regions.emplace_back(1, "outside");
+    } else if (camera_id == 5) {
+        regions.emplace_back(1, "outside");
     } else {
         return;  // camera0 不参与
     }
 
     auto it = liuzhi_rois_.find(camera_id);
-    if (it == liuzhi_rois_.end() || (int)it->second.size() <= roi_index) return;
-    const ReelRoiInfo &roi = it->second[roi_index];
+    if (it == liuzhi_rois_.end()) return;
 
-    // camera3 的 inside 输出做过透视变换（x 被置为序号+50），
-    // 入口判定/连续性匹配必须使用变换前的像素框
-    const std::vector<ReelRect> *boxes = nullptr;
-    if (roi_index == 0) {
-        boxes = (camera_id == 3) ? &out.inside_pixel : &out.inside;
-    } else {
-        boxes = &out.outside;
-    }
+    for (size_t r = 0; r < regions.size(); ++r) {
+        int roi_index = regions[r].first;
+        const char *roi_id = regions[r].second;
+        if ((int)it->second.size() <= roi_index) continue;
+        const ReelRoiInfo &roi = it->second[roi_index];
 
-    ReelEventGate gate;
-    if (roi.qishi_zhongzhi_points.size() >= 2) {
-        gate.has_axis = true;
-        gate.qishi = roi.qishi_zhongzhi_points[0];
-        gate.zhongzhi = roi.qishi_zhongzhi_points[1];
-    }
+        // 各相机的区域输出均为检测像素坐标，直接用于入口判定与连续性匹配
+        const std::vector<ReelRect> &boxes =
+            (roi_index == 0) ? out.inside : out.outside;
 
-    ReelEnterDebug debug;
-    enter_tracker_.update(camera_id, roi_id, roi.liuzhi_id, *boxes, gate,
-                          now_ms, &last_events_, &debug);
+        ReelEventGate gate;
+        if (roi.qishi_zhongzhi_points.size() >= 2) {
+            gate.has_axis = true;
+            gate.qishi = roi.qishi_zhongzhi_points[0];
+            gate.zhongzhi = roi.qishi_zhongzhi_points[1];
+        }
 
-    if (config_.events.draw_debug) {
-        drawEnterDebug(src, camera_id, debug, config_.events.entry_radius_px,
-                       config_.events.entry_t_ratio);
+        ReelEnterDebug debug;
+        enter_tracker_.update(camera_id, roi_id, roi.liuzhi_id, boxes, gate,
+                              now_ms, &last_events_, &debug);
+
+        if (config_.events.draw_debug) {
+            // cam4 两个区域各画一份标注，信息面板按序号上移避免重叠
+            drawEnterDebug(src, camera_id, debug, config_.events.entry_radius_px,
+                           config_.events.entry_t_ratio, (int)r);
+        }
     }
 }
 
@@ -405,8 +413,7 @@ std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
     const long long event_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
-    // 按 camera_id 升序处理（跨相机去重依赖：camera 3 依赖 camera 2、
-    // camera 5 依赖 camera 3 的本请求结果）
+    // 按 camera_id 升序处理（跨相机去重依赖：camera 5 依赖 camera 3 的本请求结果）
     std::map<int, ReelFrameInput *> frames_by_id;
     for (auto &fr : frames) {
         frames_by_id[fr.camera_id] = &fr;
@@ -442,14 +449,7 @@ std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
             } else {
                 const ReelCameraOutput *prev_result = nullptr;
                 const ReelRoiParams *prev_params = nullptr;
-                if (camera_id == 3) {
-                    auto it = done.find(2);
-                    auto pit = camera_params_.find(2);
-                    if (it != done.end() && pit != camera_params_.end()) {
-                        prev_result = &it->second;
-                        prev_params = &pit->second;
-                    }
-                } else if (camera_id == 5) {
+                if (camera_id == 5) {
                     auto it = done.find(3);
                     auto pit = camera_params_.find(3);
                     if (it != done.end() && pit != camera_params_.end()) {
@@ -661,40 +661,28 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
         std::sort(inside_rects.begin(), inside_rects.end(), reelRectCmpYDown);
     } else if (camera_id == 3) {
         std::sort(inside_rects.begin(), inside_rects.end(), reelRectCmpXUp);
+    } else if (camera_id == 4) {
+        // camera4 liuzhi 1：y 从大到小
+        std::sort(inside_rects.begin(), inside_rects.end(), reelRectCmpYDown);
     }
     auto t_sort1 = std::chrono::high_resolution_clock::now();
     st.post_sort_ms =
         std::chrono::duration<double, std::milli>(t_sort1 - t_sort0).count();
 
-    // 跨区域重复盘卷过滤
+    // 跨区域重复盘卷过滤（camera5：用 camera3 inside 的像素坐标过滤自己的 outside 首盘）
     auto t_dedup0 = std::chrono::high_resolution_clock::now();
-    int guolv_flag = 0;
     int guolv_flag_outside = 0;
-    if (camera_id > 1) {
-        if (camera_id == 3 && prev_result && prev_params) {
-            diag.dedup_inside.prev_camera_id = 2;
-            removeChongfuPanjuan(prev_result->inside, inside_rects, inside_count,
-                                 prev_params->inside_qishi, params.inside_qishi,
-                                 guolv_flag, &diag.dedup_inside);
-        }
-        if (camera_id == 5 && prev_result && prev_params) {
-            // 跨相机去重保持在像素空间：camera3 的 inside 在输出前会被透视/偏移成
-            // 物理坐标，这里必须用其变换前的像素快照，否则与像素坐标的 qishi 无法比较
-            diag.dedup_outside.prev_camera_id = 3;
-            const std::vector<ReelRect> &prev_inside =
-                prev_result->inside_pixel.empty() ? prev_result->inside
-                                                  : prev_result->inside_pixel;
-            removeChongfuPanjuanBetweenInsideOutside(
-                prev_inside, outside_rects, outside_count,
-                prev_params->inside_qishi, params.outside_qishi, guolv_flag_outside,
-                &diag.dedup_outside);
-        }
+    if (camera_id == 5 && prev_result && prev_params) {
+        diag.dedup_outside.prev_camera_id = 3;
+        removeChongfuPanjuanBetweenInsideOutside(
+            prev_result->inside, outside_rects, outside_count,
+            prev_params->inside_qishi, params.outside_qishi, guolv_flag_outside,
+            &diag.dedup_outside);
     }
     auto t_dedup1 = std::chrono::high_resolution_clock::now();
     st.post_dedup_ms =
         std::chrono::duration<double, std::milli>(t_dedup1 - t_dedup0).count();
     diag.inside_count_after_dedup = inside_count;
-    diag.guolv_flag = guolv_flag;
     diag.guolv_flag_outside = guolv_flag_outside;
 
     // ---- 绘制（与旧服务一致的样式） ----
@@ -719,10 +707,6 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
         cv::rectangle(src, text_box, color_rec, cv::FILLED);
         cv::putText(src, class_string, cv::Point(box.x + box.width, box.y - 10),
                     cv::FONT_HERSHEY_DUPLEX, 1, cv::Scalar(0, 0, 0), 2, 0);
-        if (guolv_flag == 1) {
-            cv::line(src, cv::Point(200, 0), cv::Point(200, 500),
-                     cv::Scalar(255, 0, 0), 3);
-        }
     }
     if (inside_count > 0) {
         cv::putText(src, std::to_string(inside_count),
@@ -792,55 +776,6 @@ void TedaiJuanquPipeline::detectReelLocation(int camera_id, cv::Mat &src,
     diag.final_inside = inside_count;
     diag.final_outside = outside_count;
     diag.final_collect = collect_count;
-
-    // camera 3：桥下-转弯区域（y<525 且 x<500）透视变换到物理毫米坐标
-    auto t_tr0 = std::chrono::high_resolution_clock::now();
-    if (camera_id == 3) {
-        // 变换前保存像素坐标快照，供 camera5 跨相机去重使用
-        out.inside_pixel.assign(inside_rects.begin(),
-                                inside_rects.begin() + std::min(inside_count,
-                                                               (int)inside_rects.size()));
-
-        const int convert_area_max_y = 525;
-        const int convert_area_max_x = 500;
-        std::vector<ReelRect> tmp_convert;
-        std::vector<ReelRect> remaining = inside_rects;
-        auto it = remaining.begin();
-        while (it != remaining.end()) {
-            if (it->y < convert_area_max_y && it->x < convert_area_max_x) {
-                tmp_convert.push_back(*it);
-                it = remaining.erase(it);
-            } else {
-                ++it;
-            }
-        }
-
-        // 转换区域外的盘卷加偏移量，防止坐标交叉
-        const int x_offset = 2400;
-        const int y_offset = 7800;
-        for (auto &r : remaining) {
-            r.x += x_offset;
-            r.y += y_offset;
-        }
-
-        const float real_width = 2400.0f;   // mm
-        const float real_length = 7800.0f;  // mm
-        // 标定数据：左上 -> 右上 -> 右下 -> 左下
-        std::vector<cv::Point2f> calib_points;
-        calib_points.push_back(cv::Point2f(83, 271));
-        calib_points.push_back(cv::Point2f(215, 236));
-        calib_points.push_back(cv::Point2f(513, 473));
-        calib_points.push_back(cv::Point2f(142, 568));
-
-        std::vector<ReelRect> transformed =
-            transformRectsToPhysical(tmp_convert, calib_points, real_width, real_length);
-        transformed.reserve(transformed.size() + remaining.size());
-        transformed.insert(transformed.end(), remaining.begin(), remaining.end());
-        inside_rects = transformed;
-    }
-    auto t_tr1 = std::chrono::high_resolution_clock::now();
-    st.post_transform_ms =
-        std::chrono::duration<double, std::milli>(t_tr1 - t_tr0).count();
 
     for (int i = 0; i < inside_count && i < (int)inside_rects.size(); i++) {
         out.inside.push_back(inside_rects[i]);

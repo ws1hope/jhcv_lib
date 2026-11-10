@@ -117,11 +117,11 @@ std::string formatTimingLines(const std::vector<Pipeline::ReelStepTiming> &timin
     for (const auto &st : timings) {
         out += cv::format(
             "[TIME][cam=%d] clone=%.2f detect=%.2f classify=%.2f "
-            "assign=%.2f sort=%.2f dedup=%.2f transform=%.2f draw=%.2f "
+            "assign=%.2f sort=%.2f dedup=%.2f draw=%.2f "
             "save=%.2f total=%.2f ms\n",
             st.camera_id, st.clone_ms, st.detect_ms, st.classify_ms,
             st.post_assign_ms, st.post_sort_ms, st.post_dedup_ms,
-            st.post_transform_ms, st.post_draw_ms, st.save_ms, st.total_ms);
+            st.post_draw_ms, st.save_ms, st.total_ms);
     }
     return out;
 }

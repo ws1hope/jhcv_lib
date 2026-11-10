@@ -80,7 +80,6 @@ ojson dedupToJson(const ReelDedupDecision &d)
     ojson j;
     j["evaluated"] = d.evaluated;
     j["applied"] = d.applied;
-    j["multi_reel_exempt"] = d.multi_reel_exempt;
     j["removed_count"] = d.removed_count;
     j["prev_camera_id"] = d.prev_camera_id;
     j["prev_inside_count"] = d.prev_inside_count;
@@ -155,9 +154,7 @@ void ReelDebugLogger::logCamera(const std::string &station_id, uint64_t req_inde
     ojson dedup;
     dedup["inside_count_before"] = diag.inside_count_before_dedup;
     dedup["inside_count_after"] = diag.inside_count_after_dedup;
-    dedup["guolv_flag"] = diag.guolv_flag;
     dedup["guolv_flag_outside"] = diag.guolv_flag_outside;
-    dedup["inside"] = dedupToJson(diag.dedup_inside);
     dedup["outside"] = dedupToJson(diag.dedup_outside);
     j["dedup"] = dedup;
 

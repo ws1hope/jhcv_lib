@@ -23,7 +23,6 @@ struct ReelStepTiming {
     double post_assign_ms = 0;  // 多边形成图 + 点判定
     double post_sort_ms = 0;    // 排序
     double post_dedup_ms = 0;   // 跨区域去重
-    double post_transform_ms = 0;  // cam3 透视变换
     double post_draw_ms = 0;    // 绘制
     double save_ms = 0;         // 保存任务入队耗时（实际编码+写盘并发进行）
     double total_ms = 0;        // 单相机循环体总耗时
@@ -38,12 +37,15 @@ struct ReelStepTiming {
 // - camera 5 分类模型是否启用由 config.enable_classify 控制（默认关闭）：
 //   关闭时不裁剪/不推理/不显示，cam5 输送线外收录仅按 classid==0 且
 //   面积 > 50000；开启时额外要求 classify_result_id == 2。
-// - 一批帧按 camera_id 升序串行处理（camera 3 依赖 camera 2、
-//   camera 5 依赖 camera 3 的结果；旧服务隐式依赖请求按升序携带全部相机）。
+// - 一批帧按 camera_id 升序串行处理（camera 5 依赖 camera 3 的结果；
+//   旧服务隐式依赖请求按升序携带全部相机）。
 // - 模型每相机只初始化一次（懒加载）；请求内状态全部局部化，
 //   不再有旧服务的全局 zhupiResults/inputparams_history。
-// - camera 3 桥下-转弯区域坐标经透视变换映射到物理毫米坐标，
-//   其中 x=序号+50 为下游依赖的既有行为，保留。
+// - 2026-11 变更（下游已确认）：
+//   取消 camera2→camera3 重复盘卷过滤；取消 camera3 桥下-转弯区域
+//   透视变换与 (+2400,+7800) 坐标偏移，所有相机的区域坐标均为
+//   检测像素坐标；camera4 工位新增 liuzhi 1（输送线内）区域检测
+//   与进入事件（需 camera_liuzhi_roi.json 中 camera4 配置 liuzhi_id=1）。
 class TedaiJuanquPipeline {
   public:
     explicit TedaiJuanquPipeline(const TedaiJuanquServerConfig &config);
@@ -85,11 +87,12 @@ class TedaiJuanquPipeline {
     ReelClassifier *classifier();           // 懒加载并缓存
 
     // 盘卷进入区域事件：把本相机结果送入跟踪器（camera1-3 -> inside/liuzhi=1，
-    // camera4-5 -> outside/liuzhi=2；camera0 不参与），并按需在结果图上标注。
+    // camera4 -> inside/liuzhi=1 + outside/liuzhi=2，camera5 -> outside/liuzhi=2；
+    // camera0 不参与），每区域最多 1 条事件，并按需在结果图上标注。
     void updateEnterEvents(int camera_id, const ReelCameraOutput &out,
                            cv::Mat &src, long long now_ms);
 
-    // cameras 1-5：检测 + 三区域判定 + 排序 + 跨区域去重 + camera 3 坐标转换
+    // cameras 1-5：检测 + 三区域判定 + 排序 + camera5 跨相机去重
     void detectReelLocation(int camera_id, cv::Mat &src, const ReelRoiParams &params,
                             const ReelCameraOutput *prev_result,
                             const ReelRoiParams *prev_params,

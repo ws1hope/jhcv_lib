@@ -25,6 +25,24 @@ int signOf(double v)
     return (v > 0.0) - (v < 0.0);
 }
 
+// 在原始检测框里找离 ref 中心最近的框（限距）。用于"刚离开区域仍可见"的
+// 单帧红框标记，不做轨迹续跟。
+const ReelRect *findNearbyRawBox(const ReelRect &ref,
+                                 const std::vector<ReelRect> &raw_boxes,
+                                 double radius_px)
+{
+    const ReelRect *best = nullptr;
+    double best_d2 = radius_px * radius_px;
+    for (const auto &r : raw_boxes) {
+        double d2 = rectCenterDistanceSq(ref, r);
+        if (d2 <= best_d2) {
+            best_d2 = d2;
+            best = &r;
+        }
+    }
+    return best;
+}
+
 // 离开判定（跨线检测）：匹配成功的运动线段 prev->cur 是否从 qishi 一侧
 // 向外跨过出口感应线 gate_a->gate_b。交点须落在感应线段范围内；
 // prev 恰好压线时允许继续向外跨出（s1 != 外侧且 s2 在外侧）。
@@ -117,7 +135,8 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
                                int liuzhi_id, const std::vector<ReelRect> &boxes,
                                const ReelEventGate &gate, long long now_ms,
                                std::vector<ReelEnterEvent> *events,
-                               ReelEnterDebug *debug)
+                               ReelEnterDebug *debug,
+                               const std::vector<ReelRect> &raw_boxes)
 {
     if (debug) {
         *debug = ReelEnterDebug();
@@ -167,8 +186,10 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
             const ReelRect &cur_box = boxes[best];
 
             // 离开判定：运动线段向外跨过出口感应线，每条轨迹最多 1 条 leave
+            bool crossed_now = false;
             if (gate.has_gate && !track.fired_leave &&
                 crossingExitGate(prev_box, cur_box, gate)) {
+                crossed_now = true;
                 track.fired_leave = true;
                 ReelEnterEvent ev;
                 ev.event_id = makeReelEventId();
@@ -191,12 +212,33 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
                 }
             }
 
+            // 运动线段（调试可视化：上一帧->本帧中心）
+            if (debug) {
+                ReelMotionSeg seg;
+                seg.from.x = prev_box.x;
+                seg.from.y = prev_box.y;
+                seg.to.x = cur_box.x;
+                seg.to.y = cur_box.y;
+                seg.crossed = crossed_now;
+                debug->motion.push_back(seg);
+            }
+
             track.box = cur_box;
             track.missed = 0;
             box_used[best] = true;
             next_tracks.push_back(track);
             matched_count++;
         } else {
+            // 出界标记（仅首次丢失时）：上一帧还在区域内、本帧区域框里
+            // 找不到但原始检测里仍就近可见 -> 本帧画一次红框，不续跟
+            if (debug && track.missed == 0 && !raw_boxes.empty()) {
+                const ReelRect *raw_hit = findNearbyRawBox(
+                    track.box, raw_boxes, (double)config_.match_radius_px);
+                if (raw_hit != nullptr) {
+                    debug->left_count++;
+                    debug->left_visible.push_back(*raw_hit);
+                }
+            }
             track.missed++;
             if (track.missed <= config_.max_missed) next_tracks.push_back(track);
         }

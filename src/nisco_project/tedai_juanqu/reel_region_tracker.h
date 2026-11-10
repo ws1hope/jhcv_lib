@@ -25,6 +25,12 @@ struct ReelEventGate {
 };
 
 // 单次 update 的判定明细（仅用于结果图调试标注，不影响业务输出）
+struct ReelMotionSeg {
+    ReelPoint from;        // 上一帧中心
+    ReelPoint to;          // 本帧中心
+    bool crossed = false;  // 该线段本次触发了 leave
+};
+
 struct ReelEnterDebug {
     enum Rule {
         RULE_NONE = 0,
@@ -38,8 +44,9 @@ struct ReelEnterDebug {
     int new_count = 0;           // 未匹配上的新框数
     int tracked_count = 0;       // 匹配上的老框数
     int dup_count = 0;           // 被去重缓存拦下的新框数
-    int left_count = 0;            // 已报离开且本帧仍被跟踪到的卷数
-    std::vector<ReelRect> left_visible;  // 上述卷的当前框（结果图红框标注用）
+    int left_count = 0;            // 本帧红框总数
+    std::vector<ReelRect> left_visible;  // 红框列表：区域内已发 leave 的卷 + 刚出界仍可见的卷
+    std::vector<ReelMotionSeg> motion;   // 各匹配轨迹的运动线段（上一帧->本帧）
     Rule rule = RULE_NONE;
     double distance = 0.0;       // 上报框到 qishi 的距离
     double t = 0.0;              // 上报框沿轴的投影比例
@@ -66,12 +73,15 @@ class ReelRegionTracker {
   public:
     explicit ReelRegionTracker(const TedaiJuanquEventConfig &config);
 
-    // 每次请求、每个相机调用一次；产生的事件追加到 events（0 或 1 条）。
+    // 每次请求、每个相机调用一次；产生的事件追加到 events（enter 每区域最多
+    // 1 条，leave 每轨迹最多 1 条）。raw_boxes 为本相机全部原始检测框（含中心
+    // 点在区域外的），仅用于"刚离开区域仍可见"的单帧红框标记，不做续跟。
     // debug 非空时填充本次判定明细（供结果图标注）。
     void update(int camera_id, const std::string &roi_id, int liuzhi_id,
                 const std::vector<ReelRect> &boxes, const ReelEventGate &gate,
                 long long now_ms, std::vector<ReelEnterEvent> *events,
-                ReelEnterDebug *debug = nullptr);
+                ReelEnterDebug *debug = nullptr,
+                const std::vector<ReelRect> &raw_boxes = {});
 
     void reset();
 

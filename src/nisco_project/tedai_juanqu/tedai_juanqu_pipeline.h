@@ -89,7 +89,10 @@ class TedaiJuanquPipeline {
     // 盘卷进入区域事件：把本相机结果送入跟踪器（camera1-3 -> inside/liuzhi=1，
     // camera4 -> inside/liuzhi=1 + outside/liuzhi=2，camera5 -> outside/liuzhi=2；
     // camera0 不参与），每区域最多 1 条事件，并按需在结果图上标注。
+    // raw 为本相机全部原始检测框（含中心点在区域外的），供"刚离开区域"
+    // 的单帧红框标记使用。
     void updateEnterEvents(int camera_id, const ReelCameraOutput &out,
+                           const std::vector<ReelDetObject> &raw,
                            cv::Mat &src, long long now_ms);
 
     // cameras 1-5：检测 + 三区域判定 + 排序 + camera5 跨相机去重

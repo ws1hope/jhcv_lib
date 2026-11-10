@@ -86,6 +86,9 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
     const cv::Scalar kRejectColor(150, 150, 150);
     const cv::Scalar kDupColor(0, 255, 255);
     const cv::Scalar kLeftColor(0, 0, 255);      // 红：已离开仍可见的卷
+    const cv::Scalar kGateColor(255, 255, 0);    // 青：出口感应线
+    const cv::Scalar kMotionColor(180, 180, 180);  // 灰：运动线段
+    const cv::Scalar kCrossColor(255, 255, 255);   // 白：触发跨线的运动线段
 
     auto drawBox = [&](const ReelRect &box, const cv::Scalar &color, int thickness) {
         cv::Rect rect(box.x - box.width / 2, box.y - box.height / 2, box.width,
@@ -104,6 +107,32 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
                     0.6, kQishiColor, 1, cv::LINE_AA);
         cv::putText(img, "zhongzhi", z + cv::Point(8, -8),
                     cv::FONT_HERSHEY_DUPLEX, 0.6, kZhongzhiColor, 1, cv::LINE_AA);
+    }
+
+    // 出口感应线：过 zhongzhi、垂直于轴（leave 判定边界）
+    if (dbg.gate.has_gate) {
+        cv::Point ga(dbg.gate.gate_a.x, dbg.gate.gate_a.y);
+        cv::Point gb(dbg.gate.gate_b.x, dbg.gate.gate_b.y);
+        drawDashedLine(img, ga, gb, kGateColor, 2);
+        cv::putText(img, "gate",
+                    cv::Point(dbg.gate.zhongzhi.x + 10,
+                              dbg.gate.zhongzhi.y + 22),
+                    cv::FONT_HERSHEY_DUPLEX, 0.6, kGateColor, 1, cv::LINE_AA);
+    }
+
+    // 运动线段：各匹配轨迹上一帧->本帧的中心连线；触发跨线的白色加粗
+    for (const auto &seg : dbg.motion) {
+        const cv::Scalar &color = seg.crossed ? kCrossColor : kMotionColor;
+        const int thickness = seg.crossed ? 3 : 1;
+        cv::line(img, cv::Point(seg.from.x, seg.from.y),
+                 cv::Point(seg.to.x, seg.to.y), color, thickness, cv::LINE_AA);
+        cv::circle(img, cv::Point(seg.from.x, seg.from.y), 4, color, -1,
+                   cv::LINE_AA);
+        cv::circle(img, cv::Point(seg.to.x, seg.to.y), 4, color, -1, cv::LINE_AA);
+        if (seg.crossed) {
+            cv::putText(img, "cross", cv::Point(seg.to.x + 8, seg.to.y - 10),
+                        cv::FONT_HERSHEY_DUPLEX, 0.6, kCrossColor, 2, cv::LINE_AA);
+        }
     }
 
     for (const auto &box : dbg.left_visible) {
@@ -268,9 +297,23 @@ bool TedaiJuanquPipeline::loadLiuzhiRois()
 
 void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
                                             const ReelCameraOutput &out,
+                                            const std::vector<ReelDetObject> &raw,
                                             cv::Mat &src, long long now_ms)
 {
     if (!config_.events.enable) return;
+
+    // 原始检测框（含中心点在区域外的），供"刚离开区域仍可见"的红框标记使用
+    std::vector<ReelRect> raw_boxes;
+    raw_boxes.reserve(raw.size());
+    for (const auto &o : raw) {
+        ReelRect b;
+        b.x = o.rect.x;
+        b.y = o.rect.y;
+        b.width = o.rect.width;
+        b.height = o.rect.height;
+        b.type = o.classid;
+        raw_boxes.push_back(b);
+    }
 
     // 相机 -> 参与事件的区域列表（liuzhi_rois_ 下标 + roi_id）：
     // cam1-3 只判 inside(liuzhi 1)；cam4 同时判 inside(liuzhi 1) 与 outside(liuzhi 2)；
@@ -343,7 +386,7 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
 
         ReelEnterDebug debug;
         enter_tracker_.update(camera_id, roi_id, roi.liuzhi_id, boxes, gate,
-                              now_ms, &last_events_, &debug);
+                              now_ms, &last_events_, &debug, raw_boxes);
 
         if (config_.events.draw_debug) {
             // cam4 两个区域各画一份标注，信息面板按序号上移避免重叠
@@ -504,7 +547,7 @@ std::vector<ReelCameraOutput> TedaiJuanquPipeline::process(
             }
             out.read_picture_flag = 1;
             // 盘卷进入区域事件（仅检测成功的相机）
-            updateEnterEvents(camera_id, out, src, event_now_ms);
+            updateEnterEvents(camera_id, out, diag.raw, src, event_now_ms);
             // 保存任务并行执行（编码+写盘），本线程继续处理下一相机
             auto t_save0 = std::chrono::high_resolution_clock::now();
             size_t result_index = results.size();

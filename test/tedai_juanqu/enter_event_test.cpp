@@ -331,6 +331,43 @@ int main()
         expect(leave_count == 0, "no gate configured emits no leave");
     }
 
+    // 13) 出界标记：上一帧在区域内、本帧区域框没有但原始检测里可见 -> 红框一次
+    {
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 40000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(1, "inside", 1, {makeBox(600, 600)}, gate, now, &events, &dbg);
+        expect(events.empty(), "exit-marker: baseline");
+
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {}, gate, now, &events, &dbg,
+                       {makeBox(650, 650)});
+        expect(events.empty() && dbg.left_count == 1 &&
+                   dbg.left_visible.size() == 1 && dbg.left_visible[0].x == 650,
+               "exit marker on first miss with raw hit");
+
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {}, gate, now, &events, &dbg,
+                       {makeBox(700, 700)});
+        expect(dbg.left_count == 0, "exit marker only on first miss");
+    }
+
+    // 14) 区域和原始检测都找不到 -> 无标记
+    {
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 50000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(1, "inside", 1, {makeBox(600, 600)}, gate, now, &events, &dbg);
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {}, gate, now, &events, &dbg);
+        expect(dbg.left_count == 0, "no raw hit -> no exit marker");
+    }
+
     std::printf("\n%s (%d failure(s))\n", g_failed == 0 ? "ALL PASS" : "FAILED",
                 g_failed);
     return g_failed == 0 ? 0 : 1;

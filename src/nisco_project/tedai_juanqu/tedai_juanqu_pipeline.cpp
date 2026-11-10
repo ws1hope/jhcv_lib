@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -84,6 +85,7 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
     const cv::Scalar kEnterColor(0, 255, 0);     // 绿：本次上报
     const cv::Scalar kRejectColor(150, 150, 150);
     const cv::Scalar kDupColor(0, 255, 255);
+    const cv::Scalar kLeftColor(0, 0, 255);      // 红：已离开仍可见的卷
 
     auto drawBox = [&](const ReelRect &box, const cv::Scalar &color, int thickness) {
         cv::Rect rect(box.x - box.width / 2, box.y - box.height / 2, box.width,
@@ -104,6 +106,11 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
                     cv::FONT_HERSHEY_DUPLEX, 0.6, kZhongzhiColor, 1, cv::LINE_AA);
     }
 
+    for (const auto &box : dbg.left_visible) {
+        drawBox(box, kLeftColor, 2);
+        cv::putText(img, "left", cv::Point(box.x - box.width / 2, box.y + box.height / 2 + 18),
+                    cv::FONT_HERSHEY_DUPLEX, 0.5, kLeftColor, 1, cv::LINE_AA);
+    }
     for (const auto &box : dbg.duplicated) {
         drawBox(box, kDupColor, 1);
         cv::putText(img, "dup", cv::Point(box.x - box.width / 2, box.y - box.height / 2 - 4),
@@ -149,7 +156,8 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
     lines.push_back("cam" + std::to_string(camera_id) + "  new=" +
                     std::to_string(dbg.new_count) + " tracked=" +
                     std::to_string(dbg.tracked_count) + " dup=" +
-                    std::to_string(dbg.dup_count));
+                    std::to_string(dbg.dup_count) + " left=" +
+                    std::to_string(dbg.left_count));
     lines.push_back(status);
     if (dbg.gate.has_axis) {
         lines.push_back("qishi=(" + std::to_string(dbg.gate.qishi.x) + "," +
@@ -297,6 +305,40 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
             gate.has_axis = true;
             gate.qishi = roi.qishi_zhongzhi_points[0];
             gate.zhongzhi = roi.qishi_zhongzhi_points[1];
+
+            // 出口感应线：过 zhongzhi、垂直于 qishi->zhongzhi 轴，
+            // 长度取 ROI 多边形外接矩形对角线（下限 300px），
+            // 保证覆盖通道宽度，无需现场额外标定
+            if (roi.contour_points.size() >= 3) {
+                std::vector<cv::Point> roi_pts;
+                roi_pts.reserve(roi.contour_points.size());
+                for (const auto &p : roi.contour_points) {
+                    roi_pts.emplace_back(p.x, p.y);
+                }
+                cv::Rect br = cv::boundingRect(roi_pts);
+                const double diag =
+                    std::sqrt((double)br.width * br.width +
+                              (double)br.height * br.height);
+                const double half = std::max(diag * 0.5, 150.0);
+                const double dx =
+                    (double)gate.zhongzhi.x - (double)gate.qishi.x;
+                const double dy =
+                    (double)gate.zhongzhi.y - (double)gate.qishi.y;
+                const double len = std::sqrt(dx * dx + dy * dy);
+                if (len > 1e-3) {
+                    const double px = -dy / len;
+                    const double py = dx / len;
+                    gate.gate_a.x =
+                        cvRound(gate.zhongzhi.x + px * half);
+                    gate.gate_a.y =
+                        cvRound(gate.zhongzhi.y + py * half);
+                    gate.gate_b.x =
+                        cvRound(gate.zhongzhi.x - px * half);
+                    gate.gate_b.y =
+                        cvRound(gate.zhongzhi.y - py * half);
+                    gate.has_gate = true;
+                }
+            }
         }
 
         ReelEnterDebug debug;

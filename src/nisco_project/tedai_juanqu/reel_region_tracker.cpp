@@ -20,6 +20,47 @@ double rectCenterDistanceSq(const ReelRect &a, const ReelRect &b)
     return dx * dx + dy * dy;
 }
 
+int signOf(double v)
+{
+    return (v > 0.0) - (v < 0.0);
+}
+
+// 离开判定（跨线检测）：匹配成功的运动线段 prev->cur 是否从 qishi 一侧
+// 向外跨过出口感应线 gate_a->gate_b。交点须落在感应线段范围内；
+// prev 恰好压线时允许继续向外跨出（s1 != 外侧且 s2 在外侧）。
+bool crossingExitGate(const ReelRect &prev, const ReelRect &cur,
+                      const ReelEventGate &gate)
+{
+    const double ax = (double)gate.gate_a.x;
+    const double ay = (double)gate.gate_a.y;
+    const double gx = (double)gate.gate_b.x - ax;
+    const double gy = (double)gate.gate_b.y - ay;
+    if (std::abs(gx) < 1e-9 && std::abs(gy) < 1e-9) return false;
+
+    // d = cross(g, P-A)：P 相对感应线的侧别
+    const double d1 =
+        gx * ((double)prev.y - ay) - gy * ((double)prev.x - ax);
+    const double d2 =
+        gx * ((double)cur.y - ay) - gy * ((double)cur.x - ax);
+    const double dref = gx * ((double)gate.qishi.y - ay) -
+                        gy * ((double)gate.qishi.x - ax);
+    const int s1 = signOf(d1);
+    const int s2 = signOf(d2);
+    const int sref = signOf(dref);
+    if (sref == 0) return false;
+    if (s1 == sref && s2 == 0) return false;  // 恰好压线，尚未跨出
+    if (s1 == -sref || s2 != -sref) return false;  // 方向不对或未跨线
+
+    // 交点沿感应线的参数 s 须在 [0,1] 内（denom!=0 由 d1/d2 异号保证）
+    const double mx = (double)cur.x - (double)prev.x;
+    const double my = (double)cur.y - (double)prev.y;
+    const double denom = gx * my - gy * mx;
+    if (std::abs(denom) < 1e-9) return false;
+    const double s =
+        (((double)prev.x - ax) * my - ((double)prev.y - ay) * mx) / denom;
+    return s >= 0.0 && s <= 1.0;
+}
+
 } // namespace
 
 ReelRegionTracker::ReelRegionTracker(const TedaiJuanquEventConfig &config)
@@ -104,7 +145,7 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
         return;
     }
 
-    // 1) 与上次请求的框做一对一最近邻匹配
+    // 1) 与上次请求的框做一对一最近邻匹配；匹配成功的做跨线离开判定
     const double match_r2 =
         (double)config_.match_radius_px * (double)config_.match_radius_px;
     std::vector<bool> box_used(boxes.size(), false);
@@ -122,7 +163,35 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
             }
         }
         if (best >= 0) {
-            track.box = boxes[best];
+            const ReelRect prev_box = track.box;
+            const ReelRect &cur_box = boxes[best];
+
+            // 离开判定：运动线段向外跨过出口感应线，每条轨迹最多 1 条 leave
+            if (gate.has_gate && !track.fired_leave &&
+                crossingExitGate(prev_box, cur_box, gate)) {
+                track.fired_leave = true;
+                ReelEnterEvent ev;
+                ev.event_id = makeReelEventId();
+                ev.type = "leave";
+                ev.camera_id = camera_id;
+                ev.roi_id = roi_id;
+                ev.liuzhi_id = liuzhi_id;
+                ev.x = cur_box.x;
+                ev.y = cur_box.y;
+                ev.width = cur_box.width;
+                ev.height = cur_box.height;
+                if (events) events->push_back(ev);
+            }
+
+            // 已报离开且仍被跟踪到的卷：交给上层在结果图画红框
+            if (track.fired_leave) {
+                if (debug) {
+                    debug->left_count++;
+                    debug->left_visible.push_back(cur_box);
+                }
+            }
+
+            track.box = cur_box;
             track.missed = 0;
             box_used[best] = true;
             next_tracks.push_back(track);
@@ -203,7 +272,7 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
         }
     }
 
-    // 4) 每相机每次请求最多产生 1 条事件
+    // 4) enter 事件：每相机每区域每次请求最多 1 条（leave 事件在匹配阶段产生，不占此名额）
     if (best_new >= 0) {
         const ReelRect &box = boxes[best_new];
         ReelEnterEvent ev;

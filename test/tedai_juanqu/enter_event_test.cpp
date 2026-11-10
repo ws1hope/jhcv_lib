@@ -219,6 +219,118 @@ int main()
         expect(id != id2, "event ids are unique");
     }
 
+    // 10) 跨线离开：沿轴移动跨过出口感应线 -> 1 条 leave；不重复报；持续可见 -> left_visible
+    {
+        ReelEventGate vg;
+        vg.has_axis = true;
+        vg.qishi.x = 1000;
+        vg.qishi.y = 0;
+        vg.zhongzhi.x = 1000;
+        vg.zhongzhi.y = 1000;
+        vg.has_gate = true;
+        vg.gate_a.x = 400;
+        vg.gate_a.y = 1000;
+        vg.gate_b.x = 1600;
+        vg.gate_b.y = 1000;
+
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 10000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(1, "inside", 1, {makeBox(1000, 100)}, vg, now, &events, &dbg);
+        expect(events.empty() && dbg.baseline, "leave: baseline before crossing");
+
+        int leave_count = 0;
+        ReelEnterEvent leave_ev;
+        const int ys[] = {250, 400, 550, 700, 850, 1000, 1150, 1300};
+        for (int i = 0; i < 8; i++) {
+            now += 100;
+            events.clear();
+            tracker.update(1, "inside", 1, {makeBox(1000, ys[i])}, vg, now,
+                           &events, &dbg);
+            for (const auto &ev : events) {
+                if (ev.type == "leave") {
+                    leave_count++;
+                    leave_ev = ev;
+                }
+            }
+        }
+        expect(leave_count == 1 && leave_ev.type == "leave" && leave_ev.y == 1150,
+               "crossing exit gate emits exactly one leave");
+        expect(dbg.left_count == 1 && dbg.left_visible.size() == 1 &&
+                   dbg.left_visible[0].y == 1300,
+               "departed reel still visible in left_visible");
+
+        // 已报离开的卷被淘汰后重现 -> 视为新卷，不再发 leave
+        for (int i = 0; i < 4; i++) {
+            now += 100;
+            events.clear();
+            tracker.update(1, "inside", 1, {}, vg, now, &events, &dbg);
+        }
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {makeBox(1000, 1300)}, vg, now, &events, &dbg);
+        leave_count = 0;
+        for (const auto &ev : events) {
+            if (ev.type == "leave") leave_count++;
+        }
+        expect(leave_count == 0, "reappearing reel emits no extra leave");
+    }
+
+    // 11) 未跨线：在区域内往返移动，不发 leave
+    {
+        ReelEventGate vg;
+        vg.has_axis = true;
+        vg.qishi.x = 1000;
+        vg.qishi.y = 0;
+        vg.zhongzhi.x = 1000;
+        vg.zhongzhi.y = 1000;
+        vg.has_gate = true;
+        vg.gate_a.x = 400;
+        vg.gate_a.y = 1000;
+        vg.gate_b.x = 1600;
+        vg.gate_b.y = 1000;
+
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 20000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(1, "inside", 1, {makeBox(1000, 100)}, vg, now, &events, &dbg);
+        int leave_count = 0;
+        const int ys[] = {250, 400, 250, 100, 250};
+        for (int i = 0; i < 5; i++) {
+            now += 100;
+            events.clear();
+            tracker.update(1, "inside", 1, {makeBox(1000, ys[i])}, vg, now,
+                           &events, &dbg);
+            for (const auto &ev : events) {
+                if (ev.type == "leave") leave_count++;
+            }
+        }
+        expect(leave_count == 0, "moving without crossing emits no leave");
+    }
+
+    // 12) 未配置感应线（has_gate=false）：跨过 zhongzhi 也不发 leave
+    {
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 30000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(1, "inside", 1, {makeBox(1000, 100)}, gate, now, &events, &dbg);
+        int leave_count = 0;
+        const int ys[] = {250, 400, 550, 700, 850, 1000, 1150};
+        for (int i = 0; i < 7; i++) {
+            now += 100;
+            events.clear();
+            tracker.update(1, "inside", 1, {makeBox(1000, ys[i])}, gate, now,
+                           &events, &dbg);
+            for (const auto &ev : events) {
+                if (ev.type == "leave") leave_count++;
+            }
+        }
+        expect(leave_count == 0, "no gate configured emits no leave");
+    }
+
     std::printf("\n%s (%d failure(s))\n", g_failed == 0 ? "ALL PASS" : "FAILED",
                 g_failed);
     return g_failed == 0 ? 0 : 1;

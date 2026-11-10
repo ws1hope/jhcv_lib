@@ -20,6 +20,9 @@
 
 > camera4 的 `inside`（liuzhi 1）检测要求 `camera_liuzhi_roi.json` 中 camera4
 > 配置了 liuzhi_id=1 的 ROI；未配置时该区域不产生事件。
+>
+> `leave` 事件只在配置了 `qishi/zhongzhi` 起终点的区域产生
+> （camera4 outside 未配置，无 leave）。
 
 ## 3. 响应变更
 
@@ -64,7 +67,7 @@
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `event_id` | string | `evt-<UUID v4>`，每条唯一，可用于去重 |
-| `type` | string | 固定 `"enter"` |
+| `type` | string | `enter`（进入区域）/ `leave`（跨过出口感应线离开） |
 | `camera_id` | int | 发生事件的相机 |
 | `roi_id` | string | `inside`（cam1-4）/ `outside`（cam4-5） |
 | `liuzhi_id` | int | 取自 ROI 配置：1 或 2 |
@@ -75,11 +78,15 @@
 
 | 项目 | 说明 |
 |---|---|
-| 触发 | 新盘卷出现在区域入口附近（到 `qishi` 距离 < 120px，或沿 `qishi→zhongzhi` 轴投影 `0 <= t < 0.25`） |
-| 每相机每区域上限 | 1 条；多个候选时取离 `qishi` 最近的一个，其余只建跟踪 |
+| enter 触发 | 新盘卷出现在区域入口附近（到 `qishi` 距离 < 120px，或沿 `qishi→zhongzhi` 轴投影 `0 <= t < 0.25`） |
+| enter 上限 | 每相机每区域每次请求最多 1 条；多个候选时取离 `qishi` 最近的一个，其余只建跟踪 |
+| leave 触发 | 被跟踪的盘卷，其"上一帧→本帧"运动线段向外跨过出口感应线（过 `zhongzhi`、垂直于轴）时发 1 条；坐标为跨线时刻的框中心 |
+| leave 上限 | 每条轨迹最多 1 条；不占 enter 的名额 |
+| leave 范围 | 仅限配置了 `qishi/zhongzhi` 的区域（cam4 outside 未配置，不产生 leave） |
+| 红框标注 | 已发 leave 且仍在画面中被跟踪到的盘卷，在结果图上持续画红色 `left` 框，直到其真正消失 |
 | 基线 | 服务重启后第一次请求、或该相机超过 5 秒未参与请求 → 只建基线，不发事件 |
 | 去重 | 同一盘卷持续在区域内只报一次；漏检后重现若在已上报位置 120px 内且未超过 5 次请求，不重复上报 |
-| 未配置起终点 | 该区域退化为"新出现即进入"，多个候选取 `y` 最小（当前 camera4 属于这种情况） |
+| 未配置起终点 | 该区域退化为"新出现即进入"，多个候选取 `y` 最小（当前 camera4 outside 属于这种情况） |
 
 ## 5. 注意事项
 
@@ -93,9 +100,10 @@
 
 `events.draw_debug: true` 时，服务保存的结果图上会画出：
 
-- `qishi → zhongzhi` 轴线（品红虚线）与起终点标记
+- `qishi → zhongzhi` 轴线（品红虚线）与起终点标记、出口感应线
 - 以 `qishi` 为圆心、`entry_radius_px` 为半径的距离门槛圆
 - 本帧上报的进入盘卷：绿色粗框 + `ENTER d=.. t=.. rule=..`
+- 已离开仍可见的盘卷：红色框 + `left`
 - 未通过入口判定的新框：灰色细框 + `no-enter`
 - 被去重缓存拦下的新框：黄色细框 + `dup`
 - 左下角信息面板：new/tracked/dup 数量、enter 结论、qishi/zhongzhi、radius/t_max、event_id

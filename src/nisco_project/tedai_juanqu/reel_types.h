@@ -71,7 +71,7 @@ struct ReelDetObject {
 // HTTP 响应的盘卷进入区域事件（每次请求每相机最多 1 条）
 struct ReelEnterEvent {
     std::string event_id;   // evt-<UUID>
-    std::string type = "enter";
+    std::string type;       // enter=进入区域；leave=跨过出口感应线离开
     int camera_id = -1;
     std::string roi_id;     // inside / outside
     int liuzhi_id = -1;     // 取自 ROI 配置

@@ -346,6 +346,26 @@ class GuokuacheService {
     std::shared_ptr<GuokuacheServicePrivate> m_pHandle;
 };
 
+class TiangangfujianServicePrivate;
+class TiangangfujianService {
+  public:
+    explicit TiangangfujianService(const std::string &config_path);
+    ~TiangangfujianService();
+
+    TiangangfujianService(const TiangangfujianService &) = delete;
+    TiangangfujianService &operator=(const TiangangfujianService &) = delete;
+
+    const struct TiangangfujianServerConfig &config() const;
+    std::string handleRequest(const std::string &req_body);
+    int runLocalTest(const std::string &image_path,
+                     const std::string &heat_number,
+                     int station_id,
+                     const std::string &out_dir = "");
+
+  private:
+    std::shared_ptr<TiangangfujianServicePrivate> m_pHandle;
+};
+
 class FeigangcaoServicePrivate;
 class FeigangcaoService {
   public:

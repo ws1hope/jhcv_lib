@@ -129,6 +129,12 @@ set(GUOKUACHE_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/xintiangang/guokuache/guokuache_service.cpp
 )
 
+# tiangangfujian 模块 - 断面定位+字符实例分割矫正+方向分类+OCR 识别服务
+set(TIANGANGFUJIAN_SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/tiangangfujian/tiangangfujian_pipeline.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/xintiangang/tiangangfujian/tiangangfujian_service.cpp
+)
+
 # huaxin 模块 - 双目标检测(最左框)铸坯端面识别服务
 set(HUAXIN_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/huaxin/huaxin_pipeline.cpp
@@ -182,6 +188,7 @@ set(ALL_SOURCES
     ${FEIGANGCAO_SOURCES}
     ${XINTIANGANG_SOURCES}
     ${GUOKUACHE_SOURCES}
+    ${TIANGANGFUJIAN_SOURCES}
     ${HUAXIN_SOURCES}
     ${UTILS_SOURCES}
     ${CV_HOMOGRAPHY_SOURCES}
@@ -219,6 +226,7 @@ target_include_directories(jhcv_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/luqian
     ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/guokuache
+    ${CMAKE_CURRENT_SOURCE_DIR}/xintiangang/tiangangfujian
     ${CMAKE_CURRENT_SOURCE_DIR}/huaxin
     ${CMAKE_CURRENT_SOURCE_DIR}/utils
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party
@@ -259,6 +267,7 @@ if(MSVC)
         ${FEIGANGCAO_SOURCES}
         ${XINTIANGANG_SOURCES}
         ${GUOKUACHE_SOURCES}
+        ${TIANGANGFUJIAN_SOURCES}
         ${HUAXIN_SOURCES}
         ${UTILS_SOURCES}
         ${CV_HOMOGRAPHY_SOURCES}

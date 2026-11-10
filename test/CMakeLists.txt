@@ -44,6 +44,9 @@ add_executable(huaxin ${CMAKE_CURRENT_SOURCE_DIR}/huaxin/main.cpp)
 # ========== Guokuache 双目标检测(最左框)+Z型排序 OCR 服务 ==========
 add_executable(guokuache ${CMAKE_CURRENT_SOURCE_DIR}/guokuache/main.cpp)
 
+# ========== Tiangangfujian 断面定位+字符分割矫正+方向分类+OCR 服务 ==========
+add_executable(tiangangfujian ${CMAKE_CURRENT_SOURCE_DIR}/tiangangfujian/main.cpp)
+
 # ========== ZBSLTJ 喷码识别服务 ==========
 add_executable(zbsltj ${CMAKE_CURRENT_SOURCE_DIR}/zbsltj/main.cpp)
 
@@ -93,6 +96,7 @@ set(TEST_TARGETS
     xintiangang
     huaxin
     guokuache
+    tiangangfujian
     zbsltj
     gx_jingzheng
     fujian
@@ -176,6 +180,14 @@ endif()
 if(MSVC)
     set_source_files_properties(
         ${CMAKE_CURRENT_SOURCE_DIR}/guokuache/main.cpp
+        PROPERTIES COMPILE_FLAGS "/utf-8"
+    )
+endif()
+
+# ========== Tiangangfujian 断面定位+字符分割矫正+方向分类+OCR 服务 ==========
+if(MSVC)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/tiangangfujian/main.cpp
         PROPERTIES COMPILE_FLAGS "/utf-8"
     )
 endif()

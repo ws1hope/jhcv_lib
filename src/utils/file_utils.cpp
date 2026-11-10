@@ -218,6 +218,63 @@ JHDeepCore::XintiangangServerConfig FileHelper::loadXintiangangConfig(const std:
     return cfg;
 }
 
+JHDeepCore::TiangangfujianServerConfig FileHelper::loadTiangangfujianConfig(const std::string& config_path)
+{
+    JHDeepCore::TiangangfujianServerConfig cfg;
+    YAML::Node node = YAML::LoadFile(config_path);
+
+    if (node["server"]) {
+        cfg.service_name = node["server"]["service_name"].as<std::string>(cfg.service_name);
+        cfg.host = node["server"]["host"].as<std::string>(cfg.host);
+        cfg.port = node["server"]["port"].as<int>(cfg.port);
+    }
+
+    if (node["output"]) {
+        cfg.result_dir = node["output"]["result_dir"].as<std::string>(cfg.result_dir);
+        cfg.log_dir = node["output"]["log_dir"].as<std::string>(cfg.log_dir);
+        cfg.section_crop_dir = node["output"]["section_crop_dir"].as<std::string>("");
+        cfg.char_crop_dir = node["output"]["char_crop_dir"].as<std::string>("");
+    }
+
+    if (node["models"]) {
+        cfg.det_model = node["models"]["det_model"].as<std::string>("");
+        cfg.char_seg_model = node["models"]["char_seg_model"].as<std::string>("");
+        cfg.direction_cls_model = node["models"]["direction_cls_model"].as<std::string>("");
+        cfg.ocr_model = node["models"]["ocr_model"].as<std::string>("");
+        cfg.ocr_label = node["models"]["ocr_label"].as<std::string>("");
+        cfg.dir_flip_conf_threshold = node["models"]["dir_flip_conf_threshold"].as<float>(0.0f);
+    }
+
+    if (node["inference"]) {
+        cfg.device = node["inference"]["device"].as<std::string>("cuda");
+    }
+
+    // 全局固定检测区域：roi1、roi2… 递增键名连续解析，直到缺失为止（数量不限）。
+    // [[x1,y1],[x2,y2]] 两点正矩形 -> x,y,w,h（与 fujian 的 parseRoi 一致）
+    if (node["rois"] && node["rois"].IsMap()) {
+        const YAML::Node rois_node = node["rois"];
+        for (int ri = 1; ; ++ri) {
+            std::string key = "roi" + std::to_string(ri);
+            if (!rois_node[key]) break;
+            const YAML::Node& n = rois_node[key];
+            if (!n.IsSequence() || n.size() != 2) break;
+            const YAML::Node& p1 = n[0];
+            const YAML::Node& p2 = n[1];
+            if (!p1.IsSequence() || p1.size() != 2 || !p2.IsSequence() || p2.size() != 2) break;
+            int x1 = p1[0].as<int>(), y1 = p1[1].as<int>();
+            int x2 = p2[0].as<int>(), y2 = p2[1].as<int>();
+            std::array<int, 4> roi = {0, 0, 0, 0};
+            roi[0] = std::min(x1, x2);
+            roi[1] = std::min(y1, y2);
+            roi[2] = std::abs(x2 - x1);
+            roi[3] = std::abs(y2 - y1);
+            cfg.rois.push_back(roi);
+        }
+    }
+
+    return cfg;
+}
+
 JHDeepCore::HuaxinServerConfig FileHelper::loadHuaxinConfig(const std::string& config_path)
 {
     JHDeepCore::HuaxinServerConfig cfg;

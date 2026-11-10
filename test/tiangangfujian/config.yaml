@@ -1,0 +1,22 @@
+server:
+  service_name: "tiangangfujian"
+  host: "127.0.0.1"
+  port: 8090
+models:
+  det_model: "models/tiangangfujian/duanmian.onnx"        # 断面定位（目标检测）
+  char_seg_model: "models/tiangangfujian/zifu_seg.onnx"   # 字符实例分割
+  direction_cls_model: "models/tiangangfujian/cls.onnx"   # 字符方向分类（0=正向,1=翻转180°）
+  ocr_model: "models/tiangangfujian/rec.onnx"
+  ocr_label: "models/tiangangfujian/rec.yaml"
+  dir_flip_conf_threshold: 0.0   # >0 时方向投票平均置信度低于该值不翻转；0=不过滤
+inference:
+  device: "cpu"
+output:
+  result_dir: "D:\\CharacterDetect\\result"
+  log_dir: "D:\\CharacterDetect\\log"
+  section_crop_dir: ""   # 断面框裁剪图保存目录（为空则不保存）
+  char_crop_dir: ""      # 方向矫正后字符裁剪图保存目录（为空则不保存）
+# 全局固定检测区域（roi1、roi2… 数量不限；不配置则整图检测）：
+# rois:
+#   roi1: [[100, 200], [800, 600]]
+#   roi2: [[900, 200], [1600, 600]]

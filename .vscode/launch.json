@@ -976,6 +976,45 @@
             "preLaunchTask": "mac build all"
         },
         {
+            "name": "tiangangfujian - local test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/tiangangfujian.exe",
+            "args": [
+                "--test",
+                "-c", "test/tiangangfujian/config.yaml",
+                "-i", "images/tiangangfujian",
+                "-s", "1"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "tiangangfujian - HTTP server",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Release/tiangangfujian.exe",
+            "args": [
+                "-c", "test/tiangangfujian/config.yaml"
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "${workspaceFolder}/build/bin/Release;G:/3thirdparty/onnxruntime-1.21.1-cuda12.8-cudnn9-sm86-sm89-sm120-win-x64/bin;G:/3thirdparty/opencv/build/x64/vc16/bin;C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin;G:/3thirdparty/tensorrt/lib;${env:PATH}"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
             "name": "fujian - local test",
             "type": "cppvsdbg",
             "request": "launch",

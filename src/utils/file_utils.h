@@ -177,6 +177,27 @@ struct GuokuacheServerConfig {
     std::string device = "cuda";
 };
 
+// tiangangfujian 配置：断面定位(目标检测) -> 逐断面字符实例分割+角度矫正 -> 方向分类矫正 0 度 -> OCR
+struct TiangangfujianServerConfig {
+    std::string service_name = "tiangangfujian";
+    std::string host = "0.0.0.0";
+    int port = 8090;
+    std::string result_dir = "D:\\CharacterDetect\\result";
+    std::string log_dir = "D:\\CharacterDetect\\log";
+    std::string section_crop_dir;     // 断面框裁剪图保存目录（为空则不保存）
+    std::string char_crop_dir;        // 方向矫正后字符裁剪图保存目录（为空则不保存）
+    std::string det_model;            // 断面定位模型（目标检测）
+    std::string char_seg_model;       // 字符实例分割模型
+    std::string direction_cls_model;  // 字符方向分类模型（class_id 0=正向,1=翻转180°）
+    std::string ocr_model;            // OCR 识别模型
+    std::string ocr_label;            // OCR 字典
+    // 方向分类判为"翻转(180)"时的置信度阈值；>0 时低于该值不翻转。0=不过滤(默认,同 tiebiao)
+    float dir_flip_conf_threshold = 0.0f;
+    std::string device = "cuda";
+    // 全局固定检测区域：roi1、roi2… [[x1,y1],[x2,y2]] 两点正矩形；不配置则整图检测
+    std::vector<std::array<int, 4>> rois;
+};
+
 // fujian 单工位配置：模型 + ROI 列表（heat_num 定位数字决定用第几个，数量不限）
 struct FujianStationConfig {
     int station_id = 0;
@@ -309,6 +330,8 @@ public:
     static JHDeepCore::FeigangcaoServerConfig loadFeigangcaoConfig(const std::string& config_path);
 
     static JHDeepCore::GuokuacheServerConfig loadGuokuacheConfig(const std::string& config_path);
+
+    static JHDeepCore::TiangangfujianServerConfig loadTiangangfujianConfig(const std::string& config_path);
 
     static JHDeepCore::FujianServerConfig loadFujianConfig(const std::string& config_path);
 

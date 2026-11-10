@@ -74,8 +74,9 @@ class ReelRegionTracker {
     explicit ReelRegionTracker(const TedaiJuanquEventConfig &config);
 
     // 每次请求、每个相机调用一次；产生的事件追加到 events（enter 每区域最多
-    // 1 条，leave 每轨迹最多 1 条）。raw_boxes 为本相机全部原始检测框（含中心
-    // 点在区域外的），仅用于"刚离开区域仍可见"的单帧红框标记，不做续跟。
+    // 1 条，leave 每轨迹最多 1 条）。raw_boxes 为出界标记用的原始检测框，
+    // 由 pipeline 预先过滤：仅含中心在本区域多边形外的框；只有已发 leave
+    // 的轨迹才会触发单帧红框标记，不续跟。
     // debug 非空时填充本次判定明细（供结果图标注）。
     void update(int camera_id, const std::string &roi_id, int liuzhi_id,
                 const std::vector<ReelRect> &boxes, const ReelEventGate &gate,

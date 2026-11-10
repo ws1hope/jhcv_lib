@@ -302,7 +302,7 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
 {
     if (!config_.events.enable) return;
 
-    // 原始检测框（含中心点在区域外的），供"刚离开区域仍可见"的红框标记使用
+    // 原始检测框：各区域按自身多边形过滤后用于"已发 leave 卷出界"的红框标记
     std::vector<ReelRect> raw_boxes;
     raw_boxes.reserve(raw.size());
     for (const auto &o : raw) {
@@ -339,6 +339,22 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
         if ((int)it->second.size() <= roi_index) continue;
         const ReelRoiInfo &roi = it->second[roi_index];
 
+        // 出界标记的 raw 池：只保留中心已出了本区域多边形的框，
+        // 防止区域内检测抖动/邻近卷被误标
+        std::vector<ReelRect> raw_exited;
+        if (!raw_boxes.empty() && roi.contour_points.size() >= 3) {
+            std::vector<ReelPointD> poly;
+            poly.reserve(roi.contour_points.size());
+            for (const auto &p : roi.contour_points) {
+                poly.push_back({(double)p.x, (double)p.y});
+            }
+            for (const auto &b : raw_boxes) {
+                if (!isPointInPolygon({(double)b.x, (double)b.y}, poly)) {
+                    raw_exited.push_back(b);
+                }
+            }
+        }
+
         // 各相机的区域输出均为检测像素坐标，直接用于入口判定与连续性匹配
         const std::vector<ReelRect> &boxes =
             (roi_index == 0) ? out.inside : out.outside;
@@ -349,36 +365,47 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
             gate.qishi = roi.qishi_zhongzhi_points[0];
             gate.zhongzhi = roi.qishi_zhongzhi_points[1];
 
-            // 出口感应线：过 zhongzhi、垂直于 qishi->zhongzhi 轴，
-            // 长度取 ROI 多边形外接矩形对角线（下限 300px），
-            // 保证覆盖通道宽度，无需现场额外标定
-            if (roi.contour_points.size() >= 3) {
-                std::vector<cv::Point> roi_pts;
-                roi_pts.reserve(roi.contour_points.size());
-                for (const auto &p : roi.contour_points) {
-                    roi_pts.emplace_back(p.x, p.y);
+            // 出口感应线：取与 zhongzhi 共线（近似）的 contour_points 边——
+            // 现场标定 zhongzhi 压在出口边上，这条边本身就是离开判定边界。
+            // 垂距超过 100px 时告警（标定可能有问题），仍取最近边兜底。
+            const size_t n = roi.contour_points.size();
+            if (n >= 3) {
+                double best_dist = -1.0;
+                size_t best_i = 0;
+                for (size_t i = 0; i < n; i++) {
+                    const ReelPoint &p1 = roi.contour_points[i];
+                    const ReelPoint &p2 = roi.contour_points[(i + 1) % n];
+                    const double ex = (double)p2.x - (double)p1.x;
+                    const double ey = (double)p2.y - (double)p1.y;
+                    const double len2 = ex * ex + ey * ey;
+                    if (len2 < 1e-6) continue;
+                    double t = ((double)gate.zhongzhi.x - (double)p1.x) * ex +
+                               ((double)gate.zhongzhi.y - (double)p1.y) * ey;
+                    t /= len2;
+                    t = std::max(0.0, std::min(1.0, t));
+                    const double cx = (double)p1.x + t * ex;
+                    const double cy = (double)p1.y + t * ey;
+                    const double ddx = (double)gate.zhongzhi.x - cx;
+                    const double ddy = (double)gate.zhongzhi.y - cy;
+                    const double dist = std::sqrt(ddx * ddx + ddy * ddy);
+                    if (best_dist < 0.0 || dist < best_dist) {
+                        best_dist = dist;
+                        best_i = i;
+                    }
                 }
-                cv::Rect br = cv::boundingRect(roi_pts);
-                const double diag =
-                    std::sqrt((double)br.width * br.width +
-                              (double)br.height * br.height);
-                const double half = std::max(diag * 0.5, 150.0);
-                const double dx =
-                    (double)gate.zhongzhi.x - (double)gate.qishi.x;
-                const double dy =
-                    (double)gate.zhongzhi.y - (double)gate.qishi.y;
-                const double len = std::sqrt(dx * dx + dy * dy);
-                if (len > 1e-3) {
-                    const double px = -dy / len;
-                    const double py = dx / len;
-                    gate.gate_a.x =
-                        cvRound(gate.zhongzhi.x + px * half);
-                    gate.gate_a.y =
-                        cvRound(gate.zhongzhi.y + py * half);
-                    gate.gate_b.x =
-                        cvRound(gate.zhongzhi.x - px * half);
-                    gate.gate_b.y =
-                        cvRound(gate.zhongzhi.y - py * half);
+                if (best_dist >= 0.0) {
+                    if (best_dist > 100.0) {
+                        std::cerr << "[WARN] tedai_juanqu: camera " << camera_id
+                                  << " zhongzhi is " << (int)best_dist
+                                  << "px from nearest contour edge, gate "
+                                     "calibration may be wrong" << std::endl;
+                    }
+                    const ReelPoint &p1 = roi.contour_points[best_i];
+                    const ReelPoint &p2 = roi.contour_points[(best_i + 1) % n];
+                    gate.gate_a.x = p1.x;
+                    gate.gate_a.y = p1.y;
+                    gate.gate_b.x = p2.x;
+                    gate.gate_b.y = p2.y;
                     gate.has_gate = true;
                 }
             }
@@ -386,7 +413,7 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
 
         ReelEnterDebug debug;
         enter_tracker_.update(camera_id, roi_id, roi.liuzhi_id, boxes, gate,
-                              now_ms, &last_events_, &debug, raw_boxes);
+                              now_ms, &last_events_, &debug, raw_exited);
 
         if (config_.events.draw_debug) {
             // cam4 两个区域各画一份标注，信息面板按序号上移避免重叠

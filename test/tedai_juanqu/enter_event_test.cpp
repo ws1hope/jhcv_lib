@@ -331,41 +331,62 @@ int main()
         expect(leave_count == 0, "no gate configured emits no leave");
     }
 
-    // 13) 出界标记：上一帧在区域内、本帧区域框没有但原始检测里可见 -> 红框一次
+    // 13) 出界标记前提：未发过 leave 的卷，区域框丢失 + raw 可见 -> 不标红
     {
         ReelRegionTracker tracker(makeConfig());
         long long now = 40000;
         std::vector<ReelEnterEvent> events;
         ReelEnterDebug dbg;
         tracker.update(1, "inside", 1, {makeBox(600, 600)}, gate, now, &events, &dbg);
-        expect(events.empty(), "exit-marker: baseline");
-
         now += 100;
         events.clear();
         tracker.update(1, "inside", 1, {}, gate, now, &events, &dbg,
                        {makeBox(650, 650)});
-        expect(events.empty() && dbg.left_count == 1 &&
-                   dbg.left_visible.size() == 1 && dbg.left_visible[0].x == 650,
-               "exit marker on first miss with raw hit");
-
-        now += 100;
-        events.clear();
-        tracker.update(1, "inside", 1, {}, gate, now, &events, &dbg,
-                       {makeBox(700, 700)});
-        expect(dbg.left_count == 0, "exit marker only on first miss");
+        expect(dbg.left_count == 0 && events.empty(),
+               "no fired_leave -> no exit marker");
     }
 
-    // 14) 区域和原始检测都找不到 -> 无标记
+    // 14) 出界标记：fired_leave 的卷出区域后 raw 仍可见 -> 标红一帧；之后不再标
     {
+        ReelEventGate vg;
+        vg.has_axis = true;
+        vg.qishi.x = 1000;
+        vg.qishi.y = 0;
+        vg.zhongzhi.x = 1000;
+        vg.zhongzhi.y = 1000;
+        vg.has_gate = true;
+        vg.gate_a.x = 400;
+        vg.gate_a.y = 1000;
+        vg.gate_b.x = 1600;
+        vg.gate_b.y = 1000;
+
         ReelRegionTracker tracker(makeConfig());
-        long long now = 50000;
+        long long now = 45000;
         std::vector<ReelEnterEvent> events;
         ReelEnterDebug dbg;
-        tracker.update(1, "inside", 1, {makeBox(600, 600)}, gate, now, &events, &dbg);
+        tracker.update(1, "inside", 1, {makeBox(1000, 100)}, vg, now, &events, &dbg);
+        const int ys[] = {250, 400, 550, 700, 850, 1000, 1150};
+        for (int i = 0; i < 7; i++) {
+            now += 100;
+            events.clear();
+            tracker.update(1, "inside", 1, {makeBox(1000, ys[i])}, vg, now,
+                           &events, &dbg);
+        }
+
+        // 已发 leave 的卷中心出了多边形（区域框消失），raw 里仍可见 -> 标红一帧
         now += 100;
         events.clear();
-        tracker.update(1, "inside", 1, {}, gate, now, &events, &dbg);
-        expect(dbg.left_count == 0, "no raw hit -> no exit marker");
+        tracker.update(1, "inside", 1, {}, vg, now, &events, &dbg,
+                       {makeBox(1000, 1300)});
+        expect(events.empty() && dbg.left_count == 1 &&
+                   dbg.left_visible.size() == 1 && dbg.left_visible[0].y == 1300,
+               "fired_leave reel exiting region gets one raw marker");
+
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {}, vg, now, &events, &dbg,
+                       {makeBox(1000, 1450)});
+        expect(dbg.left_count == 0, "exit marker only on first miss");
     }
 
     std::printf("\n%s (%d failure(s))\n", g_failed == 0 ? "ALL PASS" : "FAILED",

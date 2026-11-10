@@ -229,9 +229,12 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
             next_tracks.push_back(track);
             matched_count++;
         } else {
-            // 出界标记（仅首次丢失时）：上一帧还在区域内、本帧区域框里
-            // 找不到但原始检测里仍就近可见 -> 本帧画一次红框，不续跟
-            if (debug && track.missed == 0 && !raw_boxes.empty()) {
+            // 出界标记（仅首次丢失时）：只针对已发 leave 的卷（离开事件
+            // 的跟踪延续）。上一帧还在区域内、本帧区域框里找不到，但
+            // 原始检测里仍就近可见（raw 池已由 pipeline 过滤为"中心在
+            // 区域多边形外"的框）-> 本帧画一次红框，不续跟
+            if (debug && track.fired_leave && track.missed == 0 &&
+                !raw_boxes.empty()) {
                 const ReelRect *raw_hit = findNearbyRawBox(
                     track.box, raw_boxes, (double)config_.match_radius_px);
                 if (raw_hit != nullptr) {

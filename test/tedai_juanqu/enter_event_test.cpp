@@ -389,6 +389,135 @@ int main()
         expect(dbg.left_count == 0, "exit marker only on first miss");
     }
 
+    // 15) 出界框跨线离开：上一帧区域内 -> 本帧区域框为空、只有出界 raw 框，
+    //     运动线段跨过出口感应线 -> 1 条 leave + 本帧红框（现场 camera2 形态）
+    {
+        ReelEventGate vg;
+        vg.has_axis = true;
+        vg.qishi.x = 1000;
+        vg.qishi.y = 0;
+        vg.zhongzhi.x = 1000;
+        vg.zhongzhi.y = 1000;
+        vg.has_gate = true;
+        vg.gate_a.x = 400;
+        vg.gate_a.y = 1000;
+        vg.gate_b.x = 1600;
+        vg.gate_b.y = 1000;
+
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 50000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(2, "inside", 1, {makeBox(1000, 900)}, vg, now, &events,
+                       &dbg);
+        expect(events.empty() && dbg.baseline, "raw-cross: baseline before exit");
+
+        // 本帧卷已出 ROI（区域框消失），raw 池里仍有出界框且已跨过感应线
+        now += 100;
+        events.clear();
+        tracker.update(2, "inside", 1, {}, vg, now, &events, &dbg,
+                       {makeBox(1000, 1040)});
+        int leave_count = 0;
+        ReelEnterEvent leave_ev;
+        for (const auto &ev : events) {
+            if (ev.type == "leave") {
+                leave_count++;
+                leave_ev = ev;
+            }
+        }
+        expect(leave_count == 1 && leave_ev.camera_id == 2 &&
+                   leave_ev.roi_id == "inside" && leave_ev.liuzhi_id == 1 &&
+                   leave_ev.y == 1040,
+               "raw-cross: exited box crossing gate emits one leave");
+        expect(dbg.left_count == 1 && dbg.left_visible.size() == 1 &&
+                   dbg.left_visible[0].y == 1040,
+               "raw-cross: leave frame draws red box on exited box");
+        expect(dbg.motion.size() == 1 && dbg.motion[0].crossed &&
+                   dbg.motion[0].from.y == 900 && dbg.motion[0].to.y == 1040,
+               "raw-cross: motion segment recorded as crossed");
+
+        // 后续帧出界框仍可见：丢失首帧就近红框，但不再发 leave
+        now += 100;
+        events.clear();
+        tracker.update(2, "inside", 1, {}, vg, now, &events, &dbg,
+                       {makeBox(1000, 1180)});
+        leave_count = 0;
+        for (const auto &ev : events) {
+            if (ev.type == "leave") leave_count++;
+        }
+        expect(leave_count == 0 && dbg.left_count == 1,
+               "raw-cross: later frames keep red box without new leave");
+    }
+
+    // 16) 出界框未跨线：不发 leave，轨迹保持原位不被劫持
+    {
+        ReelEventGate vg;
+        vg.has_axis = true;
+        vg.qishi.x = 1000;
+        vg.qishi.y = 0;
+        vg.zhongzhi.x = 1000;
+        vg.zhongzhi.y = 1000;
+        vg.has_gate = true;
+        vg.gate_a.x = 400;
+        vg.gate_a.y = 1000;
+        vg.gate_b.x = 1600;
+        vg.gate_b.y = 1000;
+
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 60000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(1, "inside", 1, {makeBox(1000, 700)}, vg, now, &events,
+                       &dbg);
+
+        // 出界框在感应线同侧（线段未跨线）
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {}, vg, now, &events, &dbg,
+                       {makeBox(1000, 840)});
+        int leave_count = 0;
+        for (const auto &ev : events) {
+            if (ev.type == "leave") leave_count++;
+        }
+        expect(leave_count == 0 && events.empty(),
+               "raw-nocross: exited box without crossing emits nothing");
+
+        // 轨迹保持原位：下一帧原位置的区域内框仍能匹配上
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {makeBox(1010, 700)}, vg, now, &events,
+                       &dbg);
+        expect(events.empty() && dbg.tracked_count == 1,
+               "raw-nocross: track not hijacked, region rematch works");
+    }
+
+    // 17) 出界框不参与 enter：区域内为空时，raw 里靠近 qishi 的框不发 enter
+    {
+        ReelEventGate vg;
+        vg.has_axis = true;
+        vg.qishi.x = 1000;
+        vg.qishi.y = 0;
+        vg.zhongzhi.x = 1000;
+        vg.zhongzhi.y = 1000;
+        vg.has_gate = true;
+        vg.gate_a.x = 400;
+        vg.gate_a.y = 1000;
+        vg.gate_b.x = 1600;
+        vg.gate_b.y = 1000;
+
+        ReelRegionTracker tracker(makeConfig());
+        long long now = 70000;
+        std::vector<ReelEnterEvent> events;
+        ReelEnterDebug dbg;
+        tracker.update(1, "inside", 1, {}, vg, now, &events, &dbg);  // 空基线
+        now += 100;
+        events.clear();
+        tracker.update(1, "inside", 1, {}, vg, now, &events, &dbg,
+                       {makeBox(1000, 100)});
+        expect(events.empty() && !dbg.has_event && dbg.new_count == 0,
+               "raw box near qishi never triggers enter");
+    }
+
     std::printf("\n%s (%d failure(s))\n", g_failed == 0 ? "ALL PASS" : "FAILED",
                 g_failed);
     return g_failed == 0 ? 0 : 1;

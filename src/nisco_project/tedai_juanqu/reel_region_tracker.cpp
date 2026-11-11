@@ -164,14 +164,18 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
         return;
     }
 
-    // 1) 与上次请求的框做一对一最近邻匹配；匹配成功的做跨线离开判定
+    // 1) 与上次请求的框做一对一最近邻匹配；匹配成功的做跨线离开判定。
+    //    候选 = 区域框 + 出界 raw 框（两池按中心点在多边形内外互补，不重叠）：
+    //    卷刚出 ROI 仍在画面内时，只有出界框能延续轨迹并触发跨线离开。
     const double match_r2 =
         (double)config_.match_radius_px * (double)config_.match_radius_px;
     std::vector<bool> box_used(boxes.size(), false);
+    std::vector<bool> raw_used(raw_boxes.size(), false);
     std::vector<Track> next_tracks;
     int matched_count = 0;
     for (auto &track : st.tracks) {
-        int best = -1;
+        int best = -1;      // 区域框下标
+        int best_raw = -1;  // 出界 raw 框下标
         double best_d2 = match_r2;
         for (size_t i = 0; i < boxes.size(); i++) {
             if (box_used[i]) continue;
@@ -179,6 +183,20 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
             if (d2 <= best_d2) {
                 best_d2 = d2;
                 best = (int)i;
+                best_raw = -1;
+            }
+        }
+        // 出界框只用于未发 leave 轨迹的跨线离开判定；已发 leave 的轨迹
+        // 维持原语义（区域匹配每帧红框 / 丢失首帧就近出界红框一次）
+        if (!track.fired_leave) {
+            for (size_t i = 0; i < raw_boxes.size(); i++) {
+                if (raw_used[i]) continue;
+                double d2 = rectCenterDistanceSq(track.box, raw_boxes[i]);
+                if (d2 <= best_d2) {
+                    best_d2 = d2;
+                    best_raw = (int)i;
+                    best = -1;
+                }
             }
         }
         if (best >= 0) {
@@ -228,6 +246,62 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
             box_used[best] = true;
             next_tracks.push_back(track);
             matched_count++;
+        } else if (best_raw >= 0) {
+            // 出界框匹配：卷刚出 ROI 但仍被检测到。运动线段向外跨过出口
+            // 感应线 -> 发 1 条 leave，并在本帧画红框（红框即本帧出界定位框）
+            const ReelRect prev_box = track.box;
+            const ReelRect &cur_box = raw_boxes[best_raw];
+            raw_used[best_raw] = true;
+
+            bool crossed_now = false;
+            if (gate.has_gate && crossingExitGate(prev_box, cur_box, gate)) {
+                crossed_now = true;
+                track.fired_leave = true;
+                ReelEnterEvent ev;
+                ev.event_id = makeReelEventId();
+                ev.type = "leave";
+                ev.camera_id = camera_id;
+                ev.roi_id = roi_id;
+                ev.liuzhi_id = liuzhi_id;
+                ev.x = cur_box.x;
+                ev.y = cur_box.y;
+                ev.width = cur_box.width;
+                ev.height = cur_box.height;
+                if (events) events->push_back(ev);
+            }
+
+            // leave 触发帧：本帧出界定位框交给上层画红框
+            if (crossed_now) {
+                if (debug) {
+                    debug->left_count++;
+                    debug->left_visible.push_back(cur_box);
+                }
+            }
+
+            // 运动线段（调试可视化：上一帧->本帧中心）
+            if (debug) {
+                ReelMotionSeg seg;
+                seg.from.x = prev_box.x;
+                seg.from.y = prev_box.y;
+                seg.to.x = cur_box.x;
+                seg.to.y = cur_box.y;
+                seg.crossed = crossed_now;
+                debug->motion.push_back(seg);
+            }
+
+            if (crossed_now) {
+                // 触发离开：以出界框续跟（本轨迹已 fired，后续只走区域
+                // 匹配红框 / 丢失首帧红框的原语义）
+                track.box = cur_box;
+                track.missed = 0;
+                next_tracks.push_back(track);
+            } else {
+                // 未跨线（从非出口边出去或邻近无关卷）：不发事件，
+                // 轨迹保持原位按丢帧处理，防止被出界框劫持
+                track.missed++;
+                if (track.missed <= config_.max_missed)
+                    next_tracks.push_back(track);
+            }
         } else {
             // 出界标记（仅首次丢失时）：只针对已发 leave 的卷（离开事件
             // 的跟踪延续）。上一帧还在区域内、本帧区域框里找不到，但

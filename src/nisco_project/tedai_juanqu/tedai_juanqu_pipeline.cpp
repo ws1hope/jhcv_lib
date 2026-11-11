@@ -302,18 +302,32 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
 {
     if (!config_.events.enable) return;
 
-    // 原始检测框：各区域按自身多边形过滤后用于"已发 leave 卷出界"的红框标记
-    std::vector<ReelRect> raw_boxes;
-    raw_boxes.reserve(raw.size());
-    for (const auto &o : raw) {
-        ReelRect b;
-        b.x = o.rect.x;
-        b.y = o.rect.y;
-        b.width = o.rect.width;
-        b.height = o.rect.height;
-        b.type = o.classid;
-        raw_boxes.push_back(b);
-    }
+    // 出界 raw 池构建：与本区域三区域判定相同的类别规则，再只保留中心已出
+    // 本区域多边形的框。用于 leave 的跨线匹配（上一帧区域内 -> 本帧出界框）
+    // 与已离开卷出界后的红框标记。
+    // 注：camera5 分类的 classid==2 附加条件不在此复现（classify_result_id
+    // 不在本函数作用域），出界池仅按 classid==0 且面积阈值过滤。
+    auto buildExitedPool = [&](int roi_index) {
+        std::vector<ReelRect> pool;
+        pool.reserve(raw.size());
+        for (const auto &o : raw) {
+            if (roi_index == 0) {
+                if (o.classid != 0) continue;  // 输送线内只认盘卷
+            } else if (camera_id == 4) {
+                if (o.classid != 0 && o.classid != 1) continue;
+            } else if (camera_id == 5) {
+                if (!(o.classid == 0 && o.rect.area() > 50000)) continue;
+            }
+            ReelRect b;
+            b.x = o.rect.x;
+            b.y = o.rect.y;
+            b.width = o.rect.width;
+            b.height = o.rect.height;
+            b.type = o.classid;
+            pool.push_back(b);
+        }
+        return pool;
+    };
 
     // 相机 -> 参与事件的区域列表（liuzhi_rois_ 下标 + roi_id）：
     // cam1-3 只判 inside(liuzhi 1)；cam4 同时判 inside(liuzhi 1) 与 outside(liuzhi 2)；
@@ -339,16 +353,17 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
         if ((int)it->second.size() <= roi_index) continue;
         const ReelRoiInfo &roi = it->second[roi_index];
 
-        // 出界标记的 raw 池：只保留中心已出了本区域多边形的框，
-        // 防止区域内检测抖动/邻近卷被误标
+        // 出界 raw 池：类别规则与本区域判定一致，再只保留中心已出了本区域
+        // 多边形的框（区域内框不进池，防止检测抖动/邻近卷误入匹配）
+        std::vector<ReelRect> raw_pool = buildExitedPool(roi_index);
         std::vector<ReelRect> raw_exited;
-        if (!raw_boxes.empty() && roi.contour_points.size() >= 3) {
+        if (!raw_pool.empty() && roi.contour_points.size() >= 3) {
             std::vector<ReelPointD> poly;
             poly.reserve(roi.contour_points.size());
             for (const auto &p : roi.contour_points) {
                 poly.push_back({(double)p.x, (double)p.y});
             }
-            for (const auto &b : raw_boxes) {
+            for (const auto &b : raw_pool) {
                 if (!isPointInPolygon({(double)b.x, (double)b.y}, poly)) {
                     raw_exited.push_back(b);
                 }

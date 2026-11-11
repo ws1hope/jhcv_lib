@@ -60,11 +60,13 @@ struct ReelEnterDebug {
 // 盘卷进入区域跟踪器（跨请求状态）。
 //
 // 判定流程（每个 camera + liuzhi_id）：
-//  1. 本帧框与上次请求的框做一对一最近邻匹配（中心距离 < match_radius_px）
+//  1. 本帧框与上次请求的框做一对一最近邻匹配（中心距离 < match_radius_px），
+//     未发 leave 的轨迹候选包括区域框与出界 raw 框（卷刚出 ROI 仍在画面内）
 //  2. 离开判定：匹配成功的"上一帧->本帧"运动线段向外跨过出口感应线
 //     （过 zhongzhi、垂直于轴）时发 1 条 leave 事件，每条轨迹最多 1 条；
-//     已报离开且仍被跟踪到的卷通过 debug.left_visible 提供给上层画红框
-//  3. 未匹配的框视为"新卷"，先按最近 dedup_frames 次已上报位置去重
+//     已报离开且仍被跟踪到的卷（区域框或出界框）通过 debug.left_visible
+//     提供给上层画红框
+//  3. 未匹配的区域框视为"新卷"，先按最近 dedup_frames 次已上报位置去重
 //  4. 入口判定：到 qishi 距离 < entry_radius_px 或 0 <= t < entry_t_ratio
 //     （未配置 qishi/zhongzhi 时退化为"新出现即进入"）
 //  5. 候选中取到 qishi 距离最小的一个，每相机每区域每次请求最多 1 条 enter 事件
@@ -74,9 +76,11 @@ class ReelRegionTracker {
     explicit ReelRegionTracker(const TedaiJuanquEventConfig &config);
 
     // 每次请求、每个相机调用一次；产生的事件追加到 events（enter 每区域最多
-    // 1 条，leave 每轨迹最多 1 条）。raw_boxes 为出界标记用的原始检测框，
-    // 由 pipeline 预先过滤：仅含中心在本区域多边形外的框；只有已发 leave
-    // 的轨迹才会触发单帧红框标记，不续跟。
+    // 1 条，leave 每轨迹最多 1 条）。raw_boxes 为出界 raw 检测框，由 pipeline
+    // 预先过滤：仅含中心在本区域多边形外的框。它只参与未发 leave 轨迹的
+    // 跨线离开判定：上一帧区域内轨迹匹配到本帧出界框且运动线段跨过出口
+    // 感应线时发 leave 并在本帧画红框。出界框不参与 enter 判定、不生成
+    // 新轨迹；未跨线的匹配按丢帧处理，防止劫持轨迹。
     // debug 非空时填充本次判定明细（供结果图标注）。
     void update(int camera_id, const std::string &roi_id, int liuzhi_id,
                 const std::vector<ReelRect> &boxes, const ReelEventGate &gate,

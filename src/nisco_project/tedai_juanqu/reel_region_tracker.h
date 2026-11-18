@@ -35,7 +35,6 @@ struct ReelEnterDebug {
     enum Rule {
         RULE_NONE = 0,
         RULE_DIST = 1,     // 到 qishi 距离命中
-        RULE_T = 2,        // 沿轴投影命中
         RULE_FALLBACK = 3  // 未配置起终点，新出现即进入
     };
 
@@ -49,7 +48,6 @@ struct ReelEnterDebug {
     std::vector<ReelMotionSeg> motion;   // 各匹配轨迹的运动线段（上一帧->本帧）
     Rule rule = RULE_NONE;
     double distance = 0.0;       // 上报框到 qishi 的距离
-    double t = 0.0;              // 上报框沿轴的投影比例
     ReelRect box;                // 上报的框（像素坐标）
     std::string event_id;
     ReelEventGate gate;
@@ -67,7 +65,7 @@ struct ReelEnterDebug {
 //     已报离开且仍被跟踪到的卷（区域框或出界框）通过 debug.left_visible
 //     提供给上层画红框
 //  3. 未匹配的区域框视为"新卷"，先按最近 dedup_frames 次已上报位置去重
-//  4. 入口判定：到 qishi 距离 < entry_radius_px 或 0 <= t < entry_t_ratio
+//  4. 入口判定：到 qishi 距离 < entry_radius_px
 //     （未配置 qishi/zhongzhi 时退化为"新出现即进入"）
 //  5. 候选中取到 qishi 距离最小的一个，每相机每区域每次请求最多 1 条 enter 事件
 //  6. 若该相机首次参与请求，或距上次超过 track_timeout_ms，只建立基线
@@ -108,10 +106,9 @@ class ReelRegionTracker {
         int seq = 0;
     };
 
-    // 返回 true 表示该框满足入口条件；同时给出距离、投影比例与命中规则
+    // 返回 true 表示该框满足入口条件；同时给出距离与命中规则
     bool entryTest(const ReelRect &box, const ReelEventGate &gate,
-                   double *distance, double *t,
-                   ReelEnterDebug::Rule *rule) const;
+                   double *distance, ReelEnterDebug::Rule *rule) const;
 
     TedaiJuanquEventConfig config_;
     std::map<std::pair<int, int>, State> states_;  // (camera_id, liuzhi_id)

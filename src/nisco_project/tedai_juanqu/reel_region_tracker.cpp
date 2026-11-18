@@ -92,11 +92,10 @@ void ReelRegionTracker::reset()
 }
 
 bool ReelRegionTracker::entryTest(const ReelRect &box, const ReelEventGate &gate,
-                                  double *distance, double *t,
+                                  double *distance,
                                   ReelEnterDebug::Rule *rule) const
 {
     if (distance) *distance = 0.0;
-    if (t) *t = 0.0;
     if (rule) *rule = ReelEnterDebug::RULE_NONE;
 
     if (!gate.has_axis) {
@@ -105,27 +104,13 @@ bool ReelRegionTracker::entryTest(const ReelRect &box, const ReelEventGate &gate
         return true;
     }
 
+    // 入口判定：只认到 qishi 的距离规则
     double dx = (double)box.x - (double)gate.qishi.x;
     double dy = (double)box.y - (double)gate.qishi.y;
     double dist = std::sqrt(dx * dx + dy * dy);
     if (distance) *distance = dist;
-
-    // 沿 qishi->zhongzhi 轴投影：t=0 在起点，t=1 在终点
-    double ax = (double)gate.zhongzhi.x - (double)gate.qishi.x;
-    double ay = (double)gate.zhongzhi.y - (double)gate.qishi.y;
-    double len2 = ax * ax + ay * ay;
-    double proj = 0.0;
-    if (len2 > 0.0) {
-        proj = (dx * ax + dy * ay) / len2;
-        if (t) *t = proj;
-    }
-
     if (dist < (double)config_.entry_radius_px) {
         if (rule) *rule = ReelEnterDebug::RULE_DIST;
-        return true;
-    }
-    if (len2 > 0.0 && proj >= 0.0 && proj < config_.entry_t_ratio) {
-        if (rule) *rule = ReelEnterDebug::RULE_T;
         return true;
     }
     return false;
@@ -337,7 +322,6 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
     // 3) 新卷：去重缓存过滤 + 入口判定，选离 qishi 最近的一个
     int best_new = -1;
     double best_new_distance = 0.0;
-    double best_new_t = 0.0;
     ReelEnterDebug::Rule best_new_rule = ReelEnterDebug::RULE_NONE;
     const double dedup_r2 =
         (double)config_.entry_radius_px * (double)config_.entry_radius_px;
@@ -363,9 +347,8 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
         }
 
         double distance = 0.0;
-        double t = 0.0;
         ReelEnterDebug::Rule rule = ReelEnterDebug::RULE_NONE;
-        if (!entryTest(box, gate, &distance, &t, &rule)) {
+        if (!entryTest(box, gate, &distance, &rule)) {
             if (debug) debug->rejected.push_back(box);
             continue;
         }
@@ -373,20 +356,17 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
         if (best_new < 0) {
             best_new = (int)i;
             best_new_distance = distance;
-            best_new_t = t;
             best_new_rule = rule;
         } else if (gate.has_axis) {
             if (distance < best_new_distance) {
                 best_new = (int)i;
                 best_new_distance = distance;
-                best_new_t = t;
                 best_new_rule = rule;
             }
         } else if (box.y < boxes[best_new].y) {
             // 无起终点配置时回退：取 y 最小的新卷
             best_new = (int)i;
             best_new_distance = distance;
-            best_new_t = t;
             best_new_rule = rule;
         }
     }
@@ -411,7 +391,6 @@ void ReelRegionTracker::update(int camera_id, const std::string &roi_id,
             debug->has_event = true;
             debug->box = box;
             debug->distance = best_new_distance;
-            debug->t = best_new_t;
             debug->rule = best_new_rule;
             debug->event_id = ev.event_id;
         }

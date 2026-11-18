@@ -246,7 +246,6 @@ struct TedaiJuanquEventConfig {
     bool enable = true;          // 总开关
     bool draw_debug = true;      // 在结果图上绘制进入状态与判定信息
     int entry_radius_px = 120;   // 到 qishi 的距离阈值
-    double entry_t_ratio = 0.25; // 沿 qishi->zhongzhi 轴的投影比例上限
     int dedup_frames = 5;        // 已上报位置缓存的请求数
     int track_timeout_ms = 5000; // 相机超过该时长未参与请求则重建基线
     int match_radius_px = 150;   // 跨请求连续性匹配阈值

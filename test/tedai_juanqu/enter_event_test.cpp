@@ -64,7 +64,6 @@ TedaiJuanquEventConfig makeConfig()
     TedaiJuanquEventConfig cfg;
     cfg.enable = true;
     cfg.entry_radius_px = 120;
-    cfg.entry_t_ratio = 0.25;
     cfg.dedup_frames = 5;
     cfg.track_timeout_ms = 5000;
     cfg.match_radius_px = 150;
@@ -185,7 +184,7 @@ int main()
                "timeout rebuilds baseline without events");
     }
 
-    // 9) 调试信息：命中规则 / 距离 / 投影比例
+    // 9) 调试信息：命中规则 / 距离
     {
         ReelRegionTracker tracker(makeConfig());
         long long now = 8000;
@@ -200,14 +199,14 @@ int main()
                    dbg.distance < 1.0,
                "debug reports dist rule");
 
+        // 圆外新框（旧 t 规则可命中）现在被拒绝：入口只认 dist
         now += 100;
         std::vector<ReelEnterEvent> ev2;
         tracker.update(1, "inside", 1,
                        {makeBox(1000, 100), makeBox(880, 235)}, gate, now, &ev2,
                        &dbg);
-        expect(dbg.has_event && dbg.rule == ReelEnterDebug::RULE_T &&
-                   dbg.t > 0.0 && dbg.t < 0.25,
-               "debug reports t rule");
+        expect(!dbg.has_event && dbg.rejected.size() == 1,
+               "debug: box beyond dist radius is rejected");
     }
 
     // event_id 形状与唯一性

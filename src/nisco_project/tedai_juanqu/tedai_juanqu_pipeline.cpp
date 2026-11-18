@@ -77,7 +77,7 @@ void drawInfoPanel(cv::Mat &img, const std::vector<std::string> &lines,
 // 在结果图上标注进入判定：qishi/zhongzhi 轴线、半径圆、上报/未上报的框与信息面板。
 // panel_slot 用于同一相机标注多个区域时信息面板向上堆叠。
 void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
-                    int entry_radius_px, double entry_t_ratio, int panel_slot = 0)
+                    int entry_radius_px, int panel_slot = 0)
 {
     const cv::Scalar kAxisColor(255, 0, 255);    // 品红：轴线
     const cv::Scalar kQishiColor(0, 0, 255);     // 红：起点
@@ -154,13 +154,10 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
 
     if (dbg.has_event) {
         drawBox(dbg.box, kEnterColor, 3);
-        std::string rule = (dbg.rule == ReelEnterDebug::RULE_DIST)
-                               ? "dist"
-                               : ((dbg.rule == ReelEnterDebug::RULE_T)
-                                      ? "t"
-                                      : "fallback");
-        std::string label = "ENTER d=" + fmtFixed(dbg.distance, 0) +
-                            " t=" + fmtFixed(dbg.t, 2) + " rule=" + rule;
+        std::string rule = (dbg.rule == ReelEnterDebug::RULE_DIST) ? "dist"
+                                                                   : "fallback";
+        std::string label =
+            "ENTER d=" + fmtFixed(dbg.distance, 0) + " rule=" + rule;
         cv::putText(img, label,
                     cv::Point(dbg.box.x - dbg.box.width / 2,
                               dbg.box.y - dbg.box.height / 2 - 8),
@@ -171,12 +168,9 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
     if (dbg.baseline) {
         status = "enter=NO (baseline)";
     } else if (dbg.has_event) {
-        std::string rule = (dbg.rule == ReelEnterDebug::RULE_DIST)
-                               ? "dist"
-                               : ((dbg.rule == ReelEnterDebug::RULE_T) ? "t"
-                                                                       : "fallback");
-        status = "enter=YES rule=" + rule + " d=" + fmtFixed(dbg.distance, 0) +
-                 " t=" + fmtFixed(dbg.t, 2);
+        std::string rule = (dbg.rule == ReelEnterDebug::RULE_DIST) ? "dist"
+                                                                   : "fallback";
+        status = "enter=YES rule=" + rule + " d=" + fmtFixed(dbg.distance, 0);
     } else {
         status = "enter=NO (no candidate)";
     }
@@ -196,8 +190,7 @@ void drawEnterDebug(cv::Mat &img, int camera_id, const ReelEnterDebug &dbg,
     } else {
         lines.push_back("qishi=none (fallback)");
     }
-    lines.push_back("radius=" + std::to_string(entry_radius_px) + "  t_max=" +
-                    fmtFixed(entry_t_ratio, 2));
+    lines.push_back("radius=" + std::to_string(entry_radius_px));
     if (dbg.has_event && dbg.event_id.size() > 14) {
         lines.push_back("event=" + dbg.event_id.substr(0, 14));
     }
@@ -432,8 +425,8 @@ void TedaiJuanquPipeline::updateEnterEvents(int camera_id,
 
         if (config_.events.draw_debug) {
             // cam4 两个区域各画一份标注，信息面板按序号上移避免重叠
-            drawEnterDebug(src, camera_id, debug, config_.events.entry_radius_px,
-                           config_.events.entry_t_ratio, (int)r);
+            drawEnterDebug(src, camera_id, debug,
+                           config_.events.entry_radius_px, (int)r);
         }
     }
 }

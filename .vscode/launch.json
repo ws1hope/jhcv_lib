@@ -983,7 +983,7 @@
             "args": [
                 "--test",
                 "-c", "test/tiangangfujian/config.yaml",
-                "-i", "images/tiangangfujian",
+                "-i", "images/tianguan_fujian/20261105150413.jpg",
                 "-s", "1"
             ],
             "cwd": "${workspaceFolder}",

@@ -3,11 +3,11 @@ server:
   host: "127.0.0.1"
   port: 8090
 models:
-  det_model: "models/tiangangfujian/duanmian.onnx"        # 断面定位（目标检测）
-  char_seg_model: "models/tiangangfujian/zifu_seg.onnx"   # 字符实例分割
-  direction_cls_model: "models/tiangangfujian/cls.onnx"   # 字符方向分类（0=正向,1=翻转180°）
-  ocr_model: "models/tiangangfujian/rec.onnx"
-  ocr_label: "models/tiangangfujian/rec.yaml"
+  det_model: "models/tianguan/piliao.onnx"        # 断面定位（目标检测）
+  char_seg_model: "models/tianguan/zifu.onnx"   # 字符实例分割
+  ocr_model: "models/tianguan/ocr6.onnx"
+  ocr_label: "models/tianguan/ocr6.yaml"
+  char_correction: true   # OCR 纠错：第3位固定T；第11位限定AWX，识别为其他字符(如K)改为X
   dir_flip_conf_threshold: 0.0   # >0 时方向投票平均置信度低于该值不翻转；0=不过滤
 inference:
   device: "cpu"

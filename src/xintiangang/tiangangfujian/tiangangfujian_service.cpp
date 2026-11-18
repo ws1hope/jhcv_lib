@@ -101,31 +101,47 @@ public:
         std::cout << root.dump(2) << std::endl;
         std::cout << "total time: " << total_ms << " ms" << std::endl;
 
-        // 读取失败（图片不存在/不可解码）返回 1，便于批量测试汇总
-        return (root.value("read_picture_flag", "") == "NG") ? 1 : 0;
+        // state_flag=NG（读图失败或 OCR 无结果）返回 1，便于批量测试汇总
+        std::string state_flag = "NG";
+        if (root.contains("all_results") && root["all_results"].is_array() &&
+            !root["all_results"].empty()) {
+            state_flag = root["all_results"][0].value("state_flag", "NG");
+        }
+        return (state_flag == "NG") ? 1 : 0;
     }
 
 private:
-    // 单图处理，返回扁平 JSON（沿用 xintiangang 协议）：
-    //   图像解析失败 -> read_picture_flag=NG, rec_state_flag=NG, all_results=""
-    //   解析成功有结果 -> read_picture_flag=OK, rec_state_flag=OK, all_results=OCR 文本
-    //   解析成功无结果 -> read_picture_flag=OK, rec_state_flag=NG, all_results=""
+    // 单图处理，返回标准嵌套 JSON（同 fujian）：
+    //   {station_id, all_results: [{picture_id=1, state_flag, zifu_type="Penma",
+    //                               penma_version="new", result, picture_path}]}
+    //   图像解析失败 / OCR 无结果 -> state_flag=NG, result=""，
+    //   picture_path：成功时为结果图路径，失败时为请求的图片路径
     json buildResult(const std::string& picture_path,
                      int station_id, bool verbose,
                      std::ofstream& fout,
                      const std::string& out_dir)
     {
         json root;
-        root["station_id"] = std::to_string(station_id);
+        root["station_id"] = station_id;
+
+        json item;
+        item["picture_id"] = 1;
+        item["zifu_type"] = "Penma";
+        item["penma_version"] = "new";
+
+        // NG：result 置空，picture_path 填请求的图片路径
+        auto ngResult = [&](const std::string& path) {
+            item["state_flag"] = "NG";
+            item["result"] = "";
+            item["picture_path"] = path;
+            root["all_results"] = json::array({item});
+            return root;
+        };
 
         cv::Mat src_img = cv::imread(picture_path);
         if (!src_img.data) {
-            root["read_picture_flag"] = "NG";
-            root["rec_state_flag"] = "NG";
-            root["all_results"] = "";
-            root["picture_path"] = picture_path;
             fout << "detect failed! empty image: " << picture_path << std::endl;
-            return root;
+            return ngResult(picture_path);
         }
 
         Pipeline::TiangangfujianPipelineResult pr = pipeline_->process(src_img, verbose);
@@ -230,17 +246,10 @@ private:
             (void)char_idx;
         }
 
-        root["read_picture_flag"] = "OK";
-
-        if (!pr.all_results.empty()) {
-            root["rec_state_flag"] = "OK";
-            root["all_results"] = pr.all_results;
-        } else {
-            root["rec_state_flag"] = "NG";
-            root["all_results"] = "";
-        }
-
-        root["picture_path"] = save_path;
+        item["state_flag"] = pr.all_results.empty() ? "NG" : "OK";
+        item["result"] = pr.all_results;
+        item["picture_path"] = save_path;
+        root["all_results"] = json::array({item});
 
         return root;
     }

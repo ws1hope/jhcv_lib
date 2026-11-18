@@ -193,6 +193,8 @@ struct TiangangfujianServerConfig {
     std::string ocr_label;            // OCR 字典
     // 方向分类判为"翻转(180)"时的置信度阈值；>0 时低于该值不翻转。0=不过滤(默认,同 tiebiao)
     float dir_flip_conf_threshold = 0.0f;
+    // OCR 纠错开关：每段结果第 3 位固定 'T'；第 11 位限定 A/W/X，识别为其他字符（如 K）改为 'X'
+    bool char_correction = false;
     std::string device = "cuda";
     // 全局固定检测区域：roi1、roi2… [[x1,y1],[x2,y2]] 两点正矩形；不配置则整图检测
     std::vector<std::array<int, 4>> rois;

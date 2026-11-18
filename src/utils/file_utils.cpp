@@ -243,6 +243,7 @@ JHDeepCore::TiangangfujianServerConfig FileHelper::loadTiangangfujianConfig(cons
         cfg.ocr_model = node["models"]["ocr_model"].as<std::string>("");
         cfg.ocr_label = node["models"]["ocr_label"].as<std::string>("");
         cfg.dir_flip_conf_threshold = node["models"]["dir_flip_conf_threshold"].as<float>(0.0f);
+        cfg.char_correction = node["models"]["char_correction"].as<bool>(false);
     }
 
     if (node["inference"]) {

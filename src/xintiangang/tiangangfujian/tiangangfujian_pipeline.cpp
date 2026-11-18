@@ -1,13 +1,47 @@
 #include "tiangangfujian_pipeline.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
+#include <numeric>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace JHDeepCore {
 namespace Pipeline {
+
+// 各断面 OCR 文本用逗号连接（多断面时 result 形如 "xxx,yyy"）
+static std::string joinSectionTexts(const std::vector<TiangangfujianSectionResult>& sections)
+{
+    std::string out;
+    for (const auto& sec : sections) {
+        if (sec.ocr_text.empty()) continue;
+        if (!out.empty()) out += ",";
+        out += sec.ocr_text;
+    }
+    return out;
+}
+
+// penma 编号纠错（config_.char_correction 开启时调用）：
+//   绝对第 3 位固定 'T'；绝对第 11 位限定 A/W/X，识别为其他字符（如 K）改为 'X'
+// offset：本段文本在整段结果中的起始绝对位置（0 基，按字符拆分时传入前序字符总长）；
+// 文本长度不足的位跳过。
+static std::string correctPenmaTextAt(const std::string& in, int offset)
+{
+    std::string out = in;
+    // 绝对位 pos（1 基）对应 out 下标 pos - 1 - offset
+    int idx3 = 3 - 1 - offset;
+    if (idx3 >= 0 && idx3 < (int)out.size() && out[idx3] != 'T') {
+        out[idx3] = 'T';
+    }
+    int idx11 = 11 - 1 - offset;
+    if (idx11 >= 0 && idx11 < (int)out.size()) {
+        char& c = out[idx11];
+        if (c != 'A' && c != 'W' && c != 'X') c = 'X';
+    }
+    return out;
+}
 
 TiangangfujianPipeline::TiangangfujianPipeline(const TiangangfujianServerConfig& config)
     : config_(config)
@@ -22,9 +56,6 @@ TiangangfujianPipeline::TiangangfujianPipeline(const TiangangfujianServerConfig&
     char_seg_ = std::make_unique<InstanceSegmenter>(config_.char_seg_model, "", dev_id, "",
                                                      0.25f, 0.9f);
     std::cout << "[OK] Tiangangfujian char seg model loaded: " << config_.char_seg_model << std::endl;
-
-    direction_cls_ = std::make_unique<Classifier>(config_.direction_cls_model, "", dev_id);
-    std::cout << "[OK] Tiangangfujian direction cls model loaded: " << config_.direction_cls_model << std::endl;
 
     ocr_ = std::make_unique<OCRRecognizer>(config_.ocr_model, config_.ocr_label, dev_id);
     std::cout << "[OK] Tiangangfujian OCR model loaded: " << config_.ocr_model << std::endl;
@@ -44,10 +75,6 @@ void TiangangfujianPipeline::warmup()
     std::vector<InstanceSegmentationResult> seg_results;
     char_seg_->process(dummy, seg_results);
     std::cout << "[OK] Char seg warmed up" << std::endl;
-
-    std::vector<ClassificationResult> cls_results;
-    direction_cls_->process(dummy, cls_results);
-    std::cout << "[OK] Direction cls warmed up" << std::endl;
 
     std::vector<OCRResult> ocr_results;
     ocr_->process(dummy, ocr_results);
@@ -92,12 +119,7 @@ TiangangfujianPipelineResult TiangangfujianPipeline::process(const cv::Mat& imag
         });
 
     result.sections = sections;
-
-    std::string all_results;
-    for (auto& sec : sections) {
-        if (!sec.ocr_text.empty()) all_results += sec.ocr_text;
-    }
-    result.all_results = all_results;
+    result.all_results = joinSectionTexts(sections);
     result.annotated_image = createAnnotatedImage(image, result.sections);
 
     return result;
@@ -174,12 +196,12 @@ void TiangangfujianPipeline::processRegion(const cv::Mat& region_img,
                 return a.center_y < b.center_y;
             });
 
-        // 方向分类：断面内全部字符投票，多数为 180 则整断面统一翻转（同 tiebiao）
+        // 方向判别（几何规则，暂不用模型）：按定位框最长边关系判断 0/180 度
         std::vector<cv::Mat> char_images_before;
         for (auto& crop : char_crops) {
             char_images_before.push_back(crop.image.clone());
         }
-        int dir_flag = classifyDirection(char_images_before);
+        int dir_flag = classifyDirectionByGeometry(char_crops);
         sec.direction_flag = dir_flag;
         if (verbose) std::cout << "  sec[" << i << "] direction: " << dir_flag
                                << (dir_flag == 180 ? " (flip 180)" : "") << std::endl;
@@ -192,8 +214,17 @@ void TiangangfujianPipeline::processRegion(const cv::Mat& region_img,
             }
         }
 
+        if (dir_flag == 180) {
+            // 180 度时整个断面上下颠倒，字符阅读顺序同步反转
+            // （例：502/070832X/2672 -> 26T2/070832X/502）；
+            // char_images_before 与 char_crops 一一对应，需同步反转
+            std::reverse(char_crops.begin(), char_crops.end());
+            std::reverse(char_images_before.begin(), char_images_before.end());
+        }
+
         // 逐字符 OCR，按排序顺序拼接
         std::string text;
+        int text_offset = 0;
         for (int ci = 0; ci < (int)char_crops.size(); ci++) {
             TiangangfujianCharResult chr;
             chr.bbox_on_rotated = char_crops[ci].bbox;
@@ -215,16 +246,22 @@ void TiangangfujianPipeline::processRegion(const cv::Mat& region_img,
             if (!ocr_results.empty() && !ocr_results[0].boxes.empty()) {
                 t = ocr_results[0].boxes[0].text;
             }
-            chr.ocr_text = t;
+            chr.ocr_text = config_.char_correction
+                               ? correctPenmaTextAt(t, text_offset) : t;
+            if (verbose) {
+                std::cout << "    char[" << ci << "] text=\"" << t << "\""
+                          << (config_.char_correction
+                                  ? " -> \"" + chr.ocr_text + "\"" : "")
+                          << std::endl;
+            }
             sec.chars.push_back(std::move(chr));
 
             text += t;
-            if (verbose) {
-                std::cout << "    char[" << ci << "] text=\"" << t << "\"" << std::endl;
-            }
+            text_offset += (int)t.size();
         }
 
-        sec.ocr_text = text;
+        sec.ocr_text = config_.char_correction
+                           ? correctPenmaTextAt(text, 0) : text;
         sections.push_back(std::move(sec));
     }
 }
@@ -297,51 +334,61 @@ void TiangangfujianPipeline::detectAndRotateChars(const cv::Mat& section_roi,
         angle, rotated_image, bias, bias, x_off, y_off);
 }
 
-int TiangangfujianPipeline::classifyDirection(const std::vector<cv::Mat>& char_images)
+// 几何规则判向（暂不用模型）：
+// 三个字符按定位框 bbox.y 从小到大排列，取各自定位框最长边 max(width, height)：
+//   中间字符最长边为三者最大，且 上 > 下 -> 序列「第二长 最长 最短」-> 0 度
+//   中间字符最长边为三者最大，且 上 < 下 -> 序列「最短 最长 第二长」-> 180 度
+// 其余情况（非 3 个字符 / 中间不是最长 / 上下相等）默认 0 度。
+// 在副本上排序，不改变调用方 char_crops 的顺序（OCR 拼接仍按原顺序）。
+int TiangangfujianPipeline::classifyDirectionByGeometry(
+    const std::vector<CharCropInfo>& char_crops)
 {
-    if (char_images.empty()) return 0;
+    if (char_crops.size() != 3) return 0;
 
-    int count_0 = 0, count_180 = 0;
-    float conf_0_sum = 0.f;     // 投"0/正向"票的置信度之和
-    float conf_180_sum = 0.f;   // 投"180/翻转"票的置信度之和
-    for (auto& img : char_images) {
-        if (img.empty()) continue;
+    std::vector<CharCropInfo> sorted = char_crops;
+    std::stable_sort(sorted.begin(), sorted.end(),
+        [](const CharCropInfo& a, const CharCropInfo& b) {
+            return a.bbox.y < b.bbox.y;
+        });
+
+    int len_top = std::max(sorted[0].bbox.width, sorted[0].bbox.height);
+    int len_mid = std::max(sorted[1].bbox.width, sorted[1].bbox.height);
+    int len_bot = std::max(sorted[2].bbox.width, sorted[2].bbox.height);
+
+    // 中间字符必须是最长边最大者，否则规则不适用
+    if (len_mid <= len_top || len_mid <= len_bot) return 0;
+
+    if (len_top > len_bot) return 0;     // 第二长 最长 最短
+    if (len_top < len_bot) return 180;   // 最短 最长 第二长
+    return 0;                            // 上下相等无法判断，默认 0 度
+}
+
+// 归一为 3 通道 BGR，供结果图拼接（灰度/4通道/3通道通吃；空图返回空）(同 luqian)
+static cv::Mat toBgrImage(const cv::Mat& img)
+{
+    if (img.empty()) return cv::Mat();
+    if (img.channels() == 1) {
         cv::Mat bgr;
-        if (img.channels() == 1)
-            cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
-        else
-            bgr = img;
-
-        std::vector<cv::Mat> imgs = {bgr};
-        std::vector<ClassificationResult> results;
-        direction_cls_->process(imgs, results);
-
-        if (!results.empty()) {
-            if (results[0].class_id == 0) {
-                count_0++;
-                conf_0_sum += results[0].confidence;
-            }
-            else {
-                count_180++;
-                conf_180_sum += results[0].confidence;
-            }
-        }
+        cv::cvtColor(img, bgr, cv::COLOR_GRAY2BGR);
+        return bgr;
     }
+    if (img.channels() == 4) {
+        cv::Mat bgr;
+        cv::cvtColor(img, bgr, cv::COLOR_BGRA2BGR);
+        return bgr;
+    }
+    return img;
+}
 
-    // 阈值过滤仅当 dir_flip_conf_threshold > 0 时生效；
-    // 默认 0 = 不过滤，保持与 tiebiao 一致的行为。
-    //   多数票为翻转(180)：平均置信度 < 阈值 -> 不翻转
-    //   多数票为正向(0)：平均置信度  < 阈值 -> 反向翻转(180)
-    float thr = config_.dir_flip_conf_threshold;
-    if (count_180 > count_0) {
-        if (thr > 0.f && (conf_180_sum / count_180) < thr) return 0;
-        return 180;
-    }
-    if (count_0 > count_180) {
-        if (thr > 0.f && (conf_0_sum / count_0) < thr) return 180;
-        return 0;
-    }
-    return 0;
+// 等比缩放到指定高度（宽按比例），空图返回空 (同 luqian)
+static cv::Mat scaleToHeight(const cv::Mat& img, int h)
+{
+    if (img.empty() || h <= 0) return cv::Mat();
+    if (img.rows == h) return img.clone();
+    int w = std::max(1, static_cast<int>(std::round(img.cols * static_cast<double>(h) / img.rows)));
+    cv::Mat out;
+    cv::resize(img, out, cv::Size(w, h), 0, 0, cv::INTER_LINEAR);
+    return out;
 }
 
 cv::Mat TiangangfujianPipeline::createAnnotatedImage(
@@ -349,7 +396,8 @@ cv::Mat TiangangfujianPipeline::createAnnotatedImage(
     const std::vector<TiangangfujianSectionResult>& sections)
 {
     cv::Mat annotated = src_img.clone();
-    int text_y = 70;
+
+    // 层1: 断面 det 框（绿色）+ 标签
     for (int i = 0; i < (int)sections.size(); i++) {
         const auto& s = sections[i];
         cv::rectangle(annotated, s.bbox_on_src, cv::Scalar(0, 255, 0), 2);
@@ -359,14 +407,157 @@ cv::Mat TiangangfujianPipeline::createAnnotatedImage(
         cv::putText(annotated, label,
                     cv::Point(s.bbox_on_src.x, s.bbox_on_src.y - 5),
                     cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 255, 0), 2);
+    }
 
-        if (!s.ocr_text.empty()) {
-            std::string disp = cv::format("sec%d: %s", i + 1, s.ocr_text.c_str());
-            cv::putText(annotated, disp, cv::Point(10, text_y),
-                        cv::FONT_HERSHEY_SIMPLEX, 2.5, cv::Scalar(0, 0, 255), 6);
-            text_y += 75;
+    // 层2: 左上角结果文字（每个断面一行，从上到下，红色大字）；
+    // 超宽时右侧加宽画布（同 luqian 层4，但不逗号拼行）
+    {
+        const double fs = 4.5;      // 字号（加大）
+        const int thick = 11;
+        const int line_gap = 140;   // 行距
+        int max_need_w = 0;
+        for (const auto& s : sections) {
+            if (s.ocr_text.empty()) continue;
+            max_need_w = std::max(max_need_w,
+                cv::getTextSize(s.ocr_text, cv::FONT_HERSHEY_SIMPLEX, fs, thick, nullptr).width);
+        }
+        if (max_need_w + 40 > annotated.cols) {
+            cv::copyMakeBorder(annotated, annotated, 0, 0, 0,
+                               max_need_w + 40 - annotated.cols,
+                               cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+        }
+        int text_y = 120;
+        for (const auto& s : sections) {
+            if (s.ocr_text.empty()) continue;
+            if (text_y <= annotated.rows) {
+                cv::putText(annotated, s.ocr_text, cv::Point(20, text_y),
+                            cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 0, 255), thick);
+            }
+            text_y += line_gap;
         }
     }
+
+    // 层3: 底部新增"字符片段方向矫正前/后"对照面板（同 luqian 层5）。
+    // 所有断面的字符排在同一对 before/after 行中，每列一个字符并标注断面号。
+    // 面板引用各断面字符（列标签 s断面_t序号 "OCR" d方向）
+    struct PanelCharRef {
+        int sec_index;   // 断面下标（0 基）
+        int char_index;  // 断面内字符下标（0 基）
+    };
+    std::vector<PanelCharRef> refs;
+    for (int si = 0; si < (int)sections.size(); si++) {
+        for (int ci = 0; ci < (int)sections[si].chars.size(); ci++) {
+            refs.push_back({si, ci});
+        }
+    }
+
+    if (!refs.empty()) {
+        const int N = (int)refs.size();
+        const int gap = 8;         // 列间距/边距
+        const int pad = 4;         // 列内左右留白
+        const int label_h = 24;    // 每行缩略图下方标注高度
+        const int title_h = 32;    // 顶部标题行高
+        const int left_w = 90;     // 左侧 before/after 行标签列宽
+        const double label_fs = 0.5;
+
+        // 按参考高度估算各列宽比，用于按字符数自适应缩略图高度
+        auto charAt = [&](int k) -> const TiangangfujianCharResult& {
+            return sections[refs[k].sec_index].chars[refs[k].char_index];
+        };
+        std::vector<double> col_aspect(N, 0.0);
+        for (int k = 0; k < N; ++k) {
+            cv::Mat b = toBgrImage(charAt(k).image_before_flip);
+            cv::Mat a = toBgrImage(charAt(k).image_after_flip);
+            double ab = b.empty() ? 1.0 : static_cast<double>(b.cols) / b.rows;
+            double aa = a.empty() ? 1.0 : static_cast<double>(a.cols) / a.rows;
+            col_aspect[k] = std::max(ab, aa);
+        }
+        double aspect_sum = std::accumulate(col_aspect.begin(), col_aspect.end(), 0.0);
+        int target_w = std::max(annotated.cols, 640);
+        int avail = target_w - left_w - N * gap - N * 2 * pad;
+        int th = (aspect_sum > 0.0)
+                     ? static_cast<int>(std::floor(avail / aspect_sum))
+                     : 100;
+        th = std::max(24, std::min(160, th));   // 字符越多 -> 越小；越少 -> 越大
+
+        // 面板尺寸
+        std::vector<int> col_w(N, 0);
+        int content_w = 0;
+        for (int k = 0; k < N; ++k) {
+            col_w[k] = std::max(1, static_cast<int>(std::round(col_aspect[k] * th))) + 2 * pad;
+            content_w += col_w[k];
+        }
+        int panel_w = std::max(annotated.cols, left_w + content_w + (N + 1) * gap);
+        int row_h = th + label_h;
+        int panel_h = title_h + 2 * row_h + gap;
+
+        // 标题行：右侧追加各断面方向判定结果（几何规则）
+        const std::string title = "char segments (before / after direction flip)";
+        std::string dir_info = "dir:";
+        for (int si = 0; si < (int)sections.size(); si++) {
+            dir_info += cv::format(" s%d=%d", si + 1, sections[si].direction_flag);
+        }
+        dir_info += "  basis: geometry";
+        int title_w = cv::getTextSize(title, cv::FONT_HERSHEY_SIMPLEX, 0.7, 2, nullptr).width;
+        int dir_w = cv::getTextSize(dir_info, cv::FONT_HERSHEY_SIMPLEX, 0.7, 2, nullptr).width;
+        panel_w = std::max(panel_w, 10 + title_w + 30 + dir_w + 10);
+
+        cv::Mat panel(panel_h, panel_w, CV_8UC3, cv::Scalar(20, 20, 20));
+
+        cv::putText(panel, title, cv::Point(10, title_h - 9),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        cv::putText(panel, dir_info, cv::Point(10 + title_w + 30, title_h - 9),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 165, 255), 2);
+
+        auto putThumb = [&](const cv::Mat& raw, int col_x, int col_wi, int row_y) {
+            cv::Mat bgr = toBgrImage(raw);
+            if (bgr.empty()) return;
+            cv::Mat s = scaleToHeight(bgr, th);
+            if (s.cols > col_wi - 2 * pad) {
+                cv::resize(s, s, cv::Size(col_wi - 2 * pad, th));
+            }
+            int cx = col_x + (col_wi - s.cols) / 2;
+            cx = std::max(col_x, std::min(cx, col_x + col_wi - s.cols));
+            cv::Rect dst(cx, row_y, s.cols, s.rows);
+            dst &= cv::Rect(0, 0, panel.cols, panel.rows);
+            if (dst.area() <= 0) return;
+            s(cv::Rect(0, 0, dst.width, dst.height)).copyTo(panel(dst));
+        };
+
+        const int row0_y = title_h;
+        const int row1_y = title_h + row_h;
+        // 行标签（Hershey 不支持中文，用英文）
+        cv::putText(panel, "before", cv::Point(10, row0_y + th / 2 + 6),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 200, 255), 1);
+        cv::putText(panel, "after", cv::Point(10, row1_y + th / 2 + 6),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 200, 255), 1);
+
+        int x = left_w + gap;
+        for (int k = 0; k < N; ++k) {
+            const TiangangfujianCharResult& ch = charAt(k);
+            cv::rectangle(panel, cv::Rect(x, row0_y, col_w[k], th), cv::Scalar(80, 80, 80), 1);
+            cv::rectangle(panel, cv::Rect(x, row1_y, col_w[k], th), cv::Scalar(80, 80, 80), 1);
+            putThumb(ch.image_before_flip, x, col_w[k], row0_y);
+            putThumb(ch.image_after_flip, x, col_w[k], row1_y);
+            // 标注：断面号_序号 + OCR 文本 + 方向标志
+            std::string lab = cv::format("s%d_t%d \"%s\" d%d",
+                refs[k].sec_index + 1, refs[k].char_index + 1,
+                ch.ocr_text.c_str(), ch.direction_flag);
+            cv::putText(panel, lab, cv::Point(x, row1_y + th + label_h - 7),
+                        cv::FONT_HERSHEY_SIMPLEX, label_fs, cv::Scalar(0, 255, 0), 1);
+            x += col_w[k] + gap;
+        }
+
+        // 拼到结果图底部（宽度取二者较大者，避免超出）
+        cv::Mat annotated_bgr = toBgrImage(annotated);
+        int out_w = std::max(annotated_bgr.cols, panel_w);
+        int out_h = annotated_bgr.rows + panel_h;
+        cv::Mat out(out_h, out_w, CV_8UC3, cv::Scalar(0, 0, 0));
+        annotated_bgr.copyTo(out(cv::Rect(0, 0, annotated_bgr.cols, annotated_bgr.rows)));
+        panel.copyTo(out(cv::Rect(0, annotated_bgr.rows, panel_w, panel_h)));
+        annotated = out;
+    }
+
     return annotated;
 }
 

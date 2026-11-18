@@ -31,7 +31,7 @@ struct TiangangfujianSectionResult {
     cv::Mat section_image;         // 断面裁剪图（送字符分割的输入）
     cv::Mat rotated_image;         // 角度矫正后的断面图
     int direction_flag = 0;        // 断面方向投票结果（0 或 180）
-    std::vector<TiangangfujianCharResult> chars;  // 按矫正后 y 从小到大排序
+    std::vector<TiangangfujianCharResult> chars;  // 按阅读顺序排列（180 度时顺序反转）
     std::string ocr_text;          // 各字符 OCR 结果按顺序拼接
 };
 
@@ -42,7 +42,7 @@ struct TiangangfujianPipelineResult {
     cv::Mat annotated_image;       // 断面框 + OCR 文本的结果图
 };
 
-// 目标检测定位断面 -> 逐断面字符实例分割+角度矫正 -> 方向分类矫正为 0 度 -> 逐字符 OCR
+// 目标检测定位断面 -> 逐断面字符实例分割+角度矫正 -> 几何规则判向矫正为 0 度 -> 逐字符 OCR
 class TiangangfujianPipeline {
 public:
     explicit TiangangfujianPipeline(const TiangangfujianServerConfig& config);
@@ -64,8 +64,12 @@ private:
                               cv::Mat& rotated_image,
                               std::vector<CharCropInfo>& char_crops);
 
-    // 断面内全部字符投票判向（同 tiebiao classifyDirection）
-    int classifyDirection(const std::vector<cv::Mat>& char_images);
+    // 几何规则判向（暂不用模型）：
+    // 3 个字符按定位框 bbox.y 从小到大排列，取各自定位框最长边 max(width, height)：
+    //   中间最长边为三者最大且 上 > 下 ->「第二长 最长 最短」-> 0 度
+    //   中间最长边为三者最大且 上 < 下 ->「最短 最长 第二长」-> 180 度
+    // 其余情况（非 3 个字符 / 中间不是最长 / 上下相等）默认 0 度
+    int classifyDirectionByGeometry(const std::vector<CharCropInfo>& char_crops);
 
     void warmup();
     cv::Mat createAnnotatedImage(
@@ -74,7 +78,6 @@ private:
 
     std::unique_ptr<Detector> det_;                  // 断面定位（目标检测）
     std::unique_ptr<InstanceSegmenter> char_seg_;    // 字符实例分割
-    std::unique_ptr<Classifier> direction_cls_;      // 字符方向分类
     std::unique_ptr<OCRRecognizer> ocr_;
     TiangangfujianServerConfig config_;
 };

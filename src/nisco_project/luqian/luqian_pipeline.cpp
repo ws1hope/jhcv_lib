@@ -293,6 +293,8 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             cv::Mat mask;
             cv::Mat img_bgr;
             float confidence;
+            float level_angle = 0.f;   // 水平化旋转角（用于把 bbox 重算到水平化坐标系）
+            cv::Point2f level_center;  // 水平化旋转中心（min_rect.center，target 坐标系）
         };
         std::vector<CharCrop> char_crops;
 
@@ -392,41 +394,88 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
             crop.mask = char_mask;
             crop.img_bgr = leveled;   // 水平化并紧裁后的字符（供方向分类与 OCR）
             crop.confidence = char_det.confidence;
+            crop.level_angle = angle;
+            crop.level_center = min_rect.center;
             char_crops.push_back(std::move(crop));
         }
 
         // ===== Step 5: 方向判定（几何法为主、分类器兜底） =====
-        // 字符已各自水平化，但片段间相对位置不变。最宽(最长)字符片段若位于
-        // 其余片段上方(y 更小)，则整体为正向；否则为倒置，整体翻转 180°。
-        // 触发：最宽与最窄片段宽度差 >= 300（最宽片段足够突出，几何信号可靠）时
-        // 用几何法；否则用方向分类器(pm_fx_cls)逐字符投票判向，分类器无结论时
-        // 回退几何法。
-        auto geometricAnyFlipped = [&]() -> bool {
-            if (char_crops.size() < 2) return false;
-            int widest = 0;
-            for (int i = 1; i < (int)char_crops.size(); ++i) {
-                if (char_crops[i].bbox_local.width > char_crops[widest].bbox_local.width)
-                    widest = i;
+        // 判向统一原则：最长字符片段位于其余片段上方(top-y 更小)则整体为正向，
+        // 否则为倒置，整体翻转 180°。位置比较在"水平化坐标系"进行：每个片段
+        // 绕自身 min_rect 中心按各自倾角 angle 旋转（与 Step 4 实际水平化同一
+        // 变换），把 bbox 四角重算成水平化后的轴对齐框——竖排片段由此变为横排
+        // 条，中心点在水平化前后不变。触发门槛（三片段版）：
+        //   a) 3 个分割定位框，且最大/最小框面积差 > 2000px² -> 在水平化坐标系
+        //      里用 y 位置规则判向（竖排/斜排版面同样适用）；
+        //   b) 非 3 片段场景退化为最长/最短片段长边差 >= 300 时用水平化前 bbox
+        //      判定；否则用方向分类器(pm_fx_cls)逐字符投票判向，无结论时回退
+        //      几何法。
+        auto longEdgeOf = [](const cv::Rect& b) {
+            return std::max(b.width, b.height);
+        };
+        // y 位置规则：最长片段 top-y 严格小于其余所有片段 top-y -> 正向，否则倒置
+        auto yRuleFlipped = [&](const std::vector<cv::Rect>& boxes) -> bool {
+            if (boxes.size() < 2) return false;
+            int longest = 0;
+            for (int i = 1; i < (int)boxes.size(); ++i) {
+                if (longEdgeOf(boxes[i]) > longEdgeOf(boxes[longest])) longest = i;
             }
-            int widest_y = char_crops[widest].bbox_local.y;
-            bool upright = true;  // 最宽片段是否严格位于所有其余片段上方
-            for (int i = 0; i < (int)char_crops.size(); ++i) {
-                if (i == widest) continue;
-                if (widest_y >= char_crops[i].bbox_local.y) { upright = false; break; }
+            bool upright = true;  // 最长片段是否严格位于所有其余片段上方
+            for (int i = 0; i < (int)boxes.size(); ++i) {
+                if (i == longest) continue;
+                if (boxes[longest].y >= boxes[i].y) { upright = false; break; }
             }
             return !upright;
         };
+        // 把片段 bbox 四角绕其水平化中心按各自 angle 旋转，得到水平化后的轴对齐
+        // 框（坐标、宽高同步重算）；旋转矩阵与 Step 4 的 warpAffine 完全一致
+        auto leveledBoxOf = [&](const CharCrop& c) -> cv::Rect {
+            cv::Mat rotM = cv::getRotationMatrix2D(c.level_center, c.level_angle, 1.0);
+            std::vector<cv::Point2f> corners = {
+                {(float)c.bbox_local.x, (float)c.bbox_local.y},
+                {(float)(c.bbox_local.x + c.bbox_local.width), (float)c.bbox_local.y},
+                {(float)(c.bbox_local.x + c.bbox_local.width),
+                 (float)(c.bbox_local.y + c.bbox_local.height)},
+                {(float)c.bbox_local.x, (float)(c.bbox_local.y + c.bbox_local.height)}
+            };
+            cv::transform(corners, corners, rotM);
+            float xmin = corners[0].x, xmax = corners[0].x;
+            float ymin = corners[0].y, ymax = corners[0].y;
+            for (int k = 1; k < 4; ++k) {
+                xmin = std::min(xmin, corners[k].x);
+                xmax = std::max(xmax, corners[k].x);
+                ymin = std::min(ymin, corners[k].y);
+                ymax = std::max(ymax, corners[k].y);
+            }
+            cv::Rect box((int)std::floor(xmin), (int)std::floor(ymin),
+                         (int)std::ceil(xmax - xmin), (int)std::ceil(ymax - ymin));
+            return box & cv::Rect(0, 0, target_img.cols, target_img.rows);
+        };
+        // 三片段且最大/最小定位框面积差 > 2000px² 时，几何信号足够突出，
+        // 用"水平化后坐标 + y 位置规则"判向
+        bool use_leveled_geometric = false;
+        if (char_crops.size() == 3) {
+            int a_max = char_crops[0].bbox_local.area();
+            int a_min = a_max;
+            for (int i = 1; i < (int)char_crops.size(); ++i) {
+                int a = char_crops[i].bbox_local.area();
+                if (a > a_max) a_max = a;
+                if (a < a_min) a_min = a;
+            }
+            use_leveled_geometric = (a_max - a_min) > 2000;
+        }
 
-        // 最宽与最窄片段宽度差 >= 300 时几何信号可靠，优先用几何法
+        // 非 3 片段场景：最长与最短片段长边差 >= 300 时几何信号可靠，用水平化
+        // 前 bbox 判定（横排版面下与水平化坐标系等价）
         bool use_geometric = false;
         if (char_crops.size() >= 2) {
-            int widest = 0, narrowest = 0;
+            int longest = 0, shortest = 0;
             for (int i = 1; i < (int)char_crops.size(); ++i) {
-                if (char_crops[i].bbox_local.width > char_crops[widest].bbox_local.width) widest = i;
-                if (char_crops[i].bbox_local.width < char_crops[narrowest].bbox_local.width) narrowest = i;
+                if (longEdgeOf(char_crops[i].bbox_local) > longEdgeOf(char_crops[longest].bbox_local)) longest = i;
+                if (longEdgeOf(char_crops[i].bbox_local) < longEdgeOf(char_crops[shortest].bbox_local)) shortest = i;
             }
-            use_geometric = (char_crops[widest].bbox_local.width
-                             - char_crops[narrowest].bbox_local.width) >= 300;
+            use_geometric = (longEdgeOf(char_crops[longest].bbox_local)
+                             - longEdgeOf(char_crops[shortest].bbox_local)) >= 300;
         }
 
         bool any_flipped;
@@ -437,12 +486,33 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                 std::cout << "[DEBUG]   target[" << di << "] direction: "
                      << direction_override << " (3-stack width rule)" << std::endl;
             }
-        } else if (use_geometric) {
-            any_flipped = geometricAnyFlipped();
-            target_result.direction_source = "geometric (width gap>=300)";
+        } else if (use_leveled_geometric) {
+            // 水平化坐标系判向：全部片段重建为水平化后的轴对齐框再比位置
+            std::vector<cv::Rect> leveled_boxes;
+            leveled_boxes.reserve(char_crops.size());
+            for (auto& c : char_crops) leveled_boxes.push_back(leveledBoxOf(c));
+            if (verbose) {
+                for (int i = 0; i < (int)leveled_boxes.size(); ++i) {
+                    std::cout << "[DEBUG]     target[" << di << "] leveled box[" << i << "] "
+                         << leveled_boxes[i] << " angle=" << char_crops[i].level_angle
+                         << std::endl;
+                }
+            }
+            any_flipped = yRuleFlipped(leveled_boxes);
+            target_result.direction_source = "geometric (area gap>2000, leveled frame)";
             if (verbose) {
                 std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
-                     << " (geometric, width gap>=300)" << std::endl;
+                     << " (geometric, area gap>2000, leveled frame)" << std::endl;
+            }
+        } else if (use_geometric) {
+            std::vector<cv::Rect> orig_boxes;
+            orig_boxes.reserve(char_crops.size());
+            for (auto& c : char_crops) orig_boxes.push_back(c.bbox_local);
+            any_flipped = yRuleFlipped(orig_boxes);
+            target_result.direction_source = "geometric (long-edge gap>=300)";
+            if (verbose) {
+                std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)
+                     << " (geometric, long-edge gap>=300)" << std::endl;
             }
         } else {
             std::vector<cv::Mat> cls_imgs;
@@ -460,7 +530,10 @@ LuqianPipelineResult LuqianPipeline::process(const cv::Mat& image, bool verbose,
                          << " (classifier vote, conf=" << cls_conf << ")" << std::endl;
                 }
             } else {
-                any_flipped = geometricAnyFlipped();
+                std::vector<cv::Rect> orig_boxes;
+                orig_boxes.reserve(char_crops.size());
+                for (auto& c : char_crops) orig_boxes.push_back(c.bbox_local);
+                any_flipped = yRuleFlipped(orig_boxes);
                 target_result.direction_source = "geometric fallback (model undecided)";
                 if (verbose) {
                     std::cout << "[DEBUG]   target[" << di << "] direction: " << (any_flipped ? 180 : 0)

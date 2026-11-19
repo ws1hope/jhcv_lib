@@ -683,7 +683,7 @@
             "args": [
                 "--test",
                 "-c", "test/luqian/config.yaml",
-                "-i", "images/td/debug/20261014164430481_1.jpg",
+                "-i", "images/td/debug/20261008053913027_1.jpg",
                 "-H", "26706709",
                 "-s", "1"
             ],
